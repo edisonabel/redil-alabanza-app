@@ -89,7 +89,8 @@ try {
   assert.equal(quarterState.multiplier, '1');
   assert.equal(quarterState.ariaPressed, 'false');
   assert.match(quarterState.text, /64/);
-  assert.match(quarterState.text, /NEGRAS\s*·\s*1×/);
+  assert.match(quarterState.text, /4\/4/);
+  assert.match(quarterState.ariaLabel, /negras/i);
 
   await page.evaluate(() => {
     const { metronomeService } = window.__LIVE_TEMPO_TOGGLE_TEST__;
@@ -120,7 +121,8 @@ try {
   assert.equal(eighthState.multiplier, '2');
   assert.equal(eighthState.ariaPressed, 'true');
   assert.match(eighthState.text, /128/);
-  assert.match(eighthState.text, /CORCHEAS\s*·\s*2×/);
+  assert.match(eighthState.text, /4\/4/);
+  assert.match(eighthState.ariaLabel, /corcheas/i);
   assert.match(eighthState.ariaLabel, /Tocar para volver a negras/i);
 
   const pulseEvents = await page.evaluate(() => window.__LIVE_TEMPO_PULSES__);
@@ -171,7 +173,7 @@ try {
   const sequenceState = await readBpmControl();
   assert.equal(sequenceState.disabled, true);
   assert.equal(sequenceState.multiplier, null);
-  assert.equal(sequenceState.text, '64 BPM');
+  assert.equal(sequenceState.text, '64 —/—');
 
   await page.setViewport({ width: 844, height: 390, deviceScaleFactor: 1 });
   const compactBounds = await page.$eval('[data-live-director-control="bpm"]', (element) => {
@@ -216,7 +218,8 @@ try {
 
   const compactActiveState = await readBpmControl();
   assert.match(compactActiveState.text, /128/);
-  assert.match(compactActiveState.text, /(?:CORCHEAS|COR\.)\s*·\s*2×/);
+  assert.match(compactActiveState.text, /4\/4/);
+  assert.match(compactActiveState.ariaLabel, /corcheas/i);
   const compactOverflow = await page.$eval('[data-live-director-control="bpm"]', (element) => ({
     clientWidth: element.clientWidth,
     scrollWidth: element.scrollWidth,

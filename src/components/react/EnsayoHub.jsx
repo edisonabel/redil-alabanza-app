@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, CalendarDays, ChevronDown, ChevronRight, ChevronUp, Clock3, ExternalLink, GripVertical, ListMusic, Loader2, Mic2, Play, Plus, Printer, RadioReceiver, Share2, X, Zap } from 'lucide-react';
+import { ArrowLeft, CalendarDays, ChevronDown, ChevronRight, ChevronUp, Clock3, ExternalLink, FileText, GripVertical, ListMusic, Loader2, Mic2, Play, Plus, Printer, RadioReceiver, Share2, X, Zap } from 'lucide-react';
 import ModoEnsayoCompacto from './ModoEnsayoCompacto.jsx';
 import EnsayoPersonalView from './EnsayoPersonalView.jsx';
 import { supabase } from '../../lib/supabase';
@@ -16,6 +16,8 @@ import {
   sanitizeVoiceTrackAnchors,
 } from '../../utils/voiceTrackSync.js';
 import { buildLiveDirectorSyncChannelName } from '../../utils/liveDirectorSync';
+import { fetchEventArrangement } from '../../utils/liveDirectorEventArrangement';
+import { applyChordProEventArrangement } from '../../utils/applyChordProEventArrangement';
 import {
   PRO_PLAYER_REPEAT_MODES,
   resolveProPlayerQueueIndex,
@@ -1390,6 +1392,20 @@ export default function EnsayoHub({
     };
 
     try {
+      const eventArrangements = new Map();
+      if (rehearsalEventId) {
+        await Promise.all(printableSongs.map(async (song) => {
+          const songId = String(song?.id || '');
+          if (!songId) return;
+          const result = await fetchEventArrangement(rehearsalEventId, songId);
+          const arrangement = result.arrangement;
+          if (arrangement?.entries && arrangement.sourceSignature !== result.sourceSignature) {
+            throw new Error(`El arreglo de “${song?.title || 'esta canción'}” quedó desactualizado. Abre el Director, revísalo y vuelve a exportar.`);
+          }
+          eventArrangements.set(songId, arrangement?.entries || null);
+        }));
+      }
+
       const subtitle = [serviceDate, serviceHour].filter(Boolean).join(' · ');
       const fileName = `${buildSafePdfFileName(displayContextTitle)} - setlist V2.pdf`;
       payload = {
@@ -1420,7 +1436,14 @@ export default function EnsayoHub({
             order: index + 1,
             title: song?.title || `Cancion ${index + 1}`,
             artist: song?.artist || '',
-            chordProText: transposeChordProText(song?.chordpro || '', transpositionSteps),
+            chordProText: transposeChordProText(
+              applyChordProEventArrangement(
+                song?.chordpro || '',
+                song?.sectionMarkers || [],
+                eventArrangements.get(songId),
+              ),
+              transpositionSteps,
+            ),
             metadata: {
               tone: metadataTone === '-' ? '' : metadataTone,
               capo: capo > 0 ? `${capo}${shapeTone ? ` (${shapeTone})` : ''}` : '0',
@@ -1481,7 +1504,7 @@ export default function EnsayoHub({
     } finally {
       setIsGeneratingSetlistPdf(false);
     }
-  }, [displayContextTitle, isGeneratingSetlistPdf, printableSongs, serviceDate, serviceHour, setlistCapos, setlistRenderMode, setlistTones]);
+  }, [displayContextTitle, isGeneratingSetlistPdf, printableSongs, rehearsalEventId, serviceDate, serviceHour, setlistCapos, setlistRenderMode, setlistTones]);
 
   const openCompactSong = useCallback((song) => {
     if (!song) return;
@@ -1846,6 +1869,8 @@ export default function EnsayoHub({
               const bpmValue = Number.isFinite(Number(song?.bpm)) ? Math.max(0, Math.round(Number(song.bpm))) : 0;
               const isMetronomeActive = activeMetronomeSongId === song?.id;
               const hasSongAudio = typeof song?.mp3 === 'string' && song.mp3.trim() !== '';
+              // Sin ChordPro no hay nada que ensayar en pantalla: si hay PDF de acordes, se abre ese.
+              const chordsPdfUrl = !String(song?.chordpro || '').trim() ? String(song?.linkAcordes || '').trim() : '';
               const parsedVoices = parseVoiceResources(song?.linkVoces);
               const hasVoiceResources = parsedVoices.hasResources || Boolean(parsedVoices.legacyUrl);
               const voiceLabel = normalizeVoiceLabel(song?.voz);
@@ -2025,6 +2050,20 @@ export default function EnsayoHub({
                         </button>
                       )}
 
+                      {chordsPdfUrl ? (
+                        <a
+                          href={chordsPdfUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(event) => event.stopPropagation()}
+                          className="ui-pressable-soft inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-emerald-300/40 bg-emerald-500/10 px-3 text-[12px] font-bold text-emerald-700 shadow-sm transition-all hover:bg-emerald-500/15 hover:text-emerald-800 active:scale-95 dark:border-emerald-300/20 dark:bg-emerald-400/10 dark:text-emerald-200 dark:hover:bg-emerald-400/16 dark:hover:text-emerald-100"
+                          aria-label={`Abrir acordes en PDF de ${song?.title || 'canción'}`}
+                          title="Abrir acordes (PDF)"
+                        >
+                          <FileText className="h-3.5 w-3.5" />
+                          Acordes
+                        </a>
+                      ) : (
                       <button
                         type="button"
                         onClick={(event) => {
@@ -2039,6 +2078,7 @@ export default function EnsayoHub({
                         <ListMusic className="h-3.5 w-3.5" />
                         Ensayar
                       </button>
+                      )}
 
                       {song?.id && (
                         <a

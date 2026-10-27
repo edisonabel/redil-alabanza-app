@@ -278,6 +278,7 @@ export class MultitrackEngine {
   public readonly context: AudioContext;
   public readonly masterGain: GainNode;
   public onEnded: (() => void) | null = null;
+  private groupGains = new Map<string, number>();
 
   private tracks: TrackData[] = [];
   private mode: EngineMode = 'buffer';
@@ -347,6 +348,7 @@ export class MultitrackEngine {
       browser: readLiveBrowserCapabilities(),
     });
 
+    this.groupGains.clear();
     const onProgress = options?.onProgress;
     if (onProgress) {
       try {
@@ -578,6 +580,12 @@ export class MultitrackEngine {
     return this.getLongestTrackDuration();
   }
 
+  setTrackGroupGain(trackId: string, gain: number): void {
+    this.groupGains.set(trackId, Number.isFinite(gain) ? Math.max(0, Math.min(4, gain)) : 1);
+    const track = this.findTrack(trackId);
+    if (track) this.syncTrackGain(track);
+  }
+
   setTrackVolume(trackId: string, volume: number): void {
     const track = this.findTrack(trackId);
 
@@ -617,7 +625,8 @@ export class MultitrackEngine {
   setMasterVolume(volume: number): void {
     this.masterVolume = this.clampVolume(volume);
     if (this.mediaResumeGateSessionId === null) {
-      this.masterGain.gain.value = this.masterVolume;
+      this.masterGain.gain.cancelScheduledValues(this.context.currentTime);
+      this.masterGain.gain.setValueAtTime(this.masterVolume, this.context.currentTime);
     }
   }
 
@@ -1852,7 +1861,7 @@ export class MultitrackEngine {
           ? 0
           : this.clampVolume(track.volume, MAX_TRACK_VOLUME);
 
-    track.gainNode.gain.value = nextGain;
+    track.gainNode.gain.value = nextGain * (this.groupGains.get(track.id) ?? 1);
 
     if (
       nextGain > 0 &&

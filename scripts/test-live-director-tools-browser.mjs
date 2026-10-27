@@ -1,0 +1,132 @@
+import { createRequire } from 'node:module';
+import { mkdir, writeFile } from 'node:fs/promises';
+import assert from 'node:assert/strict';
+const require = createRequire(import.meta.url);
+const { chromium } = require('/Users/edisonaular/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const LAB = process.env.LD_LAB_URL || 'http://127.0.0.1:4322'; // laboratorio Providencia (configurable)
+const browser = await chromium.launch({ headless: true, executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'] });
+const page = await browser.newPage({ viewport: { width: 1728, height: 1000 } });
+const errors = [], writes = [];
+page.on('pageerror', error => errors.push(error.message));
+page.on('request', request => { if (!['GET', 'HEAD'].includes(request.method())) writes.push(request.url()); });
+const ready = () => page.waitForFunction(() => document.querySelector('[data-live-director-control="play-pause"]') && !document.querySelector('[data-live-director-control="play-pause"]').disabled, null, { timeout: 90000 });
+const openTools = () => page.click('[data-live-director-control="tools"]');
+const closeTools = () => page.getByRole('button', { name: 'Cerrar herramientas', exact: true }).click();
+const showGroups = async () => {
+  if (await page.locator('dialog[open]').count()) await closeTools();
+  const button = page.locator('[data-live-director-control="groups"]');
+  if (await button.getAttribute('aria-pressed') !== 'true') await button.click();
+};
+try {
+  await page.goto(`${LAB}/`, { waitUntil: 'domcontentloaded' }); await ready();
+  await mkdir('.lab/results', { recursive: true });
+  await openTools();
+  await page.getByRole('heading', { name: 'Inicio de canción preparado' }).waitFor();
+  assert.match(await page.locator('dialog[open]').innerText(), /15 \/ 15 stems/);
+  await page.screenshot({ path: '.lab/results/tools-ready.png' });
+  await showGroups();
+  const before = await page.evaluate(() => window.__streamingEngineDumpOwner.getTracks().map(track => ({ id: track.id, volume: track.volume, route: track.outputRoute })));
+  await page.getByRole('button', { name: 'Mute Ritmo', exact: true }).click();
+  await page.click('[data-live-director-control="play-pause"]');
+  await page.waitForFunction(() => {
+    const engine = window.__streamingEngineDumpOwner, levels = engine?.getSharedTelemetry()?.levels;
+    return engine?.getCurrentTime() > 2 && levels && levels[engine.getTracks().findIndex(track => track.id === 'drums')] === 0 && Object.values(levels).some(level => level > .001);
+  }, null, { timeout: 20000 });
+  // Edits to individual faders remain separate even while the group is silent.
+  await page.evaluate(() => window.__streamingEngineDumpOwner.setTrackVolume('drums', .4));
+  await showGroups();
+  await page.getByRole('button', { name: 'Unmute Ritmo', exact: true }).click();
+  const rhythm = page.getByRole('slider', { name: 'Volume for Ritmo', exact: true });
+  await rhythm.focus(); await page.keyboard.press('Home');
+  for (let index = 0; index < 25; index++) await page.keyboard.press('ArrowRight');
+  assert.equal(await rhythm.getAttribute('aria-valuenow'), '50');
+  await page.waitForFunction(() => window.__streamingEngineDumpOwner.getSharedTelemetry()?.levels[window.__streamingEngineDumpOwner.getTracks().findIndex(track => track.id === 'drums')] > .001, null, { timeout: 20000 });
+  const after = await page.evaluate(() => window.__streamingEngineDumpOwner.getTracks().map(track => ({ id: track.id, volume: track.volume, route: track.outputRoute })));
+  assert.deepEqual(after.map(track => ({ ...track, volume: track.id === 'drums' ? before.find(t => t.id === 'drums').volume : track.volume })), before);
+  assert.equal(after.find(track => track.id === 'drums').volume, .4);
+  await page.getByRole('button', { name: 'Solo Ritmo', exact: true }).click();
+  await page.waitForFunction(() => { const e = window.__streamingEngineDumpOwner, t = e.getSharedTelemetry(); return t.levels[t.trackIds.indexOf('piano')] === 0 && t.levels[t.trackIds.indexOf('guide')] === 0 && t.levels[t.trackIds.indexOf('drums')] > .001; }, null, { timeout: 15000 });
+  await page.getByRole('button', { name: 'Solo Ritmo', exact: true }).click();
+  await page.screenshot({ path: '.lab/results/tools-groups.png' });
+  await page.getByRole('button', { name: 'Mostrar faders de mezcla', exact: true }).click();
+  await page.getByRole('button', { name: 'Mostrar secciones', exact: true }).click();
+  await showGroups();
+  assert.equal(await rhythm.getAttribute('aria-valuenow'), '50', 'Switching between faders, sections and groups must preserve group gain');
+  assert.equal(await page.locator('dialog[open]').count(), 0, 'Group controls must live outside Tools');
+  await page.getByRole('button', { name: 'Configurar grupos', exact: true }).click();
+  await page.getByRole('button', { name: 'Restaurar niveles de grupos', exact: true }).click();
+  assert.equal(await rhythm.getAttribute('aria-valuenow'), '100');
+
+  await page.getByRole('combobox', { name: 'Grupo de Drums', exact: true }).selectOption('other');
+  await page.getByRole('button', { name: 'Cerrar configuración de grupos', exact: true }).click();
+  await page.click('[data-live-director-control="play-pause"]');
+  await page.evaluate(async () => {
+    const engine = window.__streamingEngineDumpOwner;
+    await engine.seekTo(20, { wasPlayingBeforeUiSeek: false });
+    window.__fadeRamps = [];
+    const original = AudioParam.prototype.linearRampToValueAtTime;
+    AudioParam.prototype.linearRampToValueAtTime = function(value, time) {
+      if (this === engine.masterGain.gain) window.__fadeRamps.push({ value, time });
+      return original.call(this, value, time);
+    };
+  });
+  await page.click('[data-live-director-control="play-pause"]');
+  await openTools(); await page.getByRole('button', { name: 'Salto de sección', exact: true }).click();
+  const destination = page.getByRole('combobox', { name: 'Destino del salto', exact: true });
+  const options = await destination.locator('option').evaluateAll(options => options.map(option => ({ value: option.value, text: option.textContent })));
+  const chorus = options.find(option => /Coro 1/.test(option.text)); assert.ok(chorus);
+  await destination.selectOption(chorus.value);
+  await page.getByRole('button', { name: 'Armar salto', exact: true }).click();
+  await page.getByRole('status').filter({ hasText: 'Salto armado' }).waitFor();
+  await page.screenshot({ path: '.lab/results/tools-jump.png' });
+  await closeTools();
+  await page.waitForFunction(() => { const e = window.__streamingEngineDumpOwner; return e.getIsPlaying() && e.getCurrentTime() >= 56 && e.getCurrentTime() < 65; }, null, { timeout: 20000 });
+  await page.waitForFunction(() => window.__streamingEngineDumpOwner.masterGain.gain.value > .1, null, { timeout: 5000 });
+  assert.ok(await page.evaluate(() => window.__fadeRamps.length >= 256), 'Real section seek must schedule both fades on AudioParam');
+  await openTools(); await page.getByRole('button', { name: 'Armar salto', exact: true }).click(); await closeTools();
+  await page.evaluate(() => window.__streamingEngineDumpOwner.seekTo(70, { wasPlayingBeforeUiSeek: true }));
+  await page.waitForFunction(() => !document.querySelector('[aria-label="Cancelar salto armado"]'));
+  await openTools(); await page.getByRole('button', { name: 'Armar salto', exact: true }).click(); await closeTools();
+  await page.click('[data-live-director-control="play-pause"]');
+  await page.waitForFunction(() => !document.querySelector('[aria-label="Cancelar salto armado"]'));
+  await openTools();
+  await page.getByRole('status').filter({ hasText: 'Salto cancelado' }).waitFor();
+  // Repeat an earlier section: the experimental jump intentionally supports backward seeks.
+  await closeTools();
+  await page.evaluate(() => window.__streamingEngineDumpOwner.seekTo(86, { wasPlayingBeforeUiSeek: false }));
+  await page.click('[data-live-director-control="play-pause"]');
+  await openTools();
+  const intro = options.find(option => /Intro/.test(option.text)); assert.ok(intro);
+  await destination.selectOption(intro.value);
+  await page.getByRole('button', { name: 'Armar salto', exact: true }).click(); await closeTools();
+  await page.waitForFunction(() => { const e = window.__streamingEngineDumpOwner; return e.getIsPlaying() && e.getCurrentTime() >= 8 && e.getCurrentTime() < 14; }, null, { timeout: 20000 });
+  await page.click('[data-live-director-control="play-pause"]');
+  await openTools();
+  // Groups occupy the fader surface in compact view and Tools excludes them.
+  await showGroups();
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.screenshot({ path: '.lab/results/tools-landscape.png' });
+  assert.equal(await page.getByRole('region', { name: 'Grupos de mezcla' }).evaluate(panel => panel.getBoundingClientRect().bottom <= innerHeight), true);
+  await openTools();
+  assert.equal(await page.locator('dialog[open]').getByRole('button', { name: 'Grupos', exact: true }).count(), 0);
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('dialog[open]').count(), 0);
+  // Dispatch the Worklet's real inbound fault type through the engine handler.
+  await page.evaluate(() => window.__streamingEngineDumpOwner.handleWorkletMessage({ type: 'render-error', code: 'mix-exception', seekSerial: 0, renderedFrames: 0 }));
+  await page.getByRole('heading', { name: 'La reproducción se detuvo.' }).waitFor();
+  assert.equal(await page.locator('[data-live-director-control="play-pause"]').isDisabled(), true);
+  await page.screenshot({ path: '.lab/results/tools-error.png' });
+  await page.getByRole('button', { name: 'REINTENTAR CARGA', exact: true }).click(); await ready();
+  assert.equal(await page.evaluate(() => window.__streamingEngineDumpOwner.getIsPlaying()), false, 'Recovery must require explicit play');
+  await page.evaluate(() => { const engine = window.__streamingEngineDumpOwner; window.__failedWorklet = engine.workletNode; engine.workletNode.onprocessorerror(); });
+  await page.getByRole('heading', { name: 'La reproducción se detuvo.' }).waitFor();
+  await page.getByRole('button', { name: 'REINTENTAR CARGA', exact: true }).click(); await ready();
+  assert.equal(await page.evaluate(() => window.__streamingEngineDumpOwner.workletNode !== window.__failedWorklet), true, 'A failed processor must be replaced');
+  assert.equal(await page.evaluate(() => window.__streamingEngineDumpOwner.getIsPlaying()), false);
+  assert.deepEqual(errors, []); assert.deepEqual(writes, []);
+  const result = { pass: true, preparedStems: 15, groupsOnMixerSurface: true, groupStatePreservedAcrossViews: true, groupMuteAudioVerified: true, individualFadersAndRoutingPreserved: true, audioClockSectionFades: true, armedJumpCompleted: true, backwardSectionRepeat: true, pauseCancelsJump: true, recoveryWithoutAutoplay: true, failedProcessorReplaced: true, errors, writes };
+  await writeFile('.lab/results/tools-check.json', JSON.stringify(result, null, 2)); console.log(JSON.stringify(result));
+} catch (error) {
+  await page.screenshot({ path: '.lab/results/tools-failure.png' });
+  console.log((await page.locator('body').innerText()).slice(0, 2200)); throw error;
+} finally { await browser.close(); }

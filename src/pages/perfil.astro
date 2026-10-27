@@ -3592,6 +3592,12 @@ const userId = Astro.locals.user?.id ?? null;
  console.error('Logout Error (supabase):', logoutError);
  } finally {
  clearClientAuthState();
+ // The Live Director keeps rehearsal song data on the device; it leaves with the session.
+ try {
+ if (typeof caches !== 'undefined') await caches.delete('live-director-rehearsal-data-v1');
+ } catch (cacheError) {
+ console.error('Logout Error (rehearsal data):', cacheError);
+ }
  try {
  await fetch('/api/auth/logout', {
  method: 'POST',

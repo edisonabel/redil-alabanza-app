@@ -81,6 +81,7 @@ assert.match(
   /if \(sessionPreparationPending\) \{\s+return undefined;\s+\}[\s\S]+initializeEngineRef\.current/,
   'The engine must wait for the event mix instead of loading a base session twice.',
 );
-assert.match(viewSource, /sessionPreparationPending \? 'Cargando stems\.\.\.' : busyMessage/);
+// Mientras se prepara la sesión del evento se muestra su propio aviso, no el mensaje genérico.
+assert.match(viewSource, /sessionPreparationPending \? `Preparando \$\{songTitle \|\| 'canción'\}…`/);
 
 console.log('Live Director scoped sync lease checks passed.');

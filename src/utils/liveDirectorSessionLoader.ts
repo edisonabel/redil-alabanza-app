@@ -1,3 +1,4 @@
+import type { LiveDirectorPersistedSession } from './liveDirectorSongSession';
 import { STEM_CATEGORIES, STEM_CATEGORY_ORDER, categorizeStemName } from './stemCategories.ts';
 import type { TrackData } from '../services/MultitrackEngine';
 import { isLiveDirectorM4aFile } from './liveDirectorStemFormat.ts';
@@ -10,6 +11,9 @@ export type LiveDirectorResolvedSession = {
   objectUrls: string[];
   unmatchedFiles: string[];
   sectionOffsetSeconds?: number;
+  sectionMarkers?: LiveDirectorPersistedSession['sectionMarkers'];
+  instructionMarkers?: LiveDirectorPersistedSession['instructionMarkers'];
+  reaperTiming?: LiveDirectorPersistedSession['reaperTiming'];
 };
 
 export type LiveDirectorMatchedStemFile = {

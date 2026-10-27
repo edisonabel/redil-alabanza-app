@@ -11,16 +11,6 @@ import {
 } from 'react';
 import type { TrackOutputRoute } from '../../../utils/liveDirectorTrackRouting';
 
-type FaderInteractionState = {
-  active: boolean;
-  pointerId: number | null;
-  mode: 'pending' | 'volume' | 'scroll';
-  startX: number;
-  startY: number;
-  startScrollLeft: number;
-  scrollContainer: HTMLElement | null;
-};
-
 export type ChannelStripProps = {
   id: string;
   label: string;
@@ -45,6 +35,7 @@ export type ChannelStripProps = {
   onToggleOutputRoute?: () => void;
   onInteractionStart?: () => void;
   onInteractionEnd?: () => void;
+  onOpenSettings?: () => void;
 };
 
 const FADER_AXIS_LOCK_THRESHOLD_PX = 7;
@@ -58,6 +49,137 @@ const getStableTrackPhaseMs = (value: string) => {
   }
   return hash;
 };
+
+type PrecisionFaderSurfaceProps = {
+  value: number;
+  onChange: (value: number) => void;
+  label: string;
+  disabled?: boolean;
+  className?: string;
+  style?: CSSProperties;
+  onInteractionStart?: () => void;
+  onInteractionEnd?: () => void;
+};
+
+type FaderGesture = {
+  pointerId: number;
+  mode: 'pending' | 'volume' | 'scroll';
+  startX: number;
+  startY: number;
+  lastY: number;
+  lastValue: number;
+  anchored: boolean;
+  travel: number;
+  bottomY: number;
+  startScrollLeft: number;
+  scrollContainer: HTMLElement | null;
+};
+
+/** Pointer travel follows the visible thumb centers (bottom 10% → 88%). */
+export function PrecisionFaderSurface({
+  value, onChange, label, disabled = false, className = '', style,
+  onInteractionStart, onInteractionEnd,
+}: PrecisionFaderSurfaceProps) {
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
+  const gestureRef = useRef<FaderGesture | null>(null);
+  const latest = useRef({ value, onChange, disabled, onInteractionEnd });
+  latest.current = { value, onChange, disabled, onInteractionEnd };
+
+  const finish = useCallback((pointerId?: number) => {
+    const gesture = gestureRef.current;
+    if (!gesture || (pointerId !== undefined && pointerId !== gesture.pointerId)) return;
+    gestureRef.current = null;
+    try { surfaceRef.current?.releasePointerCapture(gesture.pointerId); } catch { /* capture already ended */ }
+    latest.current.onInteractionEnd?.();
+  }, []);
+  useEffect(() => () => finish(), [finish]);
+  useEffect(() => { if (disabled) finish(); }, [disabled, finish]);
+
+  const update = useCallback((gesture: FaderGesture, clientY: number, fine: boolean) => {
+    if (latest.current.disabled) return;
+    const next = clamp(gesture.anchored
+      ? gesture.lastValue + (gesture.lastY - clientY) / gesture.travel * (fine ? .1 : 1)
+      : (gesture.bottomY - clientY) / gesture.travel);
+    gesture.anchored = true;
+    gesture.lastY = clientY;
+    if (Math.abs(next - gesture.lastValue) < 1e-8) return;
+    gesture.lastValue = next;
+    // Update the engine during the drag, not only when the pointer is released.
+    latest.current.onChange(next);
+  }, []);
+
+  const down = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (disabled || gestureRef.current || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    if (bounds.height <= 0) return;
+    const scrollContainer = event.currentTarget.closest('[data-live-director-mixer-scroll="true"]') as HTMLElement | null;
+    const thumbBounds = event.currentTarget.parentElement?.querySelector<HTMLElement>(
+      '.live-director-track-thumb, .live-director-master-thumb, [data-fader-thumb]',
+    )?.getBoundingClientRect();
+    const grabbedThumb = !!thumbBounds && event.clientY >= thumbBounds.top && event.clientY <= thumbBounds.bottom;
+    const gesture: FaderGesture = {
+      pointerId: event.pointerId,
+      mode: event.pointerType === 'mouse' || !scrollContainer ? 'volume' : 'pending',
+      startX: event.clientX, startY: event.clientY, lastY: event.clientY,
+      lastValue: clamp(value), anchored: grabbedThumb || event.shiftKey,
+      travel: bounds.height * .78, bottomY: bounds.top + bounds.height * .9,
+      startScrollLeft: scrollContainer?.scrollLeft ?? 0, scrollContainer,
+    };
+    gestureRef.current = gesture;
+    onInteractionStart?.();
+    event.currentTarget.focus({ preventScroll: true });
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* browser lost the pointer */ }
+    if (gesture.mode === 'volume' && !grabbedThumb) update(gesture, event.clientY, event.shiftKey);
+    event.preventDefault(); event.stopPropagation();
+  }, [disabled, onInteractionStart, update, value]);
+
+  const move = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const gesture = gestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    const deltaX = event.clientX - gesture.startX, deltaY = event.clientY - gesture.startY;
+    if (gesture.mode === 'pending') {
+      if (Math.abs(deltaX) < FADER_AXIS_LOCK_THRESHOLD_PX && Math.abs(deltaY) < FADER_AXIS_LOCK_THRESHOLD_PX) {
+        event.preventDefault(); event.stopPropagation(); return;
+      }
+      gesture.mode = Math.abs(deltaY) > Math.abs(deltaX) * 1.5 ? 'volume' : 'scroll';
+    }
+    if (gesture.mode === 'scroll') {
+      if (gesture.scrollContainer) gesture.scrollContainer.scrollLeft = gesture.startScrollLeft - deltaX;
+    } else {
+      update(gesture, event.clientY, event.shiftKey);
+    }
+    event.preventDefault(); event.stopPropagation();
+  }, [update]);
+
+  const up = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const gesture = gestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    if (gesture.mode === 'volume' || (gesture.mode === 'pending' && !gesture.anchored)) update(gesture, event.clientY, event.shiftKey);
+    finish(event.pointerId);
+    event.preventDefault(); event.stopPropagation();
+  }, [finish, update]);
+
+  const keyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (disabled) return;
+    const step = event.shiftKey ? .001 : .01;
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? 1
+      : event.key === 'ArrowUp' || event.key === 'ArrowRight' ? clamp(value + step)
+      : event.key === 'ArrowDown' || event.key === 'ArrowLeft' ? clamp(value - step) : null;
+    if (next === null) return;
+    onChange(next);
+    event.preventDefault(); event.stopPropagation();
+  }, [disabled, onChange, value]);
+  const percent = Math.round(clamp(value) * 1000) / 10;
+  return <div ref={surfaceRef} role="slider" tabIndex={disabled ? -1 : 0}
+    aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}
+    aria-valuetext={`${percent}%`} aria-orientation="vertical" aria-disabled={disabled}
+    title="Arrastra para ajustar. Shift permite ajuste fino; flechas ±1%, Shift + flechas ±0,1%."
+    data-no-drag-scroll="true" className={className} style={{ ...style, touchAction: 'none' }}
+    onPointerDown={down} onPointerMove={move} onPointerUp={up}
+    onPointerCancel={event => { finish(event.pointerId); event.preventDefault(); event.stopPropagation(); }}
+    onLostPointerCapture={event => finish(event.pointerId)} onKeyDown={keyDown}
+  />;
+}
 
 export function FaderThumb({
   accent,
@@ -122,6 +244,7 @@ export const ChannelStrip = memo(function ChannelStrip({
   onToggleOutputRoute,
   onInteractionStart,
   onInteractionEnd,
+  onOpenSettings,
 }: ChannelStripProps) {
   const [draftVolume, setDraftVolume] = useState<number | null>(null);
   const displayVolume = draftVolume ?? volume;
@@ -174,211 +297,14 @@ export const ChannelStrip = memo(function ChannelStrip({
   const routeDividerSpacingClass = ultraCompact ? 'mx-0.5' : compact ? 'mx-0.75' : 'mx-1';
   const stripViewportWidthClass = ultraCompact ? 'max-w-[6.5rem]' : compact ? 'max-w-[7.2rem]' : 'max-w-[7.6rem]';
   const stripThumbWidthClass = ultraCompact ? 'max-w-[6.15rem]' : compact ? 'max-w-[7.05rem]' : 'max-w-[7.9rem]';
-  const stripSliderWidthClass = ultraCompact ? 'top-[8%] bottom-[12%] w-[5.15rem]' : compact ? 'top-[7%] bottom-[11%] w-[5.95rem]' : 'top-[4.5%] bottom-[6.5%] w-[6rem]';
-  const sliderSurfaceRef = useRef<HTMLDivElement | null>(null);
-  const faderInteractionRef = useRef<FaderInteractionState>({
-    active: false,
-    pointerId: null,
-    mode: 'pending',
-    startX: 0,
-    startY: 0,
-    startScrollLeft: 0,
-    scrollContainer: null,
-  });
-
+  const stripSliderWidthClass = ultraCompact ? 'w-[5.15rem]' : compact ? 'w-[5.95rem]' : 'w-[6rem]';
   useEffect(() => {
-    if (
-      draftVolume !== null &&
-      !faderInteractionRef.current.active &&
-      Math.abs(volume - draftVolume) < 0.001
-    ) {
-      setDraftVolume(null);
-    }
+    if (draftVolume !== null && Math.abs(volume - draftVolume) < 1e-7) setDraftVolume(null);
   }, [draftVolume, volume]);
-
-  const updateDraftVolumeFromClientY = useCallback((clientY: number) => {
-    if (disabled) {
-      return null;
-    }
-
-    const sliderSurface = sliderSurfaceRef.current;
-    if (!sliderSurface) {
-      return null;
-    }
-
-    const bounds = sliderSurface.getBoundingClientRect();
-    if (bounds.height <= 0) {
-      return null;
-    }
-
-    const nextVolume = clamp(1 - ((clientY - bounds.top) / bounds.height), 0, 1);
-    const roundedVolume = Math.round(nextVolume * 100) / 100;
-    setDraftVolume(roundedVolume);
-    return roundedVolume;
-  }, [disabled]);
-
-  const finishSliderDrag = useCallback((pointerId?: number, target?: HTMLDivElement | null, keepDraft = false) => {
-    const interaction = faderInteractionRef.current;
-    if (
-      typeof pointerId === 'number' &&
-      interaction.pointerId !== null &&
-      interaction.pointerId !== pointerId
-    ) {
-      return;
-    }
-
-    const sliderSurface = target || sliderSurfaceRef.current;
-    const activePointerId = interaction.pointerId;
-    faderInteractionRef.current = {
-      active: false,
-      pointerId: null,
-      mode: 'pending',
-      startX: 0,
-      startY: 0,
-      startScrollLeft: 0,
-      scrollContainer: null,
-    };
-
-    if (!keepDraft) {
-      setDraftVolume(null);
-    }
-
-    onInteractionEnd?.();
-
-    if (sliderSurface && activePointerId !== null) {
-      try {
-        sliderSurface.releasePointerCapture(activePointerId);
-      } catch {
-        // no-op
-      }
-    }
-  }, [onInteractionEnd]);
-
-  const handleSliderPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    if (disabled) {
-      return;
-    }
-
-    if (event.pointerType === 'mouse' && event.button !== 0) {
-      return;
-    }
-
-    const scrollContainer = event.currentTarget.closest('[data-live-director-mixer-scroll="true"]') as HTMLElement | null;
-    faderInteractionRef.current = {
-      active: true,
-      pointerId: event.pointerId,
-      mode: 'pending',
-      startX: event.clientX,
-      startY: event.clientY,
-      startScrollLeft: scrollContainer?.scrollLeft ?? 0,
-      scrollContainer,
-    };
-    setDraftVolume(volume);
-
-    onInteractionStart?.();
-
-    try {
-      event.currentTarget.setPointerCapture(event.pointerId);
-    } catch {
-      // no-op
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-  }, [disabled, onInteractionStart, volume]);
-
-  const handleSliderPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    const interaction = faderInteractionRef.current;
-    if (!interaction.active || interaction.pointerId !== event.pointerId) {
-      return;
-    }
-
-    const deltaX = event.clientX - interaction.startX;
-    const deltaY = event.clientY - interaction.startY;
-    const absX = Math.abs(deltaX);
-    const absY = Math.abs(deltaY);
-
-    if (interaction.mode === 'pending') {
-      if (absX < FADER_AXIS_LOCK_THRESHOLD_PX && absY < FADER_AXIS_LOCK_THRESHOLD_PX) {
-        event.preventDefault();
-        event.stopPropagation();
-        return;
-      }
-
-      interaction.mode = absY > absX * 1.5 || !interaction.scrollContainer ? 'volume' : 'scroll';
-    }
-
-    if (interaction.mode === 'scroll') {
-      if (interaction.scrollContainer) {
-        interaction.scrollContainer.scrollLeft = interaction.startScrollLeft - deltaX;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      return;
-    }
-
-    updateDraftVolumeFromClientY(event.clientY);
-    event.preventDefault();
-    event.stopPropagation();
-  }, [updateDraftVolumeFromClientY]);
-
-  const handleSliderPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    const interaction = faderInteractionRef.current;
-    if (!interaction.active || interaction.pointerId !== event.pointerId) {
-      return;
-    }
-
-    let committedVolume: number | null = null;
-    if (interaction.mode === 'pending' || interaction.mode === 'volume') {
-      committedVolume = updateDraftVolumeFromClientY(event.clientY);
-    } else if (interaction.scrollContainer) {
-      interaction.scrollContainer.scrollLeft = interaction.startScrollLeft - (event.clientX - interaction.startX);
-    }
-
-    finishSliderDrag(event.pointerId, event.currentTarget, committedVolume !== null);
-    if (committedVolume !== null) {
-      onVolumeChange(committedVolume);
-    }
-    event.preventDefault();
-    event.stopPropagation();
-  }, [finishSliderDrag, onVolumeChange, updateDraftVolumeFromClientY]);
-
-  const handleSliderPointerCancel = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    const interaction = faderInteractionRef.current;
-    if (!interaction.active || interaction.pointerId !== event.pointerId) {
-      return;
-    }
-
-    finishSliderDrag(event.pointerId, event.currentTarget);
-    event.preventDefault();
-    event.stopPropagation();
-  }, [finishSliderDrag]);
-
-  const handleSliderKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (disabled) {
-      return;
-    }
-
-    let nextVolume: number | null = null;
-
-    if (event.key === 'ArrowUp' || event.key === 'ArrowRight') {
-      nextVolume = clamp(displayVolume + 0.02, 0, 1);
-    } else if (event.key === 'ArrowDown' || event.key === 'ArrowLeft') {
-      nextVolume = clamp(displayVolume - 0.02, 0, 1);
-    } else if (event.key === 'Home') {
-      nextVolume = 0;
-    } else if (event.key === 'End') {
-      nextVolume = 1;
-    }
-
-    if (nextVolume === null) {
-      return;
-    }
-
-    onVolumeChange(Math.round(nextVolume * 100) / 100);
-    event.preventDefault();
-    event.stopPropagation();
-  }, [disabled, displayVolume, onVolumeChange]);
+  const handleFaderChange = useCallback((next: number) => {
+    setDraftVolume(next);
+    onVolumeChange(next);
+  }, [onVolumeChange]);
 
   return (
     <div
@@ -463,9 +389,9 @@ export const ChannelStrip = memo(function ChannelStrip({
             accent={accent}
             level={0}
             muted={muted || disabled}
-            className={`live-director-track-thumb ${ultraCompact ? 'h-[1.85rem]' : compact ? 'h-[2.2rem]' : 'h-[4.35rem]'} w-full ${stripThumbWidthClass} transition-[bottom,opacity,transform] duration-300 ease-out`}
+            className={`live-director-track-thumb ${ultraCompact ? 'h-[1.85rem]' : compact ? 'h-[2.2rem]' : 'h-[4.35rem]'} w-full ${stripThumbWidthClass} transition-[opacity,transform] duration-150 ease-out`}
             style={{
-              bottom: `calc(${levelBottom} - ${ultraCompact ? '0.92rem' : compact ? '1.1rem' : '1.75rem'})`,
+              bottom: `calc(${levelBottom} - ${ultraCompact ? '0.92rem' : compact ? '1.1rem' : '2.175rem'})`,
               boxShadow: muted
                 ? '0 12px 20px rgba(0,0,0,0.24)'
                 : `0 14px 24px rgba(0,0,0,0.35), 0 0 20px ${knobGlow}`,
@@ -473,25 +399,11 @@ export const ChannelStrip = memo(function ChannelStrip({
             }}
           />
 
-          <div
-            ref={sliderSurfaceRef}
-            role="slider"
-            tabIndex={disabled ? -1 : 0}
-            aria-label={`Volume for ${label}`}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={Math.round(displayVolume * 100)}
-            aria-valuetext={`${Math.round(displayVolume * 100)}%`}
-            aria-orientation="vertical"
-            data-no-drag-scroll="true"
-            onPointerDown={handleSliderPointerDown}
-            onPointerMove={handleSliderPointerMove}
-            onPointerUp={handleSliderPointerUp}
-            onPointerCancel={handleSliderPointerCancel}
-            onLostPointerCapture={() => finishSliderDrag()}
-            onKeyDown={handleSliderKeyDown}
-            className={`absolute left-1/2 -translate-x-1/2 rounded-[1rem] ${disabled ? 'cursor-not-allowed' : 'cursor-grab active:cursor-grabbing'} ${stripSliderWidthClass}`}
-            style={{ touchAction: 'none' }}
+          <PrecisionFaderSurface
+            value={displayVolume} onChange={handleFaderChange}
+            label={`Volume for ${label}`} disabled={disabled}
+            onInteractionStart={onInteractionStart} onInteractionEnd={onInteractionEnd}
+            className={`absolute inset-y-0 left-1/2 -translate-x-1/2 rounded-[1rem] ${disabled ? 'cursor-not-allowed' : 'cursor-grab active:cursor-grabbing'} ${stripSliderWidthClass}`}
           />
         </div>
       </div>
@@ -506,7 +418,9 @@ export const ChannelStrip = memo(function ChannelStrip({
           <span />
         </div>
         {!compact && <p className="text-[0.62rem] font-black uppercase tracking-[0.3em] text-white/28">{shortLabel}</p>}
-        <p className={`leading-tight text-white/88 ${ultraCompact ? 'text-[10px] font-semibold' : compact ? 'text-[11px] font-semibold' : 'mt-1 text-[1.03rem] font-semibold'}`}>{label}</p>
+        {onOpenSettings ? <button type="button" onClick={onOpenSettings} aria-label="Configurar metrónomo" aria-keyshortcuts="T"
+          title="Abrir subdivisiones del click · T" className={`min-h-7 rounded px-2 font-semibold text-white/88 underline decoration-white/30 decoration-dotted underline-offset-4 focus-visible:outline-2 focus-visible:outline-cyan-200 ${ultraCompact ? 'text-[10px]' : compact ? 'text-[11px]' : 'mt-1 text-[1.03rem]'}`}>{label}</button>
+          : <p className={`leading-tight text-white/88 ${ultraCompact ? 'text-[10px] font-semibold' : compact ? 'text-[11px] font-semibold' : 'mt-1 text-[1.03rem] font-semibold'}`}>{label}</p>}
         {disabledReason ? (
           <p className={`mx-auto max-w-full truncate font-black uppercase tracking-[0.12em] text-amber-100/72 ${ultraCompact ? 'mt-0.5 text-[7px]' : compact ? 'mt-0.5 text-[8px]' : 'mt-1 text-[0.58rem]'}`}>
             {disabledReason}
@@ -533,4 +447,5 @@ export const ChannelStrip = memo(function ChannelStrip({
   previousProps.showRouteFlip === nextProps.showRouteFlip &&
   previousProps.compact === nextProps.compact &&
   previousProps.ultraCompact === nextProps.ultraCompact
+  && previousProps.onOpenSettings === nextProps.onOpenSettings
 ));

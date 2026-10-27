@@ -1,0 +1,99 @@
+{
+  "songId": "f2ce26b1-eac1-4937-b9e8-aa9f9d8338c9",
+  "sourceFile": "Providencia - revision WAV.RPP",
+  "sourceSha256": "49d187f65fd35af7f0207efbec64ddc20e9939881988b052ae4cc8a299cb04af",
+  "timing": "absolute-source-seconds",
+  "bpm": 120,
+  "timeSignature": {
+    "numerator": 4,
+    "denominator": 4
+  },
+  "confirmedDownbeatSeconds": 4.0,
+  "audioEndSeconds": 340.0,
+  "sectionMarkers": [
+    {
+      "id": "intro-1",
+      "sectionName": "Intro 1",
+      "startSec": 12.0,
+      "endSec": 28.0
+    },
+    {
+      "id": "verso-1-1",
+      "sectionName": "Verso 1",
+      "startSec": 28.0,
+      "endSec": 60.0
+    },
+    {
+      "id": "coro-1-1",
+      "sectionName": "Coro 1",
+      "startSec": 60.0,
+      "endSec": 92.0
+    },
+    {
+      "id": "intro-2",
+      "sectionName": "Intro 2",
+      "startSec": 92.0,
+      "endSec": 100.0
+    },
+    {
+      "id": "verso-2-1",
+      "sectionName": "Verso 2",
+      "startSec": 100.0,
+      "endSec": 132.0
+    },
+    {
+      "id": "coro-2-1",
+      "sectionName": "Coro 2",
+      "startSec": 132.0,
+      "endSec": 164.0
+    },
+    {
+      "id": "interludio-1",
+      "sectionName": "Interludio 1",
+      "startSec": 164.0,
+      "endSec": 180.0
+    },
+    {
+      "id": "verso-3-1",
+      "sectionName": "Verso 3",
+      "startSec": 180.0,
+      "endSec": 212.0
+    },
+    {
+      "id": "coro-3-1",
+      "sectionName": "Coro 3",
+      "startSec": 212.0,
+      "endSec": 244.0
+    },
+    {
+      "id": "coro-4-1",
+      "sectionName": "Coro 4",
+      "startSec": 244.0,
+      "endSec": 276.0
+    },
+    {
+      "id": "interludio-2",
+      "sectionName": "Interludio 2",
+      "startSec": 276.0,
+      "endSec": 284.0
+    },
+    {
+      "id": "outro-1-1",
+      "sectionName": "Outro 1",
+      "startSec": 284.0,
+      "endSec": 300.0
+    },
+    {
+      "id": "outro-2-1",
+      "sectionName": "Outro 2",
+      "startSec": 300.0,
+      "endSec": 316.0
+    },
+    {
+      "id": "outro-3-1",
+      "sectionName": "Outro 3",
+      "startSec": 316.0,
+      "endSec": 340.0
+    }
+  ]
+}

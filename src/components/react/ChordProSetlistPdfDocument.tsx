@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import SongSheet from './SongSheet';
+import PaginatedSongSheet from './PaginatedSongSheet';
 import type { ChordProSetlistPdfPayload } from '../../lib/chordproSetlistPdfPayload';
 import {
   deleteChordProSetlistPdfBrowserToken,
@@ -157,6 +157,12 @@ export default function ChordProSetlistPdfDocument({
       window.__CHORDPRO_SETLIST_PDF_READY__ = false;
 
       await waitForPdfFonts();
+      for (let index = 0; index < 300; index += 1) {
+        if (document.querySelectorAll('.song-sheet-pagination[data-pagination-ready="true"]').length === preparedSongs.length) break;
+        await nextFrame();
+        if (cancelled) return;
+      }
+      if (document.querySelectorAll('.song-sheet-pagination[data-pagination-ready="true"]').length !== preparedSongs.length) return;
       for (let index = 0; index < 8; index += 1) {
         await nextFrame();
       }
@@ -244,9 +250,9 @@ export default function ChordProSetlistPdfDocument({
       {preparedSongs.map(({ song, blocks, collapseMap }, index) => (
         <div
           key={`${song.id}-${index}`}
-          className="chordpro-setlist-pdf-page mx-auto h-[11in] w-[8.5in] overflow-hidden bg-white"
+          className="chordpro-setlist-pdf-page mx-auto w-[8.5in] bg-white"
         >
-          <SongSheet
+          <PaginatedSongSheet
             blocks={blocks}
             title={song.title || `Cancion ${index + 1}`}
             artist={song.artist}
@@ -256,7 +262,7 @@ export default function ChordProSetlistPdfDocument({
             pageHeightPx={PAGE_HEIGHT_PX}
             pageWidthPx={PAGE_WIDTH_PX}
             framed={false}
-            className="h-full"
+            pageGap={0}
             printProfile="v2-optimized"
           />
         </div>

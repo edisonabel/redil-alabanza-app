@@ -1,8 +1,10 @@
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 
 const bundle = await build({
-  entryPoints: [new URL('../src/utils/liveDirectorManualSongs.ts', import.meta.url).pathname],
+  // fileURLToPath decodifica la ruta: con espacios en la carpeta, .pathname deja «%20».
+  entryPoints: [fileURLToPath(new URL('../src/utils/liveDirectorManualSongs.ts', import.meta.url))],
   bundle: true,
   format: 'esm',
   platform: 'node',

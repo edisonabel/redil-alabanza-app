@@ -206,25 +206,24 @@ export const buildNextChordProCueCapture = (
   const totalCues = Math.max(1, Math.floor(Number(rawTotalCues) || 1));
   const currentTime = Math.round(Math.max(0, Number(rawCurrentTime) || 0) * 1000) / 1000;
   const normalizedSectionStart = normalizeOptionalChordProMarkerTime(marker?.startSec);
-  const hasSectionStart = normalizedSectionStart != null;
+  const vocalStartSec = normalizeOptionalChordProMarkerTime(marker?.vocalStartSec) ?? normalizedSectionStart;
   const expectedCueMarkers = totalCues - 1;
 
-  if (!hasSectionStart || expectedCueMarkers === 0) {
-    return { startSec: currentTime, cueMarkers: [] };
+  if (vocalStartSec == null || expectedCueMarkers === 0) {
+    return { vocalStartSec: currentTime, cueMarkers: [] };
   }
 
-  const sectionStartSec = normalizedSectionStart;
-  const currentCueMarkers = normalizeCueSeconds(marker?.cueMarkers, sectionStartSec)
+  const currentCueMarkers = normalizeCueSeconds(marker?.cueMarkers, vocalStartSec)
     .slice(0, expectedCueMarkers);
   if (currentCueMarkers.length >= expectedCueMarkers) return null;
 
   const nextCueMarkers = normalizeCueSeconds(
     [...currentCueMarkers, currentTime],
-    sectionStartSec,
+    vocalStartSec,
   ).slice(0, expectedCueMarkers);
 
   return nextCueMarkers.length > currentCueMarkers.length
-    ? { startSec: sectionStartSec, cueMarkers: nextCueMarkers }
+    ? { vocalStartSec, cueMarkers: nextCueMarkers }
     : null;
 };
 

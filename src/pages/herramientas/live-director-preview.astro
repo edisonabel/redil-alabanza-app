@@ -69,6 +69,7 @@ if (requestedSong) {
 
     if (row) {
       const rawSession = 'multitrack_session' in row ? row.multitrack_session : null;
+      const session = normalizePersistedLiveDirectorSession(rawSession, { songId: String(row.id || ''), songTitle: String(row.titulo || '') });
       songRecord = {
         id: String(row.id || ''),
         titulo: String(row.titulo || ''),
@@ -76,11 +77,8 @@ if (requestedSong) {
         tonalidad: String(row.tonalidad || ''),
         bpm: Number.isFinite(Number(row.bpm)) ? Number(row.bpm) : 0,
         mp3: String(row.mp3 || ''),
-        sections: buildLiveDirectorSectionsFromMarkers(row.section_markers),
-        session: normalizePersistedLiveDirectorSession(rawSession, {
-          songId: String(row.id || ''),
-          songTitle: String(row.titulo || ''),
-        }),
+        sections: buildLiveDirectorSectionsFromMarkers(session?.sectionMarkers?.length ? session.sectionMarkers : row.section_markers),
+        session,
       };
     }
   } catch (error) {

@@ -16,6 +16,7 @@ import {
 } from '../../lib/server/api-security.js';
 import {
   getPdfBrowserRuntime,
+  setPdfBrowserSession,
   isDevRuntime,
 } from '../../lib/server/pdf-browser-runtime';
 
@@ -98,6 +99,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     browser = await browserRuntime.launcher.launch(browserRuntime.launchOptions);
 
     const page = await browser.newPage();
+    await setPdfBrowserSession(page, new URL(renderUrl).origin, cookies);
     page.on('console', (message) => {
       console.log(`[ChordPro Setlist PDF V2][page console][${message.type()}] ${message.text()}`);
     });

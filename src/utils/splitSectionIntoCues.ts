@@ -61,13 +61,14 @@ function estimateCueWeight(lines: string[] = []) {
 
 function normalizeExplicitCueAnchors(
   rawCueMarkers: Array<number | { startSec?: number; time?: number }> = [],
-  marker?: { startSec: number; endSec: number } | null,
+  marker?: { startSec: number; endSec: number; vocalStartSec?: number | null } | null,
   cueCount = 0,
 ) {
   if (!marker || !Number.isFinite(marker.startSec) || !Number.isFinite(marker.endSec) || cueCount <= 1) {
     return [];
   }
 
+  const cueStartSec = marker.vocalStartSec ?? marker.startSec;
   const normalized = (Array.isArray(rawCueMarkers) ? rawCueMarkers : [])
     .map((entry) => {
       if (typeof entry === 'number') return entry;
@@ -77,13 +78,13 @@ function normalizeExplicitCueAnchors(
     })
     .filter((value) => Number.isFinite(value))
     .map((value) => Number(value))
-    .filter((value) => value > marker.startSec && value < marker.endSec)
+    .filter((value) => value > cueStartSec && value < marker.endSec)
     .sort((left, right) => left - right)
     .filter((value, index, source) => index === 0 || Math.abs(value - source[index - 1]) >= 0.75);
 
   if (normalized.length === 0) return [];
 
-  if (normalized.length >= cueCount && Math.abs(normalized[0] - marker.startSec) <= 1) {
+  if (normalized.length >= cueCount && Math.abs(normalized[0] - cueStartSec) <= 1) {
     return normalized.slice(1, cueCount);
   }
 
@@ -95,6 +96,7 @@ function buildCueTimingWindows(
   marker?: {
     startSec: number;
     endSec: number;
+    vocalStartSec?: number | null;
     cueMarkers?: Array<number | { startSec?: number; time?: number }>;
   } | null,
 ) {
@@ -108,16 +110,17 @@ function buildCueTimingWindows(
     return rawCueGroups.map(() => ({ startSec: null, endSec: null }));
   }
 
-  const totalDuration = marker.endSec - marker.startSec;
+  const cueStartSec = marker.vocalStartSec ?? marker.startSec;
+  const totalDuration = marker.endSec - cueStartSec;
   if (totalDuration <= 0 || rawCueGroups.length === 0) {
-    return rawCueGroups.map(() => ({ startSec: marker.startSec, endSec: marker.endSec }));
+    return rawCueGroups.map(() => ({ startSec: cueStartSec, endSec: marker.endSec }));
   }
 
   const cueWeights = rawCueGroups.map((group) => estimateCueWeight(group));
   const explicitAnchors = normalizeExplicitCueAnchors(marker?.cueMarkers, marker, rawCueGroups.length);
 
   if (explicitAnchors.length > 0) {
-    const fixedStarts = [marker.startSec, ...explicitAnchors].slice(0, rawCueGroups.length);
+    const fixedStarts = [cueStartSec, ...explicitAnchors].slice(0, rawCueGroups.length);
     const explicitWindowCount = Math.max(0, fixedStarts.length - 1);
     const explicitWindows = [];
 
@@ -132,7 +135,7 @@ function buildCueTimingWindows(
       return explicitWindows.slice(0, rawCueGroups.length);
     }
 
-    const tailStart = fixedStarts[fixedStarts.length - 1] ?? marker.startSec;
+    const tailStart = fixedStarts[fixedStarts.length - 1] ?? cueStartSec;
     const tailGroups = rawCueGroups.slice(explicitWindowCount);
     const tailWeights = cueWeights.slice(explicitWindowCount);
     const tailDuration = Math.max(0, marker.endSec - tailStart);
@@ -176,15 +179,15 @@ function buildCueTimingWindows(
   if (!Number.isFinite(totalWeight) || totalWeight <= 0) {
     const equalDuration = totalDuration / rawCueGroups.length;
     return rawCueGroups.map((_, index) => ({
-      startSec: marker.startSec + equalDuration * index,
+      startSec: cueStartSec + equalDuration * index,
       endSec:
         index === rawCueGroups.length - 1
           ? marker.endSec
-          : marker.startSec + equalDuration * (index + 1),
+          : cueStartSec + equalDuration * (index + 1),
     }));
   }
 
-  let cursor = marker.startSec;
+  let cursor = cueStartSec;
   return rawCueGroups.map((_, index) => {
     const startSec = cursor;
     const sliceDuration =
@@ -232,6 +235,7 @@ export function splitSectionIntoCues(
   marker?: {
     startSec: number;
     endSec: number;
+    vocalStartSec?: number | null;
     cueMarkers?: Array<number | { startSec?: number; time?: number }>;
   } | null,
   occurrence = 1,
@@ -320,8 +324,30 @@ export function splitSectionIntoCues(
   }
 
   const cueTimings = buildCueTimingWindows(rawCueGroups, marker);
+  const voiceStartSec = marker?.vocalStartSec != null && Number.isFinite(Number(marker.vocalStartSec))
+    ? Number(marker?.vocalStartSec)
+    : null;
+  const leadCue: DisplayCue[] = marker?.startSec != null
+    && voiceStartSec != null
+    && voiceStartSec > Number(marker.startSec) + 0.05
+    ? [{
+      id: `${songId}-s${sectionIndex}-lead`,
+      type: 'instrumental',
+      sectionIndex,
+      sectionKind: kind,
+      sectionLabel: section.name,
+      sectionShortLabel: shortLabel,
+      sectionColor: [...visual.rgb] as [number, number, number],
+      cueIndex: 0,
+      totalCuesInSection: rawCueGroups.length + 1,
+      lines: [],
+      rawLines: [],
+      estimatedStartSec: Number(marker.startSec),
+      estimatedEndSec: voiceStartSec,
+    }]
+    : [];
 
-  return rawCueGroups.map((group, cueIndex) => ({
+  return [...leadCue, ...rawCueGroups.map((group, cueIndex) => ({
     id: `${songId}-s${sectionIndex}-c${cueIndex}`,
     type: 'lyrics' as const,
     sectionIndex,
@@ -329,13 +355,13 @@ export function splitSectionIntoCues(
     sectionLabel: section.name,
     sectionShortLabel: shortLabel,
     sectionColor: [...visual.rgb] as [number, number, number],
-    cueIndex,
-    totalCuesInSection: rawCueGroups.length,
+    cueIndex: cueIndex + leadCue.length,
+    totalCuesInSection: rawCueGroups.length + leadCue.length,
     lines: group.map(parseChordProLine),
     rawLines: group,
     estimatedStartSec: cueTimings[cueIndex]?.startSec ?? null,
     estimatedEndSec: cueTimings[cueIndex]?.endSec ?? null,
-  }));
+  }))];
 }
 
 export function buildDisplayTrack(song: {
@@ -353,6 +379,7 @@ export function buildDisplayTrack(song: {
     sectionIndex?: number;
     sectionOccurrence?: number;
     sectionKey?: string;
+    vocalStartSec?: number;
     cueMarkers?: Array<number | { startSec?: number; time?: number }>;
   }>;
   duration?: number;
@@ -397,11 +424,19 @@ export function buildDisplayTrack(song: {
           ? estimatedTotalDurationSec
           : null;
     const cueTimingEndSec = trustedEndSec ?? estimatedEndSec;
+    const rawVocalStartSec = marker?.vocalStartSec == null ? null : Number(marker.vocalStartSec);
+    const vocalStartSec = rawVocalStartSec != null
+      && Number.isFinite(rawVocalStartSec)
+      && (startSec == null || rawVocalStartSec >= startSec)
+      && (cueTimingEndSec == null || rawVocalStartSec < cueTimingEndSec)
+      ? rawVocalStartSec
+      : null;
     const markerTiming =
       startSec != null && cueTimingEndSec != null
         ? {
           startSec,
           endSec: cueTimingEndSec,
+          vocalStartSec,
           cueMarkers: Array.isArray(marker?.cueMarkers) ? marker.cueMarkers : [],
         }
         : null;

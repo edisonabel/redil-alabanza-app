@@ -78,6 +78,23 @@ const evaluateRangeFetcher = ({ fetch }) => {
   return context.__RangeFetcherForTest;
 };
 
+test('startup requests a small head and public CDN requests omit auth cookies', async () => {
+  const calls = [];
+  const RangeFetcher = evaluateRangeFetcher({fetch: async (_url, options) => {
+    calls.push(options);
+    return {status: 206, headers: {get: () => 'bytes 0-65535/2000000'}, arrayBuffer: async () => new ArrayBuffer(4)};
+  }});
+  const publicFetcher = new RangeFetcher('https://preview.example/stem-media/song.m4a', {maxRetries: 0});
+  await publicFetcher.fetchChunk(0);
+  await publicFetcher.fetchChunk(65536);
+  assert.equal(calls[0].headers.Range, 'bytes=0-65535');
+  assert.equal(calls[1].headers.Range, 'bytes=65536-327679');
+  assert.equal(calls[0].credentials, 'omit');
+  const privateFetcher = new RangeFetcher('https://preview.example/api/mp3-proxy?src=fixture', {maxRetries: 0});
+  await privateFetcher.fetchChunk(0);
+  assert.equal(calls[2].credentials, 'same-origin', 'authenticated API proxies keep their cookies');
+});
+
 test('a stalled Range request aborts inside its finite deadline', async () => {
   let abortedRequests = 0;
   const stalledFetch = (_url, options) => new Promise((_resolve, reject) => {

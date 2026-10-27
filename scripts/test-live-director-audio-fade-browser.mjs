@@ -1,0 +1,55 @@
+import { createRequire } from 'node:module';
+import { mkdir, writeFile } from 'node:fs/promises';
+import assert from 'node:assert/strict';
+const require = createRequire(import.meta.url);
+const { build } = require('esbuild');
+const { chromium } = require('/Users/edisonaular/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const LAB = process.env.LD_LAB_URL || 'http://127.0.0.1:4322'; // laboratorio Providencia (configurable)
+const bundle = await build({ entryPoints: ['src/services/AudioGainRamp.ts'], bundle: true, write: false, format: 'iife', globalName: 'GainTools' });
+const browser = await chromium.launch({ headless: true, executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'] });
+try {
+  const page = await browser.newPage();
+  await page.route(`${LAB}/fade-test`, route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Audio fade verification</title>' }));
+  await page.goto(`${LAB}/fade-test`);
+  await page.addScriptTag({ content: bundle.outputFiles[0].text });
+  const result = await page.evaluate(async () => {
+    const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+    const context = new AudioContext({ sampleRate: 48000 });
+    const source = context.createConstantSource(), gain = context.createGain(), silent = context.createGain();
+    const worklet = `class Probe extends AudioWorkletProcessor { constructor(){super();this.samples=[];this.next=0;this.port.onmessage=()=>this.port.postMessage(this.samples);} process(inputs){const value=inputs[0]?.[0]?.[0];if(value!==undefined&&currentTime>=this.next){this.samples.push({time:currentTime,value});this.next=currentTime+.01;}return true;}}registerProcessor('fade-probe',Probe);`;
+    const url = URL.createObjectURL(new Blob([worklet], { type: 'text/javascript' }));
+    await context.audioWorklet.addModule(url); URL.revokeObjectURL(url);
+    const probe = new AudioWorkletNode(context, 'fade-probe');
+    silent.gain.value = 0; source.offset.value = 1;
+    source.connect(gain).connect(probe).connect(silent).connect(context.destination);
+    source.start(); await context.resume(); await sleep(100);
+    const start = context.currentTime;
+    const fade = GainTools.startAudioGainFade(context, gain.gain, 0, 800);
+    setTimeout(() => { const end = performance.now() + 750; while (performance.now() < end) {} }, 200);
+    await fade.finished; await sleep(80);
+    const samples = await new Promise(resolve => { probe.port.onmessage = event => resolve(event.data); probe.port.postMessage('read'); });
+    const deadline = samples.find(sample => sample.time - start >= .82);
+    gain.gain.setValueAtTime(1, context.currentTime);
+    await sleep(50);
+    const cancelled = GainTools.startAudioGainFade(context, gain.gain, 0, 800);
+    const cancellation = cancelled.finished.then(() => 'resolved', error => error.name);
+    await sleep(200); cancelled.cancel(); const cancellationResult = await cancellation;
+    const held = gain.gain.value; await sleep(150); const heldLater = gain.gain.value;
+    await GainTools.startAudioGainFade(context, gain.gain, 1, 100).finished;
+    const replacement = gain.gain.value;
+    const suspended = GainTools.startAudioGainFade(context, gain.gain, 0, 500);
+    const suspension = suspended.finished.then(() => 'resolved', error => error.message);
+    await sleep(50); await context.suspend(); const suspensionResult = await suspension;
+    await context.close();
+    return { valueAt820ms: deadline?.value, cancellationResult, held, heldLater, replacement, suspensionResult };
+  });
+  assert.ok(result.valueAt820ms < .001, 'Fade must finish in audio thread while UI is blocked');
+  assert.equal(result.cancellationResult, 'AbortError');
+  assert.ok(result.held > .5 && result.held < 1, 'Cancellation must hold the in-progress gain, not silence it');
+  assert.ok(Math.abs(result.held - result.heldLater) < .01);
+  assert.ok(Math.abs(result.replacement - 1) < .001);
+  assert.match(result.suspensionResult, /suspendió/);
+  await mkdir('.lab/results', { recursive: true });
+  await writeFile('.lab/results/audio-fade-check.json', JSON.stringify({ pass: true, ...result }, null, 2));
+  console.log(JSON.stringify({ pass: true, ...result }));
+} finally { await browser.close(); }

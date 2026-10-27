@@ -47,6 +47,13 @@ export const supportsDesktopExactSeekRoute = (
   )
 );
 
+/** Separate destination decoders need WebCodecs and shared rendering, not a
+ * Chrome-specific foreground seek policy. Desktop Safari supports this too. */
+export const supportsPreparedSectionJump = (capabilities: LiveDirectorBrowserCapabilities) => Boolean(
+  !capabilities.isIOS && !capabilities.isAndroid && capabilities.audioDecoder &&
+  capabilities.sharedArrayBuffer && capabilities.crossOriginIsolated
+);
+
 /**
  * iOS must never degrade a multitrack session to one HTMLMediaElement per stem.
  * Those elements use independent clocks and become expensive and unstable when

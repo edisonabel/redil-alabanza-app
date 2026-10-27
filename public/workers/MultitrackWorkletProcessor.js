@@ -13,6 +13,11 @@ const SYNC_DRIFT_ALERT_INTERVAL_FRAMES = 96000;
 const SYNC_FINE_DRIFT_MS = 15;
 const SYNC_HARD_DRIFT_MS = 40;
 const SYNC_HARD_REALIGN_INTERVAL_FRAMES = 4800;
+const GUIDE_DUCK_RAMP_SECONDS = 0.005;
+// AudioWorkletGlobalScope does not expose performance.now() in every browser.
+// Date.now() is coarse per quantum but its sum over one second stays unbiased.
+const RENDER_CLOCK_IS_PRECISE = typeof performance !== 'undefined' && !!performance && typeof performance.now === 'function';
+const readRenderClockMs = RENDER_CLOCK_IS_PRECISE ? () => performance.now() : () => Date.now();
 
 class MultitrackWorkletProcessor extends AudioWorkletProcessor {
   constructor() {
@@ -29,10 +34,14 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     this.meterPublishInterval = 8;
     this.meterPublishCountdown = 0;
     this.renderedFrames = 0;
+    this.renderContextFrameOffset = 0;
     this.debugPublishIntervalFrames = sampleRate || 48000;
     this.debugPublishCountdownFrames = this.debugPublishIntervalFrames;
     this.publishMeterMessages = true;
     this.publishDebugMessages = false;
+    this.renderBusyMs = 0;
+    this.renderBudgetMs = 0;
+    this.renderPeakRatio = 0;
     this.telemetry = null;
     this.telemetryBaseSeconds = 0;
     this.telemetryBaseRenderedFrames = 0;
@@ -45,6 +54,15 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     this.fadeInTotalFrames = SEEK_RESUME_FADE_FRAMES;
     this.loopJumpCrossfadeBlocked = false;
     this.activeSeekSerial = 0;
+    this.renderErrorReported = false;
+    this.pendingSectionEnd = null;
+    this.pendingSectionSwitch = null;
+    this.clickSamples = null;
+    this.musicMeterEnabled = false;
+    this.musicMeterLeft = new Float32Array(BASE_RENDER_FRAME_COUNT);
+    this.musicMeterRight = new Float32Array(BASE_RENDER_FRAME_COUNT);
+    this.musicMeterPeak = 0;
+    this.musicMeterFrames = 0;
 
     this.port.onmessage = (event) => {
       const data = event && event.data ? event.data : null;
@@ -58,7 +76,60 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
   }
 
   handleMessage(message) {
+    if (message.type === 'music-meter-enabled') {
+      this.musicMeterEnabled = !!message.enabled;
+      this.musicMeterPeak = 0; this.musicMeterFrames = 0; return;
+    }
     const type = message.type;
+
+    if (type === 'click-samples') {
+      const samples = message.samples;
+      if (Array.isArray(samples) && samples.length === 4 && samples.every(pcm =>
+        pcm instanceof Float32Array && pcm.length > 0 && pcm.length <= (sampleRate || 48000) * 2 &&
+        pcm.every(value => Number.isFinite(value) && Math.abs(value) <= 1))) this.clickSamples = samples;
+      return;
+    }
+    if (type === 'track-generated-click') {
+      const track = this.tracks[message.trackIndex];
+      if (!track) return;
+      const settings = message.settings;
+      if (!settings) { track.generatedClick = null; return; }
+      // Reject an invalid grid before replacing the recorded click.
+      if (!this.clickSamples || !Number.isFinite(settings.bpm) || settings.bpm < 30 || settings.bpm > 300 ||
+          !Number.isFinite(settings.originSeconds) || settings.originSeconds < 0 ||
+          !Number.isInteger(settings.numerator) || settings.numerator < 1 || settings.numerator > 16 ||
+          ![2, 4, 8, 16].includes(settings.denominator) || !Array.isArray(settings.levels) ||
+          settings.levels.length !== 5 || settings.levels.some(value => !Number.isFinite(value))) return;
+      const rate = sampleRate || 48000;
+      const quarterFrames = rate * 60 / settings.bpm;
+      const previous = track.generatedClick;
+      track.generatedClick = {
+        originFrame: Math.round(settings.originSeconds * rate),
+        periods: [quarterFrames * settings.numerator * 4 / settings.denominator,
+          quarterFrames * 2, quarterFrames, quarterFrames, quarterFrames / 2],
+        phases: [0, 0, 0, quarterFrames / 2, quarterFrames / 4],
+        accentConfirmed: settings.accentConfirmed === true,
+        levels: settings.levels.map(value => Math.max(0, Math.min(1, value))),
+        gains: previous ? previous.gains : settings.levels.map((value, index) => index === 0 && settings.accentConfirmed !== true ? 0 : Math.max(0, Math.min(1, value))),
+      };
+      return;
+    }
+
+    if (type === 'prepare-section-switch') {
+      this.prepareSectionSwitch(message);
+      return;
+    }
+    if (type === 'cancel-section-switch') {
+      this.cancelSectionSwitch(message.serial);
+      return;
+    }
+    // Any ordinary transport or graph mutation invalidates the prepared plan.
+    if (type === 'configure-track' || type === 'INIT_TRACKS' || type === 'remove-track' ||
+        type === 'reset-tracks' || type === 'FLUSH_BUFFERS' || type === 'PAUSE_AND_FLUSH' ||
+        type === 'PAUSE_AND_ADVANCE' || type === 'RESUME_READING' || type === 'PAUSE' ||
+        type === 'transport' || type === 'loop-region') {
+      this.cancelSectionSwitch();
+    }
 
     if (type === 'configure-track') {
       this.configureTrack({
@@ -129,6 +200,74 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
           indexBuffer: track.indexBuffer || track.stateBuffer,
         });
       }
+      return;
+    }
+
+    if (type === 'prepare-section-end') {
+      const rate = sampleRate || 48000;
+      if (message.controlBuffer instanceof SharedArrayBuffer && message.controlBuffer.byteLength >= 4 && Number.isFinite(message.endSeconds)) {
+        const control = new Int32Array(message.controlBuffer, 0, 1);
+        const boundaryFrame = Math.round(this.telemetryBaseRenderedFrames + (message.endSeconds - this.telemetryBaseSeconds) * rate);
+        if (!this.playing || this.readingBlocked || boundaryFrame < this.renderedFrames) {
+          Atomics.store(control, 0, -1);
+          this.port.postMessage({ type: 'section-end-skipped', serial: message.serial });
+        } else this.pendingSectionEnd = { serial: message.serial, boundaryFrame, endSeconds: message.endSeconds, control };
+      }
+      return;
+    }
+    if (type === 'cancel-section-end') {
+      if (this.pendingSectionEnd?.serial === message.serial) this.pendingSectionEnd = null;
+      return;
+    }
+    if (type === 'track-guide-override') {
+      const track = this.tracks[message.trackIndex];
+      if (track) track.guideOverride = message.enabled === true;
+      return;
+    }
+
+    if (type === 'track-guide-duck') {
+      const track = this.tracks[message.trackIndex];
+      const rate = sampleRate || 48000;
+      if (track && Number.isFinite(message.startAudioTime) && Number.isFinite(message.endAudioTime) &&
+          message.endAudioTime > message.startAudioTime) {
+        track.guideDuckStartFrame = Math.max(0, Math.round(message.startAudioTime * rate));
+        track.guideDuckEndFrame = Math.round(message.endAudioTime * rate);
+        const navigation = this.pendingSectionSwitch;
+        if (navigation && Number.isFinite(message.boundarySeconds) &&
+            Math.abs(message.boundarySeconds * rate - (navigation.boundaryFrame - this.telemetryBaseRenderedFrames + this.telemetryBaseSeconds * rate)) < 1) {
+          // Restore against the exact same render-frame boundary as the
+          // prepared switch, rather than a main-thread clock approximation.
+          track.guideDuckEndFrame = this.renderContextFrameOffset + navigation.boundaryFrame -
+            Math.max(1, Math.round(rate * GUIDE_DUCK_RAMP_SECONDS));
+        }
+        // Never restore the recorded voice while the replacement sample or
+        // its tail can still be audible, even if the source clock is corrected.
+        if (Number.isFinite(message.voiceEndAudioTime)) {
+          track.guideDuckEndFrame = Math.max(track.guideDuckEndFrame, Math.ceil(message.voiceEndAudioTime * rate));
+        }
+        track.guideDuckRecoveryEndFrame = 0;
+        if (Number.isInteger(message.requestId)) {
+          this.port.postMessage({ type: 'track-guide-duck-ready', requestId: message.requestId });
+        }
+      }
+      return;
+    }
+    if (type === 'track-guide-duck-clear') {
+      const track = this.tracks[message.trackIndex];
+      if (track) this.clearGuideDuck(track);
+      return;
+    }
+    if (type === 'PAUSE' || type === 'PAUSE_AND_FLUSH' || type === 'PAUSE_AND_ADVANCE' ||
+        type === 'FLUSH_BUFFERS' || type === 'transport') {
+      this.pendingSectionEnd = null;
+      for (let index = 0; index < this.trackCount; index += 1) {
+        if (this.tracks[index]) this.clearGuideDuck(this.tracks[index], true);
+      }
+    }
+
+    if (type === 'track-group-gain') {
+      const track = this.tracks[message.trackIndex];
+      if (track) track.groupGain = Math.max(0, Math.min(4, Number.isFinite(message.gain) ? message.gain : 1));
       return;
     }
 
@@ -351,8 +490,11 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
   }
 
   resetTracks() {
+    this.songSwitchFadeBoundaryFrame = null;
+    this.cancelSectionSwitch();
     this.tracks = [];
     this.trackCount = 0;
+    this.renderErrorReported = false;
     this.meterLevels = new Float32Array(0);
     this.meterMessage = {
       type: 'track-levels',
@@ -371,6 +513,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
   }
 
   removeTrack(trackIndex) {
+    this.cancelSectionSwitch();
     const numericTrackIndex = Number(trackIndex);
     if (!Number.isFinite(numericTrackIndex)) {
       return;
@@ -399,6 +542,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
   }
 
   flushAllBuffers(message, preserveBufferedAudio = false) {
+    this.cancelSectionSwitch();
     const targetSample =
       message && typeof message.targetSample === 'number' && Number.isFinite(message.targetSample)
         ? Math.max(0, Math.floor(message.targetSample))
@@ -433,6 +577,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       this.resetLoopJumpFade(track);
       track.underrunEvents = 0;
       track.underrunFrames = 0;
+      track.recoveringUnderrun = false;
       track.lastDropDebugFrame = 0;
       track.lastUnderflowAlertFrame = 0;
       track.lastHardSyncFrame = 0;
@@ -446,7 +591,8 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     }
   }
 
-  configureTrack(config) {
+  configureTrack(config, detached = false) {
+    if (!detached) this.cancelSectionSwitch();
     const trackIndex = typeof config.trackIndex === 'number' ? config.trackIndex : -1;
 
     if (trackIndex < 0) {
@@ -462,7 +608,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       return;
     }
 
-    let track = this.tracks[trackIndex];
+    let track = detached ? null : this.tracks[trackIndex];
     const usesSharedMemory = !!config.usesSharedMemory;
 
     if (!track) {
@@ -512,6 +658,14 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         lastMeterLevel: 0,
         underrunEvents: 0,
         underrunFrames: 0,
+        recoveringUnderrun: false,
+        groupGain: 1,
+        generatedClick: null,
+        guideDuckStartFrame: -1,
+        guideDuckEndFrame: -1,
+        guideDuckRecoveryStartFrame: 0,
+        guideDuckRecoveryEndFrame: 0,
+        guideDuckRecoveryFrom: 1,
         lastDropDebugFrame: 0,
         lastUnderflowAlertFrame: 0,
         lastSyncDriftAlertFrame: 0,
@@ -520,7 +674,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         driftHoldFrames: 0,
         consumedFramesSinceReport: 0,
       };
-      this.tracks[trackIndex] = track;
+      if (!detached) this.tracks[trackIndex] = track;
     } else {
       track.id = config.id || track.id;
       track.volume = this.clampVolume(
@@ -570,6 +724,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       track.lastMeterLevel = 0;
       track.underrunEvents = 0;
       track.underrunFrames = 0;
+      track.recoveringUnderrun = false;
       track.lastDropDebugFrame = 0;
       track.lastUnderflowAlertFrame = 0;
       track.lastSyncDriftAlertFrame = 0;
@@ -579,6 +734,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       track.consumedFramesSinceReport = 0;
     }
 
+    track.isCue = config.isCue === true;
     if (usesSharedMemory && config.sampleBuffer && config.indexBuffer) {
       track.samples = new Float32Array(config.sampleBuffer);
       track.indices = new Int32Array(config.indexBuffer);
@@ -587,6 +743,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       track.indices = null;
     }
 
+    if (detached) return track;
     if (trackIndex >= this.trackCount) {
       this.trackCount = trackIndex + 1;
     }
@@ -932,7 +1089,28 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     track.loopJumpFadeTotalFrames = totalFrames;
   }
 
+  // Diagnostics compare render time with the real-time budget of each quantum,
+  // so an overloaded mix shows up before it becomes an audible dropout.
   process(inputs, outputs) {
+    if (!this.publishDebugMessages) {
+      return this.renderQuantum(inputs, outputs);
+    }
+
+    const startedAt = readRenderClockMs();
+    const keepAlive = this.renderQuantum(inputs, outputs);
+    const busyMs = readRenderClockMs() - startedAt;
+    const output = outputs[0];
+    const frameCount = output && output[0] ? output[0].length : BASE_RENDER_FRAME_COUNT;
+    const budgetMs = (frameCount / (sampleRate || 48000)) * 1000;
+    this.renderBusyMs += busyMs;
+    this.renderBudgetMs += budgetMs;
+    if (RENDER_CLOCK_IS_PRECISE && busyMs / budgetMs > this.renderPeakRatio) {
+      this.renderPeakRatio = busyMs / budgetMs;
+    }
+    return keepAlive;
+  }
+
+  renderQuantum(inputs, outputs) {
     const output = outputs[0];
 
     if (!output || output.length === 0) {
@@ -954,23 +1132,57 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       return true;
     }
 
+    if (this.musicMeterEnabled) { this.musicMeterLeft.fill(0); this.musicMeterRight.fill(0); }
     this.renderedFrames += frameCount;
     const renderStartFrame = this.renderedFrames - frameCount;
+    this.renderContextFrameOffset = (typeof currentFrame === 'number' ? currentFrame : renderStartFrame) - renderStartFrame;
 
     try {
-      for (let trackIndex = 0; trackIndex < this.trackCount; trackIndex += 1) {
-        const track = this.tracks[trackIndex];
-
-        if (!track) {
-          continue;
+      const ending = this.pendingSectionEnd;
+      const stopOffset = ending ? ending.boundaryFrame - renderStartFrame : -1;
+      if (ending && stopOffset >= 0 && stopOffset <= frameCount && Atomics.compareExchange(ending.control, 0, 0, 1) === 0) {
+        if (stopOffset > 0) this.mixTracks(output, outputChannelCount, stopOffset, renderStartFrame, 0);
+        this.renderedFrames -= frameCount - stopOffset;
+        this.playing = false;
+        this.pendingSectionEnd = null;
+        this.clearAllSectionEndGuides();
+        this.publishMusicMeter(frameCount);
+        this.writeTelemetrySnapshot(ending.endSeconds);
+        this.port.postMessage({ type: 'section-end-complete', serial: ending.serial, endSeconds: ending.endSeconds });
+        return true;
+      }
+      if (ending && (stopOffset < 0 || Atomics.load(ending.control, 0) !== 0)) {
+        if (stopOffset < 0 && Atomics.compareExchange(ending.control, 0, 0, -1) === 0) {
+          this.port.postMessage({ type: 'section-end-skipped', serial: ending.serial });
         }
-
-        if (track.usesSharedMemory && track.samples && track.indices) {
-          this.mixSharedTrack(track, output, outputChannelCount, frameCount, renderStartFrame);
-          continue;
+        this.pendingSectionEnd = null;
+      }
+      const plan = this.pendingSectionSwitch;
+      const offset = plan ? plan.boundaryFrame - renderStartFrame : -1;
+      if (plan && offset >= 0 && offset <= frameCount) {
+        // Readiness is checked before touching any active track. A partial
+        // destination must never replace only some of the stems.
+        plan.contextTime = ((typeof currentFrame === 'number' ? currentFrame : renderStartFrame) + offset) / (sampleRate || 48000);
+        if (plan.timing) {
+          plan.timing[0] = plan.contextTime;
+          plan.timing[1] = plan.targetSeconds + (frameCount - offset) / (sampleRate || 48000);
         }
-
-        this.mixLocalTrack(track, output, outputChannelCount, frameCount, renderStartFrame);
+        if (this.sectionSwitchReady(plan) && Atomics.compareExchange(plan.control, 0, 0, 1) === 0) {
+          if (offset > 0) this.mixTracks(output, outputChannelCount, offset, renderStartFrame, 0);
+          this.commitSectionSwitch(plan, renderStartFrame + offset);
+          const remaining = frameCount - offset;
+          if (remaining > 0 && !plan.pauseAtTarget) this.mixTracks(output, outputChannelCount, remaining, renderStartFrame + offset, offset);
+          if (plan.pauseAtTarget) this.renderedFrames -= remaining;
+          plan.completeMessage.contextTime = plan.contextTime;
+          plan.completeMessage.positionSeconds = this.getTelemetryPositionSeconds();
+          this.port.postMessage(plan.completeMessage);
+        } else {
+          this.skipSectionSwitch(plan, 'destination-not-ready');
+          this.mixTracks(output, outputChannelCount, frameCount, renderStartFrame, 0);
+        }
+      } else {
+        if (plan && offset < 0) this.skipSectionSwitch(plan, 'late');
+        this.mixTracks(output, outputChannelCount, frameCount, renderStartFrame, 0);
       }
     } catch (_error) {
       for (let channelIndex = 0; channelIndex < outputChannelCount; channelIndex += 1) {
@@ -980,12 +1192,24 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
           channel[frameIndex] = 0;
         }
       }
+      this.cancelSectionSwitch();
       this.readingBlocked = true;
       this.fadeInFramesRemaining = 0;
       this.resetAllLoopJumpFades();
+      if (!this.renderErrorReported) {
+        this.renderErrorReported = true;
+        this.port.postMessage({
+          type: 'render-error',
+          code: 'mix-exception',
+          seekSerial: this.activeSeekSerial,
+          renderedFrames: this.renderedFrames,
+        });
+      }
       return true;
     }
 
+    this.applySongSwitchFade(output,outputChannelCount,frameCount,renderStartFrame);
+    this.publishMusicMeter(frameCount);
     this.applySeekResumeFade(output, outputChannelCount, frameCount);
     this.writeTelemetrySnapshot(this.getTelemetryPositionSeconds());
 
@@ -1003,6 +1227,176 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     }
 
     return true;
+  }
+
+  clearAllSectionEndGuides() {
+    for (let index = 0; index < this.trackCount; index++) {
+      if (this.tracks[index]) this.clearGuideDuck(this.tracks[index], true);
+    }
+  }
+
+  prepareSectionSwitch(message) {
+    this.cancelSectionSwitch();
+    const rate = sampleRate || 48000;
+    const serial = message.serial;
+    const control = message.controlBuffer instanceof SharedArrayBuffer && message.controlBuffer.byteLength >= 4
+      ? new Int32Array(message.controlBuffer, 0, 1) : null;
+    const reject = (reason) => {
+      if (control) Atomics.compareExchange(control, 0, 0, -1);
+      this.port.postMessage({ type: 'section-switch-skipped', serial, reason });
+    };
+    if (!control || Atomics.load(control, 0) !== 0 || !Number.isFinite(serial) ||
+        !Number.isFinite(message.boundarySeconds) || !Number.isFinite(message.targetSeconds) ||
+        message.targetSeconds < 0 || !this.playing || this.readingBlocked || this.loopEnabled ||
+        !Array.isArray(message.tracks)) {
+      reject('invalid-plan');
+      return;
+    }
+    const boundaryFrame = Math.round(this.telemetryBaseRenderedFrames +
+      (message.boundarySeconds - this.telemetryBaseSeconds) * rate);
+    if (boundaryFrame <= this.renderedFrames) {
+      reject('late');
+      return;
+    }
+    const targetFrame = Math.round(message.targetSeconds * rate);
+    const minimumFrames = Number.isFinite(message.minimumFrames) && message.minimumFrames > 0
+      ? Math.ceil(message.minimumFrames) : Math.ceil(rate * 0.5);
+    const tracks = [];
+    const seen = new Set();
+    for (let index = 0; index < message.tracks.length; index += 1) {
+      const config = message.tracks[index];
+      if (!config || !Number.isInteger(config.trackIndex) || config.trackIndex < 0 || (message.replaceSong && config.trackIndex !== index)) {
+        reject('invalid-tracks');
+        return;
+      }
+      const active = message.replaceSong ? this.configureTrack(config, true) : this.tracks[config.trackIndex];
+      const capacity = config.capacity;
+      if (!active || seen.has(config.trackIndex) || !Number.isInteger(capacity) || capacity < minimumFrames ||
+          config.sampleRate !== rate || config.channelCount !== 1 ||
+          !(config.sampleBuffer instanceof SharedArrayBuffer) || config.sampleBuffer.byteLength < capacity * 4 ||
+          !(config.indexBuffer instanceof SharedArrayBuffer) || config.indexBuffer.byteLength < 8) {
+        reject('invalid-tracks');
+        return;
+      }
+      seen.add(config.trackIndex);
+      tracks.push({ active, samples: new Float32Array(config.sampleBuffer, 0, capacity), indices: new Int32Array(config.indexBuffer, 0, 2),
+        capacity, indexCapacity: capacity * 2, targetIndex: this.frameToIndex(targetFrame, capacity * 2) });
+    }
+    let activeCount = 0;
+    for (let index = 0; index < this.trackCount; index += 1) {
+      if (this.tracks[index]) activeCount += 1;
+    }
+    if (activeCount === 0 || (!message.replaceSong && tracks.length !== activeCount) || tracks.length === 0) {
+      reject('incomplete-tracks');
+      return;
+    }
+    if (message.replaceSong) this.ensureMeterCapacity(tracks.length);
+    this.pendingSectionSwitch = {
+      serial, control, tracks, replaceSong: message.replaceSong === true, pauseAtTarget: message.pauseAtTarget === true,
+      nextTracks: message.replaceSong ? tracks.map(entry => entry.active) : null,
+      boundaryFrame, targetFrame, targetSeconds: targetFrame / rate, minimumFrames,
+      timing: message.controlBuffer.byteLength >= 24 ? new Float64Array(message.controlBuffer, 8, 2) : null,
+      contextTime: 0,
+      completeMessage: { type: 'section-switch-complete', serial, targetSeconds: targetFrame / rate, contextTime: 0, positionSeconds: 0 },
+      skippedMessage: { type: 'section-switch-skipped', serial, reason: '' },
+    };
+    this.port.postMessage({ type: 'section-switch-prepared', serial });
+  }
+
+  cancelSectionSwitch(serial) {
+    const plan = this.pendingSectionSwitch;
+    if (!plan || (Number.isFinite(serial) && serial !== plan.serial)) return;
+    Atomics.compareExchange(plan.control, 0, 0, -1);
+    this.pendingSectionSwitch = null;
+  }
+
+  skipSectionSwitch(plan, reason) {
+    Atomics.compareExchange(plan.control, 0, 0, -1);
+    this.pendingSectionSwitch = null;
+    plan.skippedMessage.reason = reason;
+    this.port.postMessage(plan.skippedMessage);
+  }
+
+  sectionSwitchReady(plan) {
+    if (Atomics.load(plan.control, 0) !== 0) return false;
+    for (let index = 0; index < plan.tracks.length; index += 1) {
+      const entry = plan.tracks[index];
+      const read = Atomics.load(entry.indices, READ_INDEX_SLOT);
+      const write = Atomics.load(entry.indices, WRITE_INDEX_SLOT);
+      if ((!plan.replaceSong && this.tracks[entry.active.trackIndex] !== entry.active) || read !== entry.targetIndex ||
+          write < 0 || write >= entry.indexCapacity ||
+          this.computeAvailableRead(read, write, entry.indexCapacity) < plan.minimumFrames ||
+          this.computeAvailableRead(read, write, entry.indexCapacity) > entry.capacity) return false;
+    }
+    return true;
+  }
+
+  commitSectionSwitch(plan, boundaryFrame) {
+    this.activeSeekSerial = plan.serial;
+    if (plan.replaceSong) { this.tracks = plan.nextTracks; this.trackCount = plan.tracks.length; this.soloCount = 0; this.songSwitchFadeBoundaryFrame = boundaryFrame; }
+    if (plan.pauseAtTarget) this.playing = false;
+    for (let index = 0; index < plan.tracks.length; index += 1) {
+      const entry = plan.tracks[index];
+      const track = entry.active;
+      track.samples = entry.samples;
+      track.indices = entry.indices;
+      track.capacity = entry.capacity;
+      track.indexCapacity = entry.indexCapacity;
+      track.usesSharedMemory = true;
+      track.sampleRate = sampleRate || 48000;
+      track.channelCount = 1;
+      track.localSamples = null;
+      track.localReadIndex = entry.targetIndex;
+      track.localWriteIndex = Atomics.load(entry.indices, WRITE_INDEX_SLOT);
+      track.absoluteReadFrame = plan.targetFrame;
+      track.indexBaseFrame = plan.targetFrame;
+      track.indexBaseIndex = entry.targetIndex;
+      track.recoveringUnderrun = false;
+      track.driftHoldFrames = 0;
+      track.consumedFramesSinceReport = 0;
+      this.resetLoopJumpFade(track);
+    }
+    this.pendingSectionSwitch = null;
+    this.telemetryBaseSeconds = plan.targetSeconds;
+    this.telemetryBaseRenderedFrames = boundaryFrame;
+    // Keep the existing gain: a ready section switch is not a seek restart.
+    this.fadeInFramesRemaining = 0;
+  }
+
+  applySongSwitchFade(output,channels,frames,startFrame) {
+    const boundary=this.pendingSectionSwitch?.replaceSong?this.pendingSectionSwitch.boundaryFrame:this.songSwitchFadeBoundaryFrame;
+    if(!Number.isFinite(boundary))return;
+    const ramp=Math.max(1,Math.round((sampleRate||48000)*.003));
+    if(startFrame>boundary+ramp){this.songSwitchFadeBoundaryFrame=null;return;}
+    for(let i=0;i<frames;i++){
+      const gain=Math.min(1,Math.abs(startFrame+i-boundary)/ramp);
+      if(gain<1)for(let channel=0;channel<channels;channel++)output[channel][i]*=gain;
+    }
+  }
+
+  publishMusicMeter(frameCount) {
+    if (!this.musicMeterEnabled) return;
+    for (let i = 0; i < Math.min(frameCount, BASE_RENDER_FRAME_COUNT); i++) {
+      this.musicMeterPeak = Math.max(this.musicMeterPeak, Math.abs(this.musicMeterLeft[i]), Math.abs(this.musicMeterRight[i]));
+    }
+    this.musicMeterFrames += frameCount;
+    if (this.musicMeterFrames >= (sampleRate || 48000) / 20) {
+      this.port.postMessage({ type: 'music-meter', peak: this.musicMeterPeak,
+        audioTime: ((typeof currentFrame === 'number' ? currentFrame : this.renderedFrames - frameCount) + frameCount) / (sampleRate || 48000) });
+      this.musicMeterPeak = 0; this.musicMeterFrames = 0;
+    }
+  }
+
+  mixTracks(output, outputChannelCount, frameCount, renderStartFrame, outputOffset) {
+    for (let trackIndex = 0; trackIndex < this.trackCount; trackIndex += 1) {
+      const track = this.tracks[trackIndex];
+      if (!track) continue;
+      if (track.usesSharedMemory && track.samples && track.indices) {
+        this.mixSharedTrack(track, output, outputChannelCount, frameCount, renderStartFrame, outputOffset);
+      } else {
+        this.mixLocalTrack(track, output, outputChannelCount, frameCount, renderStartFrame, outputOffset);
+      }
+    }
   }
 
   writeTelemetrySnapshot(positionSeconds) {
@@ -1080,6 +1474,30 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
 
     track.driftHoldFrames = 0;
 
+    // A known underrun is missing content, not clock jitter. Discard stale
+    // PCM when it arrives, even when the deficit is below the drift threshold.
+    // This preserves the song timeline; it cannot restore already missed audio.
+    if (track.recoveringUnderrun) {
+      const missingFrames = Math.max(0, -driftFrames);
+      const skippedFrames = Math.min(missingFrames, availableRead);
+      const nextReadIndex = this.advanceIndex(readIndex, skippedFrames, track.indexCapacity);
+      track.absoluteReadFrame += skippedFrames;
+      track.indexBaseFrame = track.absoluteReadFrame;
+      track.indexBaseIndex = nextReadIndex;
+      track.recoveringUnderrun = skippedFrames < missingFrames;
+      if (skippedFrames > 0) {
+        track.effectiveGain = 0;
+        this.resetLoopJumpFade(track);
+        if (track.usesSharedMemory && track.indices) {
+          Atomics.store(track.indices, READ_INDEX_SLOT, nextReadIndex);
+        } else {
+          track.localReadIndex = nextReadIndex;
+          this.noteFallbackConsumed(track, skippedFrames);
+        }
+        return nextReadIndex;
+      }
+    }
+
     if (absoluteDriftFrames < fineDriftFrames) {
       return readIndex;
     }
@@ -1147,7 +1565,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     return this.advanceIndex(readIndex, 1, track.indexCapacity);
   }
 
-  mixSharedTrack(track, output, outputChannelCount, frameCount, renderStartFrame) {
+  mixSharedTrack(track, output, outputChannelCount, frameCount, renderStartFrame, outputOffset = 0) {
     const indices = track.indices;
     const samples = track.samples;
     const readIndex = Atomics.load(indices, READ_INDEX_SLOT);
@@ -1187,14 +1605,17 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
 
       for (let frameIndex = 0; frameIndex < framesToRead; frameIndex += 1) {
         let rawSample = samples[this.toSampleIndex(nextReadIndex, track.capacity)];
-        rawSample = this.applyLoopSmoothing(track, samples, rawSample);
+        rawSample = track.generatedClick
+          ? this.getGeneratedClickSample(track, renderStartFrame + frameIndex)
+          : this.applyLoopSmoothing(track, samples, rawSample);
         track.effectiveGain += (targetGain - track.effectiveGain) * SOLO_GAIN_SMOOTHING;
-        const sample = rawSample * track.effectiveGain;
+        const sample = rawSample * track.effectiveGain * this.getTrackGuideGain(track, outputOffset + frameIndex);
         const absoluteSample = sample >= 0 ? sample : -sample;
         if (absoluteSample > peakSample) {
           peakSample = absoluteSample;
         }
-        left[frameIndex] += sample;
+        left[outputOffset + frameIndex] += sample;
+        if (this.musicMeterEnabled && !track.isCue) this.musicMeterLeft[outputOffset + frameIndex] += sample;
         nextReadIndex = this.advanceTrackReadFrame(track, nextReadIndex);
         if (track.loopEnabled && track.absoluteReadFrame >= track.loopEndFrame) {
           this.armLoopJumpCrossfade(track);
@@ -1209,20 +1630,26 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
 
       for (let frameIndex = 0; frameIndex < framesToRead; frameIndex += 1) {
         let rawSample = samples[this.toSampleIndex(nextReadIndex, track.capacity)];
-        rawSample = this.applyLoopSmoothing(track, samples, rawSample);
+        rawSample = track.generatedClick
+          ? this.getGeneratedClickSample(track, renderStartFrame + frameIndex)
+          : this.applyLoopSmoothing(track, samples, rawSample);
         track.effectiveGain += (targetGain - track.effectiveGain) * SOLO_GAIN_SMOOTHING;
-        const sample = rawSample * track.effectiveGain;
+        const sample = rawSample * track.effectiveGain * this.getTrackGuideGain(track, outputOffset + frameIndex);
         const absoluteSample = sample >= 0 ? sample : -sample;
         if (absoluteSample > peakSample) {
           peakSample = absoluteSample;
         }
         if (outputRoute === 'right') {
-          right[frameIndex] += sample;
+          right[outputOffset + frameIndex] += sample;
+          if (this.musicMeterEnabled && !track.isCue) this.musicMeterRight[outputOffset + frameIndex] += sample;
         } else if (outputRoute === 'left') {
-          left[frameIndex] += sample;
+          left[outputOffset + frameIndex] += sample;
+          if (this.musicMeterEnabled && !track.isCue) this.musicMeterLeft[outputOffset + frameIndex] += sample;
         } else {
-          left[frameIndex] += sample;
-          right[frameIndex] += sample;
+          left[outputOffset + frameIndex] += sample;
+          if (this.musicMeterEnabled && !track.isCue) this.musicMeterLeft[outputOffset + frameIndex] += sample;
+          right[outputOffset + frameIndex] += sample;
+          if (this.musicMeterEnabled && !track.isCue) this.musicMeterRight[outputOffset + frameIndex] += sample;
         }
         nextReadIndex = this.advanceTrackReadFrame(track, nextReadIndex);
         if (track.loopEnabled && track.absoluteReadFrame >= track.loopEndFrame) {
@@ -1234,16 +1661,19 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     } else {
       for (let frameIndex = 0; frameIndex < framesToRead; frameIndex += 1) {
         let rawSample = samples[this.toSampleIndex(nextReadIndex, track.capacity)];
-        rawSample = this.applyLoopSmoothing(track, samples, rawSample);
+        rawSample = track.generatedClick
+          ? this.getGeneratedClickSample(track, renderStartFrame + frameIndex)
+          : this.applyLoopSmoothing(track, samples, rawSample);
         track.effectiveGain += (targetGain - track.effectiveGain) * SOLO_GAIN_SMOOTHING;
-        const sample = rawSample * track.effectiveGain;
+        const sample = rawSample * track.effectiveGain * this.getTrackGuideGain(track, outputOffset + frameIndex);
         const absoluteSample = sample >= 0 ? sample : -sample;
         if (absoluteSample > peakSample) {
           peakSample = absoluteSample;
         }
 
         for (let channelIndex = 0; channelIndex < outputChannelCount; channelIndex += 1) {
-          output[channelIndex][frameIndex] += sample;
+          output[channelIndex][outputOffset + frameIndex] += sample;
+          if (this.musicMeterEnabled && !track.isCue && channelIndex < 2) (channelIndex ? this.musicMeterRight : this.musicMeterLeft)[outputOffset + frameIndex] += sample;
         }
 
         nextReadIndex = this.advanceTrackReadFrame(track, nextReadIndex);
@@ -1260,7 +1690,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     this.meterLevels[track.trackIndex] = track.lastMeterLevel;
   }
 
-  mixLocalTrack(track, output, outputChannelCount, frameCount, renderStartFrame) {
+  mixLocalTrack(track, output, outputChannelCount, frameCount, renderStartFrame, outputOffset = 0) {
     let availableRead = this.computeAvailableRead(
       track.localReadIndex,
       track.localWriteIndex,
@@ -1297,14 +1727,17 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
 
       for (let frameIndex = 0; frameIndex < framesToRead; frameIndex += 1) {
         let rawSample = samples[this.toSampleIndex(nextReadIndex, track.capacity)];
-        rawSample = this.applyLoopSmoothing(track, samples, rawSample);
+        rawSample = track.generatedClick
+          ? this.getGeneratedClickSample(track, renderStartFrame + frameIndex)
+          : this.applyLoopSmoothing(track, samples, rawSample);
         track.effectiveGain += (targetGain - track.effectiveGain) * SOLO_GAIN_SMOOTHING;
-        const sample = rawSample * track.effectiveGain;
+        const sample = rawSample * track.effectiveGain * this.getTrackGuideGain(track, outputOffset + frameIndex);
         const absoluteSample = sample >= 0 ? sample : -sample;
         if (absoluteSample > peakSample) {
           peakSample = absoluteSample;
         }
-        left[frameIndex] += sample;
+        left[outputOffset + frameIndex] += sample;
+        if (this.musicMeterEnabled && !track.isCue) this.musicMeterLeft[outputOffset + frameIndex] += sample;
         nextReadIndex = this.advanceTrackReadFrame(track, nextReadIndex);
         if (track.loopEnabled && track.absoluteReadFrame >= track.loopEndFrame) {
           this.armLoopJumpCrossfade(track);
@@ -1319,20 +1752,26 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
 
       for (let frameIndex = 0; frameIndex < framesToRead; frameIndex += 1) {
         let rawSample = samples[this.toSampleIndex(nextReadIndex, track.capacity)];
-        rawSample = this.applyLoopSmoothing(track, samples, rawSample);
+        rawSample = track.generatedClick
+          ? this.getGeneratedClickSample(track, renderStartFrame + frameIndex)
+          : this.applyLoopSmoothing(track, samples, rawSample);
         track.effectiveGain += (targetGain - track.effectiveGain) * SOLO_GAIN_SMOOTHING;
-        const sample = rawSample * track.effectiveGain;
+        const sample = rawSample * track.effectiveGain * this.getTrackGuideGain(track, outputOffset + frameIndex);
         const absoluteSample = sample >= 0 ? sample : -sample;
         if (absoluteSample > peakSample) {
           peakSample = absoluteSample;
         }
         if (outputRoute === 'right') {
-          right[frameIndex] += sample;
+          right[outputOffset + frameIndex] += sample;
+          if (this.musicMeterEnabled && !track.isCue) this.musicMeterRight[outputOffset + frameIndex] += sample;
         } else if (outputRoute === 'left') {
-          left[frameIndex] += sample;
+          left[outputOffset + frameIndex] += sample;
+          if (this.musicMeterEnabled && !track.isCue) this.musicMeterLeft[outputOffset + frameIndex] += sample;
         } else {
-          left[frameIndex] += sample;
-          right[frameIndex] += sample;
+          left[outputOffset + frameIndex] += sample;
+          if (this.musicMeterEnabled && !track.isCue) this.musicMeterLeft[outputOffset + frameIndex] += sample;
+          right[outputOffset + frameIndex] += sample;
+          if (this.musicMeterEnabled && !track.isCue) this.musicMeterRight[outputOffset + frameIndex] += sample;
         }
         nextReadIndex = this.advanceTrackReadFrame(track, nextReadIndex);
         if (track.loopEnabled && track.absoluteReadFrame >= track.loopEndFrame) {
@@ -1344,16 +1783,19 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     } else {
       for (let frameIndex = 0; frameIndex < framesToRead; frameIndex += 1) {
         let rawSample = samples[this.toSampleIndex(nextReadIndex, track.capacity)];
-        rawSample = this.applyLoopSmoothing(track, samples, rawSample);
+        rawSample = track.generatedClick
+          ? this.getGeneratedClickSample(track, renderStartFrame + frameIndex)
+          : this.applyLoopSmoothing(track, samples, rawSample);
         track.effectiveGain += (targetGain - track.effectiveGain) * SOLO_GAIN_SMOOTHING;
-        const sample = rawSample * track.effectiveGain;
+        const sample = rawSample * track.effectiveGain * this.getTrackGuideGain(track, outputOffset + frameIndex);
         const absoluteSample = sample >= 0 ? sample : -sample;
         if (absoluteSample > peakSample) {
           peakSample = absoluteSample;
         }
 
         for (let channelIndex = 0; channelIndex < outputChannelCount; channelIndex += 1) {
-          output[channelIndex][frameIndex] += sample;
+          output[channelIndex][outputOffset + frameIndex] += sample;
+          if (this.musicMeterEnabled && !track.isCue && channelIndex < 2) (channelIndex ? this.musicMeterRight : this.musicMeterLeft)[outputOffset + frameIndex] += sample;
         }
 
         nextReadIndex = this.advanceTrackReadFrame(track, nextReadIndex);
@@ -1385,6 +1827,9 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
   }
 
   noteUnderrun(track, missingFrames, availableRead) {
+    if (missingFrames > 0 && this.playing && !this.readingBlocked && !track.loopEnabled) {
+      track.recoveringUnderrun = true;
+    }
     if (
       missingFrames <= 0 ||
       !this.playing ||
@@ -1603,8 +2048,17 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       audibleZeroTracks,
       minAvailableRead:
         minAvailableRead === Number.POSITIVE_INFINITY ? 0 : minAvailableRead,
+      renderLoadPct: this.renderBudgetMs > 0
+        ? Math.round((this.renderBusyMs / this.renderBudgetMs) * 1000) / 10
+        : null,
+      renderPeakPct: RENDER_CLOCK_IS_PRECISE
+        ? Math.round(this.renderPeakRatio * 1000) / 10
+        : null,
       tracks,
     });
+    this.renderBusyMs = 0;
+    this.renderBudgetMs = 0;
+    this.renderPeakRatio = 0;
   }
 
   applySeekResumeFade(output, outputChannelCount, frameCount) {
@@ -1755,16 +2209,74 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     return this.normalizeIndex(frame, indexCapacity);
   }
 
+  getGeneratedClickSample(track, renderFrame) {
+    const click = track.generatedClick;
+    const pcm = this.clickSamples;
+    if (!click || !pcm) return 0;
+    const sourceFrame = Math.round(this.telemetryBaseSeconds * (sampleRate || 48000)) +
+      renderFrame - this.telemetryBaseRenderedFrames;
+    const relative = sourceFrame - click.originFrame;
+    let output = 0;
+    for (let layer = 0; layer < 5; layer += 1) {
+      const target = layer === 0 && !click.accentConfirmed ? 0 : click.levels[layer];
+      click.gains[layer] += (target - click.gains[layer]) * SOLO_GAIN_SMOOTHING;
+      if (click.gains[layer] <= GAIN_FLOOR) continue;
+      const period = click.periods[layer];
+      // Eighths and sixteenths add the intervening pulses, with tails
+      // continuing over quarter-note boundaries until the next own event.
+      const phase = click.phases[layer];
+      const pulse = Math.floor((relative - phase + .5) / period);
+      const cursor = relative - Math.round(phase + pulse * period);
+      const sample = pcm[layer === 0 ? 0 : layer <= 2 ? 1 : layer - 1];
+      if (cursor >= 0 && cursor < sample.length) output += sample[cursor] * click.gains[layer];
+    }
+    return output;
+  }
+
+  guideDuckGainAtFrame(track, frame) {
+    const ramp = Math.max(1, Math.round((sampleRate || 48000) * GUIDE_DUCK_RAMP_SECONDS));
+    const start = track.guideDuckStartFrame;
+    const end = track.guideDuckEndFrame;
+    if (start >= 0 && frame >= start && frame < end + ramp) {
+      if (frame < start + ramp) return Math.max(0, 1 - (frame - start) / ramp);
+      if (frame < end) return 0;
+      return Math.min(1, (frame - end) / ramp);
+    }
+    if (track.guideDuckRecoveryEndFrame > frame && frame >= track.guideDuckRecoveryStartFrame) {
+      const progress = (frame - track.guideDuckRecoveryStartFrame) /
+        (track.guideDuckRecoveryEndFrame - track.guideDuckRecoveryStartFrame);
+      return track.guideDuckRecoveryFrom + (1 - track.guideDuckRecoveryFrom) * progress;
+    }
+    return 1;
+  }
+
+  getTrackGuideGain(track, frameOffset) {
+    if (!(track.guideDuckStartFrame >= 0) && !(track.guideDuckRecoveryEndFrame > 0)) return 1;
+    const frame = (typeof currentFrame === 'number' ? currentFrame : this.renderedFrames - BASE_RENDER_FRAME_COUNT) + frameOffset;
+    return this.guideDuckGainAtFrame(track, frame);
+  }
+
+  clearGuideDuck(track, immediate = false) {
+    const frame = typeof currentFrame === 'number' ? currentFrame : this.renderedFrames;
+    const gain = immediate ? 1 : this.guideDuckGainAtFrame(track, frame);
+    track.guideDuckStartFrame = -1;
+    track.guideDuckEndFrame = -1;
+    track.guideDuckRecoveryFrom = gain;
+    track.guideDuckRecoveryStartFrame = frame;
+    track.guideDuckRecoveryEndFrame = gain < 1
+      ? frame + Math.max(1, Math.round((sampleRate || 48000) * GUIDE_DUCK_RAMP_SECONDS)) : 0;
+  }
+
   getTrackTargetGain(track) {
     if (
-      track.isMuted ||
+      track.isMuted || track.guideOverride ||
       track.volume <= GAIN_FLOOR ||
       (this.soloCount > 0 && !track.isSolo)
     ) {
       return 0;
     }
 
-    return track.volume;
+    return track.volume * (track.groupGain ?? 1);
   }
 
   getTrackReadIndex(track) {

@@ -7,6 +7,7 @@ export type ChordProPdfMetadata = {
   capo: string;
   tempo: string;
   time: string;
+  personalNote?: string;
 };
 
 export type ChordProPdfSheetOptions = {
@@ -16,6 +17,7 @@ export type ChordProPdfSheetOptions = {
   styleMode: ChordProPdfStyleMode;
   showSongMap: boolean;
   showSectionDividers: boolean;
+  pageMode?: 'one' | 'two';
 };
 
 export type ChordProPdfPayload = {
@@ -34,6 +36,7 @@ const DEFAULT_PDF_SHEET_OPTIONS: ChordProPdfSheetOptions = {
   styleMode: 'completo',
   showSongMap: true,
   showSectionDividers: true,
+  pageMode: 'one',
 };
 
 const coerceString = (value: unknown) => String(value ?? '').trim();
@@ -100,7 +103,7 @@ export const normalizeChordProPdfPayload = (
 
   const density = coerceDensity(rawOptions.density);
   const columnCount = coerceColumnCount(rawOptions.columnCount);
-  const normalizedDensity = columnCount === 1 ? 'condensed' : density;
+  const normalizedDensity = density;
   const normalizedStyleMode = coerceStyleMode(rawOptions.styleMode, normalizedDensity);
 
   return {
@@ -112,6 +115,7 @@ export const normalizeChordProPdfPayload = (
       capo: coerceString((source.metadata as Record<string, unknown> | undefined)?.capo),
       tempo: coerceString((source.metadata as Record<string, unknown> | undefined)?.tempo),
       time: coerceString((source.metadata as Record<string, unknown> | undefined)?.time),
+      personalNote: coerceString((source.metadata as Record<string, unknown> | undefined)?.personalNote).slice(0, 1000),
     },
     sheetOptions: {
       ...DEFAULT_PDF_SHEET_OPTIONS,
@@ -121,6 +125,8 @@ export const normalizeChordProPdfPayload = (
       styleMode: normalizedStyleMode,
       showSongMap: coerceBoolean(rawOptions.showSongMap, DEFAULT_PDF_SHEET_OPTIONS.showSongMap),
       showSectionDividers: true,
+      // Accept the previous `auto` value for payloads saved by an older tab.
+      pageMode: rawOptions.pageMode === 'two' ? 'two' : 'one',
     },
     fileName: `${buildChordProPdfFileName(
       typeof source.title === 'string' ? source.title : undefined,

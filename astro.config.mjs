@@ -1,6 +1,7 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import { fileURLToPath } from 'node:url';
+import { realpathSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -12,6 +13,12 @@ import react from '@astrojs/react';
 
 const isDevCommand = process.argv.includes('dev');
 const devViteCacheDir = join(tmpdir(), 'redil-alabanza-app-vite');
+const appRoot = fileURLToPath(new URL('.', import.meta.url));
+const appNodeModules = realpathSync(join(appRoot, 'node_modules'));
+const audioManifest = join(appRoot, 'public/audio-runtime/manifest.json');
+const producerRuntimeUrl = !isDevCommand && existsSync(audioManifest)
+  ? JSON.parse(readFileSync(audioManifest, 'utf8')).producerUrl
+  : '/workers/AudioProducerWorker.js';
 
 const reactAliases = [
   {
@@ -131,6 +138,7 @@ export default defineConfig({
   integrations: [react()],
 
   vite: {
+    define: { __LIVE_AUDIO_PRODUCER_URL__: JSON.stringify(producerRuntimeUrl) },
     // Keep Vite's volatile optimizer cache outside iCloud-synced Documents.
     // File-provider renames there can leave stale `entrypoint.js` URLs (504).
     cacheDir: isDevCommand ? devViteCacheDir : undefined,
@@ -141,6 +149,12 @@ export default defineConfig({
     ],
     server: {
       allowedHosts: ['.trycloudflare.com'],
+      // The beta workspace links node_modules from the shared build cache.
+      // Allow that resolved dependency directory so Astro client-only islands
+      // (such as the ChordPro print workspace) can load their renderer in dev.
+      fs: {
+        allow: [appRoot, appNodeModules],
+      },
     },
     build: {
       target: 'es2018',

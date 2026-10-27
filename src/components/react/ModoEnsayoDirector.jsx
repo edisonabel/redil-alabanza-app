@@ -1,3 +1,6 @@
+import { createLiveDirectorSaveQueue } from '../../utils/liveDirectorSaveQueue';
+import { getLiveDirectorSongArtworkUrl } from '../../utils/songArtwork.js';
+import { applyBetaSongCalibration, applyBetaSessionCalibration, betaClickGrid } from '../../utils/liveDirectorBetaCalibration';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { screenWakeLockService } from '../../services/ScreenWakeLockService';
@@ -6,15 +9,22 @@ import { useLiveDirectorSyncTransmitter } from '../../hooks/useLiveDirectorSyncT
 import {
   buildLiveDirectorSectionsFromMarkers,
   normalizePersistedLiveDirectorSession,
+  resolveLiveDirectorSessionSections,
+  shouldRefreshLiveDirectorSession,
 } from '../../utils/liveDirectorSongSession';
-import { fetchLiveDirectorSongSession } from '../../utils/liveDirectorUploadClient';
+import {
+  readEventArrangementForRehearsal,
+  readEventMixForRehearsal,
+  readSongSessionForRehearsal,
+} from '../../utils/rehearsalDeviceData';
 import {
   applyLiveDirectorEventMix,
-  fetchLiveDirectorEventMix,
+  buildLiveDirectorEventMix,
+  clearPendingLiveDirectorEventMixIfMatching,
+  fetchLiveDirectorEventMixPermission,
   liveDirectorEventMixSignature,
   normalizeLiveDirectorEventMix,
   readPendingLiveDirectorEventMix,
-  retryPendingLiveDirectorEventMix,
   saveLiveDirectorEventMix,
   stagePendingLiveDirectorEventMix,
 } from '../../utils/liveDirectorEventMix';
@@ -223,10 +233,10 @@ const resolveSongSession = (song, sessionOverride = null) => {
   const songId = resolveSongId(song);
   const songTitle = String(song?.title || song?.titulo || '').trim();
 
-  return normalizePersistedLiveDirectorSession(sessionOverride || song?.multitrackSession || null, {
+  return applyBetaSessionCalibration(songId, normalizePersistedLiveDirectorSession(sessionOverride || song?.multitrackSession || null, {
     songId,
     songTitle,
-  }) || buildLegacySequenceSession(song);
+  }) || buildLegacySequenceSession(song));
 };
 
 const buildSongCacheUrls = (song, sessionOverride = null) => {
@@ -305,40 +315,6 @@ const findNextPreloadableSong = (songs, startIndex, sessionOverrides) => {
   return { song: null, songId: '' };
 };
 
-const buildSessionTrackSignature = (session) => (
-  Array.isArray(session?.tracks)
-    ? session.tracks
-      .map((track) => [
-        String(track?.id || '').trim(),
-        String(track?.url || '').trim(),
-        track?.enabled !== false ? '1' : '0',
-        Number.isFinite(Number(track?.volume)) ? Number(track.volume).toFixed(4) : '1',
-        track?.isMuted ? '1' : '0',
-        String(track?.outputRoute || '').trim(),
-      ].join(':'))
-      .join('|')
-    : ''
-);
-
-const shouldUseFetchedSession = (currentSession, fetchedSession) => {
-  if (!fetchedSession?.tracks?.length) {
-    return false;
-  }
-
-  if (!currentSession?.tracks?.length) {
-    return true;
-  }
-
-  const currentUpdatedAt = String(currentSession?.updatedAt || '').trim();
-  const fetchedUpdatedAt = String(fetchedSession?.updatedAt || '').trim();
-
-  if (currentUpdatedAt && fetchedUpdatedAt && currentUpdatedAt === fetchedUpdatedAt) {
-    return false;
-  }
-
-  return buildSessionTrackSignature(currentSession) !== buildSessionTrackSignature(fetchedSession);
-};
-
 const cacheUrlIfNeeded = async (cache, url, signal) => {
   const cached = await cache.match(url);
   if (cached) {
@@ -367,6 +343,7 @@ const buildQueueSongs = (songs) =>
         ].filter(Boolean).join(' · ')
         : [String(song?.artist || '').trim(), String(song?.originalKey || song?.key || '').trim()].filter(Boolean).join(' · '),
       mp3: String(song?.mp3 || '').trim(),
+      artworkUrl: getLiveDirectorSongArtworkUrl(song),
       kind: String(song?.kind || '').trim() || undefined,
       manualTempo: isManualTempoSong(song) ? song.manualTempo : undefined,
     }));
@@ -385,7 +362,7 @@ export default function ModoEnsayoDirector({
         const hasSession = Boolean(song?.multitrackSession?.tracks?.length);
         const hasLegacySequence = Boolean(buildLegacySequenceSession(song)?.tracks?.length);
         return hasMp3 || hasSession || hasLegacySequence;
-      }),
+      }).map(applyBetaSongCalibration),
     [playlist],
   );
   const manualSongStorageScope = useMemo(
@@ -406,9 +383,18 @@ export default function ModoEnsayoDirector({
     [realEnsayoSongs, visibleManualSongs],
   );
   const [activeSongIndex, setActiveSongIndex] = useState(0);
+  const [autoPlayRequest, setAutoPlayRequest] = useState(null);
   const [downloadStatus, setDownloadStatus] = useState({ active: false, progress: 0, total: 0, done: false });
   const [padVolume, setPadVolume] = useState(0.42);
   const [sessionOverrides, setSessionOverrides] = useState({});
+  const [mixPermission, setMixPermission] = useState({ eventId: '', allowed: false });
+  const canSaveEventMix = mixPermission.eventId === eventId && mixPermission.allowed;
+  useEffect(() => {
+    let cancelled = false;
+    setMixPermission({ eventId: '', allowed: false });
+    if (eventId) void fetchLiveDirectorEventMixPermission(eventId).then(allowed => { if (!cancelled) setMixPermission({ eventId, allowed }); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [eventId]);
   const [eventMixOverrides, setEventMixOverrides] = useState({});
   const [eventMixLoadedSongIds, setEventMixLoadedSongIds] = useState(() => new Set());
   const [eventMixSaveStates, setEventMixSaveStates] = useState({});
@@ -423,11 +409,12 @@ export default function ModoEnsayoDirector({
   const autoCacheStartedRef = useRef(false);
   const prewarmedSongIdsRef = useRef(new Set());
   const prewarmInFlightUrlsRef = useRef(new Set());
-  const eventMixSaveQueueRef = useRef(Promise.resolve());
+  const eventMixSaveQueueRef = useRef(null);
   const eventMixSaveVersionsRef = useRef({});
   const eventMixStatusTimersRef = useRef(new Map());
   const eventMixRetryTimerRef = useRef(null);
   const queueSelectionTokenRef = useRef(0);
+  useEffect(() => { queueSelectionTokenRef.current += 1; setAutoPlayRequest(null); }, [eventId]);
   const takeoverCancelButtonRef = useRef(null);
   const {
     broadcastState,
@@ -498,8 +485,8 @@ export default function ModoEnsayoDirector({
   const activeSongSections = useMemo(
     () => activeSongIsManual
       ? []
-      : buildLiveDirectorSectionsFromMarkers(activeSong?.sectionMarkers || []) || undefined,
-    [activeSong?.sectionMarkers, activeSongIsManual],
+      : resolveLiveDirectorSessionSections(activeSongSession, buildLiveDirectorSectionsFromMarkers(activeSong?.sectionMarkers || [])) || undefined,
+    [activeSong?.sectionMarkers, activeSongSession, activeSongIsManual],
   );
   const queueSongs = useMemo(
     () => buildQueueSongs(ensayoSongs),
@@ -575,14 +562,14 @@ export default function ModoEnsayoDirector({
 
     const refreshPersistedSession = async () => {
       try {
-        const fetchedSession = await fetchLiveDirectorSongSession(activePersistedSongId);
+        const fetchedSession = (await readSongSessionForRehearsal(activePersistedSongId)).value;
         if (cancelled || !fetchedSession?.tracks?.length) {
           return;
         }
 
         setSessionOverrides((previous) => {
           const currentSession = previous[activePersistedSongId] || activeSong?.multitrackSession || null;
-          if (!shouldUseFetchedSession(currentSession, fetchedSession)) {
+          if (!shouldRefreshLiveDirectorSession(currentSession, fetchedSession)) {
             return previous;
           }
 
@@ -598,10 +585,16 @@ export default function ModoEnsayoDirector({
       }
     };
 
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void refreshPersistedSession();
+    };
     void refreshPersistedSession();
-
+    window.addEventListener('focus', refreshWhenVisible);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
     return () => {
       cancelled = true;
+      window.removeEventListener('focus', refreshWhenVisible);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
     };
   }, [activePersistedSongId, activeSong?.multitrackSession]);
 
@@ -613,10 +606,10 @@ export default function ModoEnsayoDirector({
       || eventMixLoadedSongIds.has(activePersistedSongId)
     ) return;
 
-    const pending = readPendingLiveDirectorEventMix({
+    const pending = canSaveEventMix ? readPendingLiveDirectorEventMix({
       eventId,
       songId: activePersistedSongId,
-    });
+    }) : null;
     if (pending?.mix) {
       setEventMixOverrides((previous) => ({
         ...previous,
@@ -633,8 +626,8 @@ export default function ModoEnsayoDirector({
     }
 
     let cancelled = false;
-    void fetchLiveDirectorEventMix({ eventId, songId: activePersistedSongId })
-      .then((fetchedMix) => {
+    void readEventMixForRehearsal(eventId, activePersistedSongId)
+      .then(({ value: fetchedMix }) => {
         if (cancelled || !fetchedMix) return;
         setEventMixOverrides((previous) => {
           const currentMix = previous[activePersistedSongId] || null;
@@ -663,7 +656,7 @@ export default function ModoEnsayoDirector({
     return () => {
       cancelled = true;
     };
-  }, [activePersistedSongId, activeSongHasSequence, eventId, eventMixLoadedSongIds, hasEventMixContext]);
+  }, [activePersistedSongId, activeSongHasSequence, eventId, eventMixLoadedSongIds, hasEventMixContext, canSaveEventMix]);
 
   useEffect(() => {
     screenWakeLockService.setRequested('modo-ensayo-director', true);
@@ -839,53 +832,45 @@ export default function ModoEnsayoDirector({
     let cancelled = false;
 
     const prewarmNextSong = async () => {
-      await wait(NEXT_SONG_WEB_PRELOAD_START_DELAY_MS, abortController.signal);
-
-      const preloadTracks = buildSongPreloadTracks(nextSong, sessionOverrides[nextSongId], {
-        limit: NEXT_SONG_WEB_PRELOAD_TRACK_LIMIT,
-        includePad: true,
-      });
-      const urls = Array.from(new Set(preloadTracks.map((track) => track.url).filter(Boolean)));
-      if (urls.length === 0) {
-        prewarmedSongIdsRef.current.add(nextSongId);
-        return;
-      }
-
+      const ownedUrls = [];
       try {
+        await wait(NEXT_SONG_WEB_PRELOAD_START_DELAY_MS, abortController.signal);
+        const preloadTracks = buildSongPreloadTracks(nextSong, sessionOverrides[nextSongId], {
+          limit: NEXT_SONG_WEB_PRELOAD_TRACK_LIMIT,
+          includePad: true,
+        });
+        const urls = Array.from(new Set(preloadTracks.map((track) => track.url).filter(Boolean)));
+        if (urls.length === 0) return;
+
         const cache = await window.caches.open(CACHE_NAME);
         const urlsToWarm = urls.filter((url) => !prewarmInFlightUrlsRef.current.has(url));
+        if (urlsToWarm.length === 0) return;
+        ownedUrls.push(...urlsToWarm);
+        ownedUrls.forEach((url) => prewarmInFlightUrlsRef.current.add(url));
 
-        if (urlsToWarm.length === 0) {
-          return;
-        }
-
-        urlsToWarm.forEach((url) => prewarmInFlightUrlsRef.current.add(url));
-
+        let allSucceeded = urlsToWarm.length === urls.length;
         for (const url of urlsToWarm) {
-          if (cancelled || abortController.signal.aborted) {
-            return;
-          }
-
+          if (cancelled || abortController.signal.aborted) return;
           try {
-            await cacheUrlIfNeeded(cache, url, abortController.signal);
+            const result = await cacheUrlIfNeeded(cache, url, abortController.signal);
+            if (result !== 'hit' && result !== 'stored') allSucceeded = false;
           } catch (error) {
+            allSucceeded = false;
             if (!abortController.signal.aborted) {
               console.warn('[ModoEnsayoDirector] No se pudo precalentar la siguiente cancion.', url, error);
             }
-          } finally {
-            prewarmInFlightUrlsRef.current.delete(url);
           }
-
           await wait(NEXT_SONG_WEB_PRELOAD_GAP_MS, abortController.signal);
         }
-
-        if (!cancelled) {
+        if (!cancelled && !abortController.signal.aborted && allSucceeded) {
           prewarmedSongIdsRef.current.add(nextSongId);
         }
       } catch (error) {
         if (!abortController.signal.aborted) {
           console.warn('[ModoEnsayoDirector] Fallo el prewarm de la siguiente cancion.', error);
         }
+      } finally {
+        ownedUrls.forEach((url) => prewarmInFlightUrlsRef.current.delete(url));
       }
     };
 
@@ -929,7 +914,50 @@ export default function ModoEnsayoDirector({
     playbackSnapshotRef.current = snapshot;
   }, []);
 
-  const handleQueueSongSelect = useCallback((songId) => {
+  const handleCancelAutoPlay = useCallback(() => {
+    queueSelectionTokenRef.current += 1;
+    setAutoPlayRequest(null);
+  }, []);
+  const handleAutoPlayHandled = useCallback((token) => {
+    setAutoPlayRequest(previous => previous?.token === token ? null : previous);
+  }, []);
+  const prepareQueueSong = useCallback(async (songId) => {
+    const sourceSelection=queueSelectionTokenRef.current;
+    const song = ensayoSongs.find(item => resolveSongId(item) === songId);
+    if (!song || isManualTempoSong(song)) throw new Error('Elige una canción con stems para el cambio al compás.');
+    const [{value: fetchedSession}, {value: fetchedMix}] = await Promise.all([
+      readSongSessionForRehearsal(songId),
+      hasEventMixContext ? readEventMixForRehearsal(eventId,songId) : Promise.resolve({value:null}),
+    ]);
+    if(queueSelectionTokenRef.current!==sourceSelection)throw new DOMException('Cambió la selección.','AbortError');
+    const session = resolveSongSession(song,fetchedSession || sessionOverrides[songId]);
+    const mix = readPendingLiveDirectorEventMix({eventId,songId})?.mix || (eventMixSaveQueueRef.current?.isPending(songId) ? eventMixOverrides[songId] : fetchedMix || eventMixOverrides[songId]);
+    if (!hasPlayableLiveDirectorSession(session)) throw new Error('Esta canción todavía no tiene stems preparados.');
+    setSessionOverrides(previous => ({...previous,[songId]:session}));
+    if (mix) setEventMixOverrides(previous => ({...previous,[songId]:mix}));
+    setEventMixLoadedSongIds(previous => new Set([...previous,songId]));
+    return applyLiveDirectorEventMix(session,mix);
+  },[ensayoSongs,sessionOverrides,eventMixOverrides,hasEventMixContext,eventId]);
+
+  // Saving the rehearsal on the device reads each song's enabled stems with its
+  // event mix, without selecting it or touching the saved mixes.
+  const resolveQueueSongTracks = useCallback(async (songId) => {
+    const song = ensayoSongs.find(item => resolveSongId(item) === songId);
+    if (!song || isManualTempoSong(song)) return [];
+    // These reads also refresh the device copy of session, mix and arrangement.
+    const [{value: fetchedSession}, {value: fetchedMix}] = await Promise.all([
+      readSongSessionForRehearsal(songId),
+      hasEventMixContext ? readEventMixForRehearsal(eventId,songId) : Promise.resolve({value:null}),
+      eventId ? readEventArrangementForRehearsal(eventId,songId).catch(() => null) : Promise.resolve(null),
+    ]);
+    const session = resolveSongSession(song,fetchedSession || sessionOverrides[songId]);
+    if (!hasPlayableLiveDirectorSession(session)) return [];
+    const mix = readPendingLiveDirectorEventMix({eventId,songId})?.mix || eventMixOverrides[songId] || fetchedMix;
+    return applyLiveDirectorEventMix(session,mix).tracks.filter(track => track.enabled !== false);
+  },[ensayoSongs,sessionOverrides,eventMixOverrides,hasEventMixContext,eventId]);
+
+  const handleQueueSongSelect = useCallback((songId, options) => {
+    setAutoPlayRequest(null);
     const nextSongId = String(songId || '').trim();
     const nextIndex = ensayoSongs.findIndex((song) => resolveSongId(song) === nextSongId);
     if (nextIndex === -1) {
@@ -955,36 +983,11 @@ export default function ModoEnsayoDirector({
     const selectionToken = queueSelectionTokenRef.current + 1;
     queueSelectionTokenRef.current = selectionToken;
 
-    if (!hasEventMixContext || eventMixLoadedSongIds.has(nextSongId)) {
-      setActiveSongIndex(nextIndex);
-      return;
-    }
-
-    void (async () => {
-      let fetchedMix = null;
-
-      try {
-        fetchedMix = await fetchLiveDirectorEventMix({ eventId, songId: nextSongId });
-      } catch (error) {
-        console.warn('[ModoEnsayoDirector] No se pudo preparar la mezcla de la siguiente cancion.', error);
-      }
-
-      if (queueSelectionTokenRef.current !== selectionToken) {
-        return;
-      }
-
-      if (fetchedMix) {
-        setEventMixOverrides((previous) => ({ ...previous, [nextSongId]: fetchedMix }));
-      }
-      setEventMixLoadedSongIds((previous) => {
-        if (previous.has(nextSongId)) return previous;
-        const next = new Set(previous);
-        next.add(nextSongId);
-        return next;
-      });
-      setActiveSongIndex(nextIndex);
-    })();
-  }, [ensayoSongs, eventId, eventMixLoadedSongIds, hasEventMixContext, sessionOverrides]);
+    // Select immediately. The session preparation gate waits for its mix while
+    // the selected card and loading state already acknowledge the tap.
+    setAutoPlayRequest(options?.autoPlay && hasEventMixContext ? { songId: nextSongId, token: selectionToken } : null);
+    setActiveSongIndex(nextIndex);
+  }, [ensayoSongs, hasEventMixContext, sessionOverrides]);
 
   const handleAddManualSong = useCallback((input) => {
     if (getRemainingManualSongSlots(realEnsayoSongs.length, manualSongs.length) <= 0) {
@@ -1044,26 +1047,31 @@ export default function ModoEnsayoDirector({
     }));
   }, []);
 
-  const enqueueEventMixSave = useCallback((songId, mix, recoverPending = false) => {
-    const saveTask = eventMixSaveQueueRef.current
-      .catch(() => undefined)
-      .then(() => recoverPending
-        ? retryPendingLiveDirectorEventMix({ eventId, songId })
-        : saveLiveDirectorEventMix({ eventId, songId, mix }));
-
-    eventMixSaveQueueRef.current = saveTask.then(
-      () => undefined,
-      () => undefined,
-    );
-    return saveTask;
-  }, [eventId]);
+  const eventMixSaveQueue = useMemo(() => createLiveDirectorSaveQueue({
+    save: (songId, mix) => saveLiveDirectorEventMix({ eventId, songId, mix }),
+    signature: liveDirectorEventMixSignature,
+  }), [eventId]);
+  eventMixSaveQueueRef.current = eventMixSaveQueue;
+  useEffect(() => () => eventMixSaveQueue.flush(activePersistedSongId), [eventMixSaveQueue, activePersistedSongId]);
+  useEffect(() => () => eventMixSaveQueue.flush(), [eventMixSaveQueue]);
+  useEffect(() => {
+    const flush = () => eventMixSaveQueue.flush();
+    window.addEventListener('pagehide', flush);
+    return () => window.removeEventListener('pagehide', flush);
+  }, [eventMixSaveQueue]);
+  const enqueueEventMixSave = useCallback((songId, mix, immediate = false) => (
+    eventMixSaveQueue.enqueue(songId, mix, immediate)
+  ), [eventMixSaveQueue]);
 
   const markEventMixSaveSucceeded = useCallback((songId, version, savedMix) => {
     if (Number(eventMixSaveVersionsRef.current[songId] || 0) !== version) return;
 
-    if (savedMix) {
-      setEventMixOverrides((previous) => ({ ...previous, [songId]: savedMix }));
-    }
+    // A coalesced snapshot may already be confirmed without another request.
+    // Clear its local recovery record only if it is still the latest edit.
+    if (savedMix) clearPendingLiveDirectorEventMixIfMatching({
+      eventId, songId, signature: liveDirectorEventMixSignature(savedMix),
+    });
+    // Confirm persistence without reapplying faders during the next gesture.
     setEventMixSaveStates((previous) => ({ ...previous, [songId]: 'saved' }));
 
     const existingTimer = eventMixStatusTimersRef.current.get(songId);
@@ -1074,7 +1082,7 @@ export default function ModoEnsayoDirector({
       setEventMixSaveStates((previous) => ({ ...previous, [songId]: 'idle' }));
     }, 2400);
     eventMixStatusTimersRef.current.set(songId, timeoutId);
-  }, []);
+  }, [eventId]);
 
   const markEventMixSaveFailed = useCallback((songId, version) => {
     if (Number(eventMixSaveVersionsRef.current[songId] || 0) === version) {
@@ -1089,6 +1097,10 @@ export default function ModoEnsayoDirector({
       return Promise.resolve();
     }
 
+    if (liveDirectorEventMixSignature(eventMixOverrides[songId] || buildLiveDirectorEventMix(activeSongSession?.tracks || [])) === liveDirectorEventMixSignature(mix)) {
+      eventMixSaveQueue.flush(songId);
+      return Promise.resolve();
+    }
     setEventMixOverrides((previous) => ({ ...previous, [songId]: mix }));
     setEventMixLoadedSongIds((previous) => {
       if (previous.has(songId)) return previous;
@@ -1096,6 +1108,7 @@ export default function ModoEnsayoDirector({
       next.add(songId);
       return next;
     });
+    if (!canSaveEventMix) return Promise.resolve();
     stagePendingLiveDirectorEventMix({ eventId, songId, mix });
 
     const nextVersion = Number(eventMixSaveVersionsRef.current[songId] || 0) + 1;
@@ -1116,14 +1129,14 @@ export default function ModoEnsayoDirector({
         markEventMixSaveFailed(songId, nextVersion);
         throw error;
       });
-  }, [activePersistedSongId, enqueueEventMixSave, eventId, hasEventMixContext, markEventMixSaveFailed, markEventMixSaveSucceeded]);
+  }, [activePersistedSongId, activeSongSession, enqueueEventMixSave, eventMixOverrides, eventMixSaveQueue, eventId, hasEventMixContext, markEventMixSaveFailed, markEventMixSaveSucceeded, canSaveEventMix]);
 
   const retryPendingActiveEventMix = useCallback(async () => {
     const songId = activePersistedSongId;
-    if (!hasEventMixContext || !songId) return null;
+    if (!hasEventMixContext || !songId || !canSaveEventMix) return null;
 
     const pending = readPendingLiveDirectorEventMix({ eventId, songId });
-    if (!pending?.mix) return null;
+    if (!pending?.mix || eventMixSaveQueueRef.current?.isPending(songId)) return null;
 
     const version = Number(eventMixSaveVersionsRef.current[songId] || 0);
     setEventMixSaveStates((previous) => ({ ...previous, [songId]: 'saving' }));
@@ -1136,7 +1149,7 @@ export default function ModoEnsayoDirector({
       markEventMixSaveFailed(songId, version);
       throw error;
     }
-  }, [activePersistedSongId, enqueueEventMixSave, eventId, hasEventMixContext, markEventMixSaveFailed, markEventMixSaveSucceeded]);
+  }, [activePersistedSongId, enqueueEventMixSave, eventId, hasEventMixContext, markEventMixSaveFailed, markEventMixSaveSucceeded, canSaveEventMix]);
 
   const schedulePendingEventMixRetry = useCallback((delayMs = 250) => {
     if (!hasEventMixContext || !activePersistedSongId) return;
@@ -1155,25 +1168,18 @@ export default function ModoEnsayoDirector({
     if (!hasEventMixContext || !activePersistedSongId) return undefined;
 
     const scheduleRecovery = () => schedulePendingEventMixRetry(200);
-    const scheduleAfterInteraction = () => schedulePendingEventMixRetry(1400);
     const scheduleWhenVisible = () => {
       if (document.visibilityState === 'visible') scheduleRecovery();
     };
 
     window.addEventListener('focus', scheduleRecovery);
     window.addEventListener('online', scheduleRecovery);
-    window.addEventListener('pointerup', scheduleAfterInteraction, { passive: true });
-    window.addEventListener('touchend', scheduleAfterInteraction, { passive: true });
-    window.addEventListener('keyup', scheduleAfterInteraction);
     document.addEventListener('visibilitychange', scheduleWhenVisible);
     schedulePendingEventMixRetry(0);
 
     return () => {
       window.removeEventListener('focus', scheduleRecovery);
       window.removeEventListener('online', scheduleRecovery);
-      window.removeEventListener('pointerup', scheduleAfterInteraction);
-      window.removeEventListener('touchend', scheduleAfterInteraction);
-      window.removeEventListener('keyup', scheduleAfterInteraction);
       document.removeEventListener('visibilitychange', scheduleWhenVisible);
       if (eventMixRetryTimerRef.current !== null) {
         window.clearTimeout(eventMixRetryTimerRef.current);
@@ -1185,17 +1191,26 @@ export default function ModoEnsayoDirector({
   return (
     <>
       <LiveDirectorView
+        experimentalTools
+        eventId={hasEventMixContext ? eventId : ''}
+        eventTitle={contextTitle}
         mode="ensayo"
         songId={activePersistedSongId}
         songTitle={String(activeSong?.title || '').trim()}
         subtitle={String(activeSong?.artist || activeSong?.cantante || '').trim()}
         songMp3={String(activeSong?.mp3 || '').trim()}
+        songArtworkUrl={getLiveDirectorSongArtworkUrl(activeSong)}
         songKey={String(activeSong?.originalKey || activeSong?.key || '').trim()}
         sections={activeSongSections}
         initialSession={activeSongSession}
         queueSongs={queueSongs}
         activeQueueSongId={activeSongId}
         onSelectQueueSong={handleQueueSongSelect}
+        onPrepareQueueSong={prepareQueueSong}
+        onResolveQueueSongTracks={resolveQueueSongTracks}
+        autoPlayRequest={autoPlayRequest}
+        onCancelAutoPlay={handleCancelAutoPlay}
+        onAutoPlayHandled={handleAutoPlayHandled}
         canAddQueueSong={remainingManualSongSlots > 0}
         onAddQueueSong={handleAddManualSong}
         onRemoveQueueSong={handleRemoveManualSong}
@@ -1218,7 +1233,9 @@ export default function ModoEnsayoDirector({
         onBack={onExit}
         backLabel="Volver al modo ensayo"
         title={`Modo Ensayo - ${contextTitle}`}
-        bpm={Number(activeSong?.bpm || 0)}
+        bpm={betaClickGrid(activeSongId)?.bpm ?? Number(activeSong?.bpm || 0)}
+        generatedClickGrid={betaClickGrid(activeSongId)}
+        timeSignature={activeSong?.timeSignature}
       />
 
       {takeoverPromptOpen && (

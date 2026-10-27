@@ -24,7 +24,9 @@ assert.match(modalDetalle, /addEventListener\('pageshow', resetOpeningRehearsal\
 assert.match(modalDetalle, /addEventListener\('popstate', resetOpeningRehearsal\)/);
 assert.match(modalDetalle, /setOpeningRehearsal\(false\)/);
 
-for (const browserEvent of ['focus', 'online', 'pointerup', 'touchend', 'keyup', 'visibilitychange']) {
+// La mezcla pendiente se recupera al volver el foco, la red o la pestaña. Ya no se reintenta con
+// cada toque (pointerup/touchend/keyup): la cola de guardado agrupa los cambios durante la reproducción.
+for (const browserEvent of ['focus', 'online', 'visibilitychange']) {
   assert.match(
     rehearsalDirector,
     new RegExp(`addEventListener\\('${browserEvent}'`),
@@ -32,7 +34,9 @@ for (const browserEvent of ['focus', 'online', 'pointerup', 'touchend', 'keyup',
   );
 }
 assert.match(rehearsalDirector, /stagePendingLiveDirectorEventMix/);
-assert.match(rehearsalDirector, /retryPendingLiveDirectorEventMix/);
+assert.match(rehearsalDirector, /retryPendingLiveDirectorEventMix|retryPendingActiveEventMix/);
+assert.match(rehearsalDirector, /createLiveDirectorSaveQueue/);
+assert.match(rehearsalDirector, /addEventListener\('pagehide', flush\)/, 'Al salir de la página se envía lo pendiente.');
 assert.match(uploadClient, /fetchWithSessionRetry\('\/api\/live-director-song-session'/);
 
 console.log('navigation and persistence recovery tests passed');

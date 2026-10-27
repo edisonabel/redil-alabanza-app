@@ -365,9 +365,18 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
 
   // ── Visual Markers: cruce sectionMarkers × sections reales ──
   const timelineDuration = duration || 1;
+  const activeSongSectionMarkers = useMemo(() => {
+    const rawSession = activeSong?.multitrackSession || activeSong?.multitrack_session;
+    let session = rawSession;
+    if (typeof rawSession === 'string') { try { session = JSON.parse(rawSession); } catch { session = null; } }
+    const multitrackMarkers = session?.sectionMarkers;
+    return (activeSource?.kind === 'sequence' || activeSource?.kind === 'stem') && Array.isArray(multitrackMarkers) && multitrackMarkers.length
+      ? multitrackMarkers
+      : activeSong?.sectionMarkers;
+  }, [activeSong, activeSource?.kind]);
   const visualMarkers = useMemo(() => {
-    if (!activeSong?.sectionMarkers) return [];
-    const rawMarkers = activeSong.sectionMarkers.filter(
+    if (!activeSongSectionMarkers) return [];
+    const rawMarkers = activeSongSectionMarkers.filter(
       (m) => Number.isFinite(Number(m.startSec ?? m.start_sec))
     );
     if (!rawMarkers.length) return [];
@@ -460,7 +469,7 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
         body: realSection?.lines?.[0] || '',
       };
     });
-  }, [activeSong, timelineDuration]);
+  }, [activeSong, activeSongSectionMarkers, timelineDuration]);
 
   const playheadPercent = timelineDuration > 0 ? (currentTime / timelineDuration) * 100 : 0;
 

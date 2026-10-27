@@ -35,3 +35,30 @@ parser, resolver and pager are built in parallel.
 - Do not remove print CSS until the new print path is working in Chrome and iOS.
 - New code must enter in parallel and stay opt-in until verified.
 
+
+## Experimental V2 pagination (October 2026)
+
+- V2 preview, individual export and setlist export share `PaginatedSongSheet`.
+- Automatic pagination keeps a readable font; the two-page choice spreads short
+  songs and scales within a readable range. Longer documents may use more pages.
+- Measured section heights come from `SongSheet`, not character-count estimates.
+- Sections remain intact unless taller than one column, when they continue at
+  lyric-line boundaries with a continuation label. Explicit page breaks start a
+  new page. Every source section and line stays in order.
+- Repeated content in condensed mode says which section to repeat.
+- Preview and render documents use fixed Letter page frames with per-page
+  numbering, without a one-page outer clipping container.
+- Single-column complete output is supported by the pager; it no longer forces
+  condensed mode.
+- The V1 export remains available as the legacy engine.
+
+## Personal charts (October 2026)
+
+- Notes, target tone, capo and print-format preferences are keyed by musician and
+  song, independent of event arrangements and the shared song source.
+- Individual chart PDFs may include the signed-in musician's private note.
+  Setlist PDFs and ProPresenter lyric exports do not receive that note.
+- Supabase persistence uses migration `056_chordpro_personal_preferences.sql`
+  with row-level security restricted to `auth.uid() = perfil_id`. Until the
+  migration is applied, the print editor keeps a per-account/per-song browser
+  copy and labels it as device-only.

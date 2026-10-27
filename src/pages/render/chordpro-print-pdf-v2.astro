@@ -94,7 +94,7 @@ if (!payload && !clientToken) {
     text-size-adjust: 100%;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
-    overflow: hidden;
+    overflow: visible;
   }
 
   body {
@@ -123,9 +123,9 @@ if (!payload && !clientToken) {
   }
 
   #chordpro-pdf-sheet {
-    height: 11in;
+    height: auto;
     min-height: 11in;
-    max-height: 11in;
+    max-height: none;
   }
 
   @media print {
@@ -145,10 +145,10 @@ if (!payload && !clientToken) {
     body,
     #chordpro-pdf-root,
     #chordpro-pdf-sheet {
-      height: 11in !important;
+      height: auto !important;
       min-height: 11in !important;
-      max-height: 11in !important;
-      overflow: hidden !important;
+      max-height: none !important;
+      overflow: visible !important;
     }
   }
 

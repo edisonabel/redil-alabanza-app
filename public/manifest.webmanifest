@@ -1,8 +1,12 @@
 {
+    "id": "/",
     "name": "App Alabanza",
     "short_name": "Alabanza",
+    "description": "Ensayos, repertorio y Light Director del equipo de alabanza.",
     "start_url": "/",
+    "scope": "/",
     "display": "standalone",
+    "display_override": ["standalone", "minimal-ui"],
     "background_color": "#020617",
     "theme_color": "#020617",
     "icons": [

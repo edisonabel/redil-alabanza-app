@@ -2,11 +2,16 @@
 import Layout from '../../layouts/Layout.astro';
 import ChordProPrintWorkspace from '../../components/react/ChordProPrintWorkspace';
 import { createClient } from '@supabase/supabase-js';
+import { applyBetaSongCalibration } from '../../utils/liveDirectorBetaCalibration';
 import { getSupabaseServerEnv } from '../../lib/server/supabase-env.js';
 import {
   loadRehearsalSongSettings,
   sanitizeRehearsalSongSettings,
 } from '../../utils/rehearsalUserSongSettings';
+import {
+  DEFAULT_CHORD_PRO_PERSONAL_PREFERENCES,
+  sanitizeChordProPersonalPreferences,
+} from '../../utils/chordProPersonalPreferences.js';
 
 const requestedSongId = Astro.url.searchParams.get('song')?.trim() || '';
 const requestedEventId = Astro.url.searchParams.get('event')?.trim() || '';
@@ -41,6 +46,11 @@ let initialSong: {
   tempo: string;
   time: string;
   chordpro: string;
+  sectionMarkers: Array<Record<string, unknown>>;
+  eventId: string;
+  chartPreferences: ReturnType<typeof sanitizeChordProPersonalPreferences>;
+  chartPreferencesRemoteAvailable: boolean;
+  chartPreferencesLoadedFromRemote: boolean;
 } | null = null;
 
 const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -110,12 +120,43 @@ if (requestedSongId) {
   try {
     const { data: songRow } = await supabaseSSR
       .from('canciones')
-      .select('id, titulo, cantante, tonalidad, bpm, chordpro')
+      .select('id, titulo, cantante, tonalidad, bpm, chordpro, section_markers')
       .eq('id', requestedSongId)
       .maybeSingle();
 
     if (songRow) {
       const chordproContent = await resolveInitialChordPro(songRow.chordpro);
+      const calibratedSong = applyBetaSongCalibration({
+        id: String(songRow.id ?? requestedSongId),
+        sectionMarkers: songRow.section_markers,
+      });
+      let chartPreferences: ReturnType<typeof sanitizeChordProPersonalPreferences> = {
+        ...DEFAULT_CHORD_PRO_PERSONAL_PREFERENCES,
+        targetTone: '',
+        capoFret: 0,
+      };
+      let chartPreferencesRemoteAvailable = false;
+      let chartPreferencesLoadedFromRemote = false;
+      if (userId) {
+        try {
+          const { data: chartRow, error: chartPreferencesError } = await supabaseSSR
+            .from('cancion_chart_preferencias_usuario')
+            .select('notas_personales, preferencias')
+            .eq('perfil_id', userId)
+            .eq('cancion_id', String(songRow.id ?? requestedSongId))
+            .maybeSingle();
+          chartPreferencesRemoteAvailable = !chartPreferencesError;
+          if (!chartPreferencesError && chartRow) {
+            chartPreferencesLoadedFromRemote = true;
+            chartPreferences = sanitizeChordProPersonalPreferences({
+              ...(chartRow.preferencias || {}),
+              personalNotes: chartRow.notas_personales,
+            });
+          }
+        } catch {
+          // The editor can still use local private storage until migration 056 is applied.
+        }
+      }
       let personalSettings = sanitizeRehearsalSongSettings();
 
       if (userId && requestedEventId) {
@@ -140,6 +181,17 @@ if (requestedSongId) {
         tempo: String(songRow.bpm || ''),
         time: '',
         chordpro: chordproContent,
+        sectionMarkers: Array.isArray(calibratedSong.sectionMarkers) ? calibratedSong.sectionMarkers : [],
+        eventId: requestedEventId,
+        chartPreferences: {
+          ...chartPreferences,
+          targetTone: chartPreferences.targetTone || targetTone,
+          capoFret: chartPreferences.targetTone || chartPreferences.capoFret > 0
+            ? chartPreferences.capoFret
+            : personalSettings.capoFret,
+        },
+        chartPreferencesRemoteAvailable,
+        chartPreferencesLoadedFromRemote,
       };
     }
   } catch (error) {
@@ -153,6 +205,7 @@ if (requestedSongId) {
     <div class="flex flex-wrap items-center gap-3">
       <a
         href="/repertorio"
+        data-astro-reload
         aria-label="Volver a repertorio"
         title="Volver a repertorio"
         class="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-zinc-200 bg-white text-zinc-600 shadow-sm transition hover:bg-zinc-50 hover:text-zinc-950 sm:w-auto sm:gap-2 sm:px-4"
@@ -176,6 +229,13 @@ if (requestedSongId) {
       <ChordProPrintWorkspace
         client:only="react"
         initialChordProText={initialSong.chordpro}
+        initialSectionMarkers={initialSong.sectionMarkers}
+        eventId={initialSong.eventId}
+        songId={initialSong.id}
+        userId={userId}
+        initialPersonalPreferences={initialSong.chartPreferences}
+        personalPreferencesRemoteAvailable={initialSong.chartPreferencesRemoteAvailable}
+        personalPreferencesLoadedFromRemote={initialSong.chartPreferencesLoadedFromRemote}
         initialTitle={initialSong.titulo}
         initialArtist={initialSong.artista}
         initialTargetTone={initialSong.targetTone}
@@ -206,236 +266,40 @@ if (requestedSongId) {
 </Layout>
 
 <style is:global>
-@page {
-  margin: 0;
-  size: 8.5in 11in;
-}
-
-@supports (-webkit-touch-callout: none) {
-  @page {
-    margin: 0;
-    size: auto;
-  }
-}
-
+@page { margin: 0; size: 8.5in 11in; }
 @media print {
-  html,
-  body {
+  html, body, body.app-shell, body > main.app-safe-main {
+    display: block !important;
+    width: 8.5in !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
     margin: 0 !important;
     padding: 0 !important;
-    background: #fff !important;
+    overflow: visible !important;
+    background: white !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
-    width: 100% !important;
-    height: auto !important;
-    max-height: 11in !important;
-    overflow: hidden !important;
   }
-
-  body.app-shell {
-    display: block !important;
-    min-height: 0 !important;
-    height: auto !important;
-    max-height: 11in !important;
-    width: 100% !important;
-    overflow: hidden !important;
-  }
-
-  body > * {
-    display: none !important;
-  }
-
-  body > main.app-safe-main {
-    display: block !important;
-    min-height: 0 !important;
-    height: auto !important;
-    max-height: 11in !important;
-    padding: 0 !important;
-    overflow: hidden !important;
-    background: #fff !important;
-  }
-
-  body > main.app-safe-main > * {
-    display: none !important;
-  }
-
-  body > main.app-safe-main > div:last-of-type {
-    display: block !important;
+  body > :not(main.app-safe-main) { display: none !important; }
+  .print\:hidden { display: none !important; }
+  main.app-safe-main > div, #vista-previa-impresion, #vista-previa-impresion > div,
+  .song-sheet-preview-viewport, .song-sheet-preview-sizing, .song-sheet-preview-transform,
+  #chordpro-print-sheet {
     position: static !important;
-    width: 100% !important;
-    height: auto !important;
-    max-height: 11in !important;
-    min-height: 0 !important;
-    overflow: hidden !important;
-    padding: 0 !important;
-    margin: 0 !important;
-  }
-
-  .print\:hidden {
-    display: none !important;
-  }
-
-  #vista-previa-impresion {
     display: block !important;
-    position: static !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    width: 100% !important;
-    height: auto !important;
-    max-height: 11in !important;
-    overflow: hidden !important;
-  }
-
-  #vista-previa-impresion > *,
-  #vista-previa-impresion > * > *,
-  #vista-previa-impresion > * > * > *,
-  #vista-previa-impresion > * > * > * > *,
-  #vista-previa-impresion > * > * > * > * > *,
-  #vista-previa-impresion > * > * > * > * > * > * {
-    display: block !important;
-    position: static !important;
     transform: none !important;
-    -webkit-transform: none !important;
-    width: 100% !important;
+    width: 8.5in !important;
     height: auto !important;
-    max-width: none !important;
-    max-height: 11in !important;
-    min-width: 0 !important;
+    max-height: none !important;
     min-height: 0 !important;
-    overflow: hidden !important;
-    opacity: 1 !important;
-    visibility: visible !important;
-    border: 0 !important;
-    border-radius: 0 !important;
-    box-shadow: none !important;
-    padding: 0 !important;
     margin: 0 !important;
-    background: transparent !important;
-  }
-
-  #vista-previa-impresion #chordpro-print-sheet {
-    display: block !important;
-    width: 100% !important;
-    max-width: 8.5in !important;
-    height: 11in !important;
-    max-height: 11in !important;
-    overflow: hidden !important;
-    background: #fff !important;
-  }
-
-  #vista-previa-impresion .song-sheet-page {
-    display: block !important;
-    width: 100% !important;
-    max-width: 8.5in !important;
-    height: 11in !important;
-    max-height: 11in !important;
-    overflow: hidden !important;
-    background: #fff !important;
+    padding: 0 !important;
+    overflow: visible !important;
     border: 0 !important;
     border-radius: 0 !important;
     box-shadow: none !important;
-  }
-
-  #vista-previa-impresion .song-sheet-page > div {
-    display: -webkit-flex !important;
-    display: flex !important;
-    -webkit-flex-direction: column !important;
-    flex-direction: column !important;
-    height: 11in !important;
-    max-height: 11in !important;
-    overflow: hidden !important;
-    background: #fff !important;
-  }
-
-  #vista-previa-impresion .song-sheet-page > div > header {
-    display: block !important;
-    height: auto !important;
-    max-height: none !important;
-    -webkit-flex-shrink: 0 !important;
-    flex-shrink: 0 !important;
-    overflow: visible !important;
-  }
-
-  #vista-previa-impresion .song-sheet-page > div > main {
-    display: block !important;
-    -webkit-flex: 1 !important;
-    flex: 1 !important;
-    min-height: 0 !important;
-    overflow: hidden !important;
-  }
-
-  #vista-previa-impresion .song-sheet-columns {
-    height: 100% !important;
-    max-height: none !important;
-    -webkit-column-fill: auto !important;
-    column-fill: auto !important;
-    overflow: visible !important;
-  }
-
-  #vista-previa-impresion .song-sheet-section {
-    display: block !important;
-    height: auto !important;
-    max-height: none !important;
-    -webkit-column-break-inside: avoid !important;
-    break-inside: avoid !important;
-    background: transparent !important;
-    overflow: visible !important;
-  }
-
-  #vista-previa-impresion .song-sheet-section > div {
-    display: block !important;
-    height: auto !important;
-    max-height: none !important;
-    position: relative !important;
-    border: 1px solid rgba(212, 212, 216, 0.9) !important;
-    border-radius: 1.28em !important;
     background: white !important;
-    overflow: visible !important;
-  }
-
-  #vista-previa-impresion .song-sheet-section > div > header {
-    display: -webkit-flex !important;
-    display: flex !important;
-    height: auto !important;
-    max-height: none !important;
-    position: absolute !important;
-    background: white !important;
-    overflow: visible !important;
-  }
-
-  #vista-previa-impresion .song-sheet-page > div > header > div {
-    display: -webkit-flex !important;
-    display: flex !important;
-    height: auto !important;
-    max-height: none !important;
-    overflow: visible !important;
-  }
-
-  #vista-previa-impresion .song-sheet-page > div > header dl {
-    display: grid !important;
-    height: auto !important;
-    max-height: none !important;
-    overflow: visible !important;
-  }
-
-  #vista-previa-impresion .song-sheet-page > div > header .flex.flex-wrap {
-    display: -webkit-flex !important;
-    display: flex !important;
-    height: auto !important;
-    max-height: none !important;
-    overflow: visible !important;
-  }
-
-  #vista-previa-impresion .text-blue-600 {
-    color: #2563eb !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-  }
-
-  @media print and (-webkit-min-device-pixel-ratio: 1) {
-    #vista-previa-impresion {
-      transform: scale(0.98);
-    }
   }
 }
 </style>

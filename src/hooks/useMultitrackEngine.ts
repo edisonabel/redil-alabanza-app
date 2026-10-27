@@ -1,13 +1,20 @@
+import type { GuideAudioGraph } from '../services/DynamicGuidePlayer';
+import type { GeneratedClickSettings } from '../utils/liveDirectorGeneratedClick';
+import { holdAudioGain, startAudioGainFade } from '../services/AudioGainRamp';
 import { isMissingStemError } from '../utils/liveDirectorSessionSafety';
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MultitrackEngine, type TrackData, type MultitrackEngineLoadWarning } from '../services/MultitrackEngine';
 import {
   StreamingMultitrackEngine,
   type SharedStreamingTelemetry,
+  type LiveDirectorLevelMeter,
+  type DeviceDownloadProgress,
+  type DeviceDownloadResult,
 } from '../services/StreamingMultitrackEngine';
 import type { TrackOutputRoute } from '../utils/liveDirectorTrackRouting';
 import type { TrackActivityEnvelope } from '../utils/audioActivityEnvelope';
 import { primeLiveDirectorStemConnection } from '../utils/liveDirectorStemTransport';
+import { resolveFetchableAudioUrl } from '../lib/audio-playback.js';
 import {
   errorLiveDiagnostic,
   readLiveBrowserCapabilities,
@@ -30,11 +37,6 @@ const UI_UPDATE_INTERVAL_MS = 1000 / 24;
 const DIAGNOSTICS_UPDATE_INTERVAL_MS = 1000;
 const TRACK_LEVEL_UPDATE_THRESHOLD = 0.006;
 const MAX_TRACK_VOLUME = 2;
-const STREAMING_STEMS_HOST = 'stems.alabanzaredilestadio.com';
-const STREAMING_DIRECT_CORS_HOSTS = new Set([
-  'alabanzaredilestadio.com',
-  'www.alabanzaredilestadio.com',
-]);
 type EngineKind = 'buffer' | 'streaming';
 type EngineInstance = MultitrackEngine | StreamingMultitrackEngine;
 export type SeekToOptions = {
@@ -65,6 +67,27 @@ type UseMultitrackEngineOptions = {
 };
 
 export type UseMultitrackEngineReturn = {
+  getLevelMeterSnapshot?: () => LiveDirectorLevelMeter | null;
+  resetLevelMeter?: () => void;
+  refreshTransport?:()=>void;
+  prepareRestart?: (pauseAtTarget?: boolean, targetSeconds?: number) => Promise<{serial:number;completion:Promise<boolean>}>;
+  prepareSongChange?: (tracks: TrackData[], pauseAtTarget?: boolean, targetSeconds?: number) => Promise<{ serial: number; completion: Promise<boolean> }>;
+  schedulePreparedSongChange?: (serial: number, boundary: number) => void;
+  prepareSectionJump?: (targetSeconds: number, boundarySeconds: number) => Promise<{ serial: number; completion: Promise<boolean> }>;
+  cancelSectionJump?: (serial?: number) => void;
+  prefetchSectionStarts?: (startSeconds: number[]) => void;
+  downloadTracksToDevice?: (
+    tracks: TrackData[],
+    options: { rehearsalId: string; songIds: string[]; onProgress?: (progress: DeviceDownloadProgress) => void },
+  ) => { completion: Promise<DeviceDownloadResult>; cancel: () => void };
+  scheduleSectionEnd?: (endSeconds: number) => { completion: Promise<boolean>; cancel: () => void };
+  runtimeError?: string | null;
+  getGuideAudioGraph?: (trackId: string) => GuideAudioGraph | null;
+  getDurationSnapshot?: () => number;
+  loadGeneratedClickSamples?: () => Promise<void>;
+  setGeneratedClick?: (trackId: string, settings: GeneratedClickSettings | null) => boolean;
+  fadeMasterVolume?: (volume: number, durationMs: number) => ReturnType<typeof startAudioGainFade> | null;
+  setTrackGroupGain?: (trackId: string, gain: number) => void;
   isPlaying: boolean;
   currentTime: number;
   duration: number;
@@ -130,35 +153,15 @@ const unwrapAudioProxyUrl = (rawUrl: string | undefined): string => {
         ? window.location.origin
         : 'https://alabanzaredilestadio.com';
     const parsed = new URL(candidate, baseOrigin);
-    const baseHost = new URL(baseOrigin).hostname.toLowerCase();
-
     if (parsed.pathname === '/api/mp3-proxy') {
       const source = parsed.searchParams.get('src');
       if (source) {
-        return STREAMING_DIRECT_CORS_HOSTS.has(baseHost)
-          ? rewriteStreamingStemUrl(source)
-          : parsed.href;
+        return resolveFetchableAudioUrl(source, { origin: baseOrigin });
       }
     }
-
-    return rewriteStreamingStemUrl(parsed.href);
+    return resolveFetchableAudioUrl(parsed.href, { origin: baseOrigin });
   } catch {
-    return rewriteStreamingStemUrl(candidate);
-  }
-};
-
-const rewriteStreamingStemUrl = (rawUrl: string): string => {
-  try {
-    const parsed = new URL(rawUrl);
-    if (parsed.hostname.toLowerCase().endsWith('.r2.dev')) {
-      parsed.protocol = 'https:';
-      parsed.hostname = STREAMING_STEMS_HOST;
-      parsed.port = '';
-      return parsed.href;
-    }
-    return parsed.href;
-  } catch {
-    return rawUrl;
+    return candidate;
   }
 };
 
@@ -261,6 +264,8 @@ export function useMultitrackEngine(
     requestedStreamingEngine && canUseAdvancedStreamingEngine() ? 'streaming' : 'buffer';
   const passiveTelemetry = Boolean(options.passiveTelemetry);
   const engineRef = useRef<EngineInstance | null>(null);
+  const activeFadeRef = useRef<ReturnType<typeof startAudioGainFade> | null>(null);
+  const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const engineKindRef = useRef<EngineKind>(requestedEngineKind);
   const frameRef = useRef<number | null>(null);
   const diagnosticsIntervalRef = useRef<number | null>(null);
@@ -320,7 +325,9 @@ export function useMultitrackEngine(
     }
 
     try {
+      activeFadeRef.current?.cancel();
       engine.onEnded = null;
+      if (engine instanceof StreamingMultitrackEngine) engine.onRenderError = null;
     } catch {
       // no-op
     }
@@ -368,10 +375,21 @@ export function useMultitrackEngine(
           publishMeterMessages: !passiveTelemetry,
         })
         : new MultitrackEngine();
+    const currentEngine = engineRef.current;
+    if (currentEngine instanceof StreamingMultitrackEngine) {
+      currentEngine.onRenderError = (message) => {
+        if (engineRef.current !== currentEngine) return;
+        activeFadeRef.current?.cancel();
+        setIsPlaying(false);
+        setIsReady(false);
+        setRuntimeError(message);
+      };
+    }
     engineRef.current.onEnded = () => {
       setIsPlaying(false);
-      currentTimeRef.current = 0;
-      setCurrentTime(0);
+      const endedTime = engineRef.current instanceof StreamingMultitrackEngine ? engineRef.current.getCurrentTime() : 0;
+      currentTimeRef.current = endedTime;
+      setCurrentTime(endedTime);
       commitDuration(Math.max(durationRef.current, engineRef.current?.getDuration() ?? 0));
       trackLevelsRef.current = buildTrackLevels(engineRef.current?.getTracks() || []);
       setTrackLevels(trackLevelsRef.current);
@@ -439,10 +457,21 @@ export function useMultitrackEngine(
   const initialize = useCallback(async (tracks: TrackData[]) => {
     const initializationToken = ++initializationTokenRef.current;
     const nextTracks = cloneTracks(tracks);
+    const preparedEngine = engineRef.current;
+    if (preparedEngine instanceof StreamingMultitrackEngine && preparedEngine.consumePreparedSong(buildStreamingWorkerTracks(nextTracks))) {
+      const loadedTracks = preparedEngine.getTracks();
+      setTrackVolumes(buildTrackVolumes(loadedTracks)); setTrackEnvelopes(buildTrackEnvelopes(loadedTracks));
+      setLoadWarnings(preparedEngine.getLoadWarnings()); setRuntimeError(null); commitLoadProgress(null);
+      commitDuration(preparedEngine.getDuration()); commitDiagnostics(preparedEngine.getDiagnostics());
+      currentTimeRef.current = preparedEngine.getCurrentTime(); setCurrentTime(currentTimeRef.current);
+      setIsPlaying(preparedEngine.getIsPlaying()); setIsReady(true); return;
+    }
 
     const targetKind = requestedEngineKind;
     let engine: EngineInstance | null = null;
 
+    activeFadeRef.current?.cancel();
+    setRuntimeError(null);
     setIsReady(false);
     setIsPlaying(false);
     currentTimeRef.current = 0;
@@ -503,7 +532,10 @@ export function useMultitrackEngine(
         return;
       }
 
-      if (targetKind === 'streaming' && !isMissingStemError(error)) {
+      // Fetch stalls and cancellations cannot be repaired by decoding every
+      // full song into RAM. Only a known codec/configuration incompatibility
+      // justifies the compatible-engine retry.
+      if (targetKind === 'streaming' && isUnsupportedStreamingConfigError(error) && !isMissingStemError(error)) {
         const fallbackCapabilities = readLiveBrowserCapabilities();
         const fallbackPolicy = resolveStreamingFallbackPolicy(
           fallbackCapabilities,
@@ -703,6 +735,9 @@ export function useMultitrackEngine(
 
   const stop = useCallback(() => {
     const engine = engineRef.current;
+    // React is adopting an already audible destination. Its source cleanup
+    // and identity effects must not stop that destination between renders.
+    if (engine instanceof StreamingMultitrackEngine && engine.isAwaitingSongAdoption()) return;
     if (!engine) {
       return;
     }
@@ -755,7 +790,48 @@ export function useMultitrackEngine(
       return;
     }
 
+    activeFadeRef.current?.cancel();
+    holdAudioGain(engine.context, engine.masterGain.gain);
     engine.setMasterVolume(volume);
+  }, []);
+
+  const fadeMasterVolume = useCallback((volume: number, durationMs: number) => {
+    const engine = engineRef.current;
+    if (!(engine instanceof StreamingMultitrackEngine)) return null;
+    activeFadeRef.current?.cancel();
+    const fade = startAudioGainFade(engine.context, engine.masterGain.gain, volume, durationMs);
+    activeFadeRef.current = fade;
+    return fade;
+  }, []);
+
+  const getLevelMeterSnapshot = useCallback(() => {
+    const engine = engineRef.current;
+    return engine instanceof StreamingMultitrackEngine ? engine.getLevelMeterSnapshot() : null;
+  }, []);
+  const resetLevelMeter = useCallback(() => {
+    const engine = engineRef.current;
+    if (engine instanceof StreamingMultitrackEngine) engine.resetLevelMeter();
+  }, []);
+
+  const setTrackGroupGain = useCallback((trackId: string, gain: number) => {
+    engineRef.current?.setTrackGroupGain(trackId, gain);
+  }, []);
+
+  const getGuideAudioGraph = useCallback((trackId: string) => {
+    const engine = engineRef.current;
+    return engine instanceof StreamingMultitrackEngine ? engine.getGuideAudioGraph(trackId) : null;
+  }, []);
+
+  const getDurationSnapshot = useCallback(() => engineRef.current?.getDuration() ?? 0, []);
+
+  const loadGeneratedClickSamples = useCallback(async () => {
+    const engine = engineRef.current;
+    if (!(engine instanceof StreamingMultitrackEngine)) throw new Error('Metrónomo no disponible en este motor.');
+    await engine.loadGeneratedClickSamples();
+  }, []);
+  const setGeneratedClick = useCallback((trackId: string, settings: GeneratedClickSettings | null) => {
+    const engine = engineRef.current;
+    return engine instanceof StreamingMultitrackEngine && engine.setGeneratedClick(trackId, settings);
   }, []);
 
   const setMetersEnabled = useCallback(() => {
@@ -834,6 +910,53 @@ export function useMultitrackEngine(
     }
 
     return currentTimeRef.current;
+  }, []);
+
+  const prepareSectionJump = useCallback(async (targetSeconds: number, boundarySeconds: number) => {
+    const engine = engineRef.current;
+    if (!(engine instanceof StreamingMultitrackEngine)) {
+      throw new Error('El motor actual no admite saltos preparados.');
+    }
+    return engine.prepareSectionJump(targetSeconds, boundarySeconds);
+  }, []);
+  const prepareRestart = useCallback(async (pauseAtTarget = false, targetSeconds = 0) => {
+    const engine = engineRef.current;
+    if (!(engine instanceof StreamingMultitrackEngine)) throw new Error('Reinicio preparado no disponible.');
+    return engine.prepareRestart(pauseAtTarget,targetSeconds);
+  },[]);
+  const refreshTransport=useCallback(()=>{const engine=engineRef.current;if(engine){commitCurrentTime(engine.getCurrentTime());setIsPlaying(engine.getIsPlaying());}},[commitCurrentTime]);
+  const prepareSongChange = useCallback(async (tracks: TrackData[], pauseAtTarget = false, targetSeconds = 0) => {
+    const engine = engineRef.current;
+    if (!(engine instanceof StreamingMultitrackEngine)) throw new Error('Este motor no permite preparar otra canción.');
+    return engine.prepareSongChange(buildStreamingWorkerTracks(cloneTracks(tracks)), pauseAtTarget,targetSeconds);
+  }, []);
+  const schedulePreparedSongChange = useCallback((serial: number, boundary: number) => {
+    const engine = engineRef.current;
+    if (!(engine instanceof StreamingMultitrackEngine)) throw new Error('Cambio preparado no disponible.');
+    engine.schedulePreparedSongChange(serial,boundary);
+  }, []);
+  const cancelSectionJump = useCallback((serial?: number) => {
+    const engine = engineRef.current;
+    if (engine instanceof StreamingMultitrackEngine) engine.cancelSectionJump(serial);
+  }, []);
+  const prefetchSectionStarts = useCallback((startSeconds: number[]) => {
+    const engine = engineRef.current;
+    if (engine instanceof StreamingMultitrackEngine) engine.prefetchSectionStarts(startSeconds);
+  }, []);
+  const downloadTracksToDevice = useCallback((
+    tracks: TrackData[],
+    options: { rehearsalId: string; songIds: string[]; onProgress?: (progress: DeviceDownloadProgress) => void },
+  ) => {
+    const engine = engineRef.current;
+    if (!(engine instanceof StreamingMultitrackEngine)) throw new Error('Este motor no permite guardar el ensayo en el equipo.');
+    // Same URL resolution as playback, so the saved blocks are the ones it reads.
+    return engine.downloadTracksToDevice(buildStreamingWorkerTracks(cloneTracks(tracks)), options);
+  }, []);
+
+  const scheduleSectionEnd = useCallback((endSeconds: number) => {
+    const engine = engineRef.current;
+    if (!(engine instanceof StreamingMultitrackEngine)) throw new Error('El motor no permite editar el recorrido.');
+    return engine.scheduleSectionEnd(endSeconds);
   }, []);
 
   useEffect(() => {
@@ -991,6 +1114,21 @@ export function useMultitrackEngine(
 
   return useMemo(
     () => ({
+      runtimeError,
+      getGuideAudioGraph,
+      getDurationSnapshot,
+      loadGeneratedClickSamples,
+      setGeneratedClick,
+      fadeMasterVolume,
+      setTrackGroupGain,
+      getLevelMeterSnapshot,
+      resetLevelMeter,
+      refreshTransport, prepareRestart, prepareSongChange, schedulePreparedSongChange,
+      prepareSectionJump,
+      cancelSectionJump,
+      prefetchSectionStarts,
+      downloadTracksToDevice,
+      scheduleSectionEnd,
       isPlaying,
       currentTime,
       duration,
@@ -1022,6 +1160,21 @@ export function useMultitrackEngine(
       getCurrentTimeSnapshot,
     }),
     [
+      runtimeError,
+      getGuideAudioGraph,
+      getDurationSnapshot,
+      loadGeneratedClickSamples,
+      setGeneratedClick,
+      fadeMasterVolume,
+      setTrackGroupGain,
+      getLevelMeterSnapshot,
+      resetLevelMeter,
+      refreshTransport, prepareRestart, prepareSongChange, schedulePreparedSongChange,
+      prepareSectionJump,
+      cancelSectionJump,
+      prefetchSectionStarts,
+      downloadTracksToDevice,
+      scheduleSectionEnd,
       currentTime,
       duration,
       diagnostics,

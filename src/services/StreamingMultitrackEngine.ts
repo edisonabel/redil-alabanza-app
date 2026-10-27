@@ -1,3 +1,5 @@
+import type { GuideAudioGraph } from './DynamicGuidePlayer';
+import { normalizeGeneratedClick, type GeneratedClickSettings } from '../utils/liveDirectorGeneratedClick';
 import { AudioRingBuffer } from './AudioRingBuffer';
 import { AacAdtsDemuxer } from './AacAdtsDemuxer';
 import {
@@ -25,6 +27,7 @@ import {
   requiresSynchronizedStreamingWorker,
   resolveStreamingSeekPolicy,
   supportsDesktopExactSeekRoute,
+  supportsPreparedSectionJump,
 } from '../utils/liveDirectorEnginePolicy';
 
 type WindowWithWebkitAudio = Window & typeof globalThis & {
@@ -80,6 +83,7 @@ type SharedOrRegularBuffer = SharedArrayBuffer | ArrayBuffer;
 
 type WorkletTrackBufferMessage = {
   type: 'configure-track';
+  isCue?: boolean;
   trackIndex: number;
   capacity: number;
   sampleRate: number;
@@ -218,6 +222,10 @@ type WorkletDebugStatusMessage = {
   referenceSeconds?: number | null;
   audibleZeroTracks: number;
   minAvailableRead: number;
+  /** Share of the real-time budget spent rendering during the last second. */
+  renderLoadPct?: number | null;
+  /** Slowest single quantum in that second; null without a precise clock. */
+  renderPeakPct?: number | null;
   tracks: WorkletDebugTrackState[];
 };
 
@@ -279,6 +287,12 @@ type WorkletFallbackConsumedMessage = {
 };
 
 type WorkletMessage =
+  | {
+      type: 'prepare-section-switch'; serial: number; boundarySeconds: number; targetSeconds: number;
+      minimumFrames: number; controlBuffer: SharedArrayBuffer; replaceSong?: boolean; pauseAtTarget?: boolean;
+      tracks: Omit<WorkletTrackBufferMessage, 'type'>[];
+    }
+  | { type: 'cancel-section-switch'; serial: number }
   | WorkletTrackBufferMessage
   | WorkletPcmChunkMessage
   | WorkletTransportMessage
@@ -297,7 +311,17 @@ type WorkletMessage =
   | WorkletConfigureTelemetryMessage
   | WorkletLoopRegionMessage;
 
+export type LiveDirectorLevelMeter = { peak: number; held: number; musicPeak: number; musicAt: number; outputAt: number; audioTime: number; master: number };
+
 type WorkletInboundMessage =
+  | { type: 'music-meter'; peak: number; audioTime: number }
+  | { type: 'section-end-skipped'; serial: number }
+  | { type: 'section-end-complete'; serial: number; endSeconds: number }
+  | { type: 'track-guide-duck-ready'; requestId: number }
+  | { type: 'section-switch-complete'; serial: number; targetSeconds: number; contextTime: number; positionSeconds: number }
+  | { type: 'section-switch-skipped'; serial: number; reason?: string }
+  | { type: 'section-switch-prepared'; serial: number }
+  | { type: 'render-error'; code: string; seekSerial: number; renderedFrames: number }
   | WorkletTrackLevelsMessage
   | WorkletDebugStatusMessage
   | WorkletDebugTransportMessage
@@ -392,6 +416,12 @@ type ProducerTransportStateMessage = {
   playing: boolean;
 };
 
+type ProducerPrefetchRegionsMessage = {
+  type: 'prefetch-regions';
+  sessionId: number;
+  regions: Array<{ startSeconds: number; endSeconds: number }>;
+};
+
 type ProducerOutboundMessage =
   | ProducerWarmRuntimeMessage
   | ProducerInitSessionMessage
@@ -401,7 +431,8 @@ type ProducerOutboundMessage =
   | ProducerWarmNextSessionMessage
   | ProducerSwapActiveSessionMessage
   | ProducerAuditSyncMessage
-  | ProducerTransportStateMessage;
+  | ProducerTransportStateMessage
+  | ProducerPrefetchRegionsMessage;
 
 type ProducerReadyMessage = {
   type: 'producer-ready';
@@ -447,6 +478,7 @@ type ProducerTrackReadyMessage = {
   trackIndex: number;
   decodedUntilSample: number;
   targetEndSample: number | null;
+  durationSeconds?: number;
 };
 
 type ProducerTrackProgressMessage = {
@@ -706,7 +738,24 @@ type PendingProducerSyncAudit = {
   seekSerial?: number;
 };
 
+export type DeviceDownloadProgress = { doneBlocks: number; totalBlocks: number; held: boolean };
+export type DeviceDownloadResult = { ok: boolean; cancelled: boolean; totalBytes: number; error: string | null };
+type DeviceDownloadWorkerMessage =
+  | { type: 'stem-download-progress'; serial: number; doneBlocks: number; totalBlocks: number; held: boolean }
+  | { type: 'stem-download-complete'; serial: number; ok: boolean; totalBytes?: number; error?: string | null };
+
+type ProducerSectionPrefetchMessage = {
+  type: 'producer-section-prefetch';
+  sessionId: number;
+  regionCount: number;
+  trackCount: number;
+  fetchedBlocks: number;
+  cancelled: boolean;
+  elapsedMs: number;
+};
+
 type ProducerInboundMessage =
+  | ProducerSectionPrefetchMessage
   | ProducerReadyMessage
   | ProducerLoopCacheStatusMessage
   | ProducerStatusMessage
@@ -962,9 +1011,37 @@ type PreloadedStreamingSession = {
   trackStates: TrackRuntime[];
 };
 
-const AUDIO_WORKER_ASSET_VERSION = '20260726-mobile-stability-1';
+export type PreparedSectionJump = { serial: number; completion: Promise<boolean> };
+type StandbySectionPool = { sessionId: number; workers: Worker[]; tracks: TrackRuntime[] };
+type SectionJumpPreparation = {
+  serial: number;
+  sessionId: number;
+  sourceSessionId: number;
+  targetSeconds: number;
+  boundarySeconds: number;
+  targetSample: number;
+  minimumFrames: number;
+  control: Int32Array;
+  timing: Float64Array;
+  tracks: TrackRuntime[];
+  workers: Worker[];
+  seekReady: Set<number>;
+  phase: 'seeking' | 'ready' | 'scheduled';
+  songTracks?: TrackData[]; pauseAtTarget?: boolean; deferSchedule?: boolean;
+  ready: Deferred<PreparedSectionJump>;
+  completion: Deferred<boolean>;
+  readySettled: boolean;
+  timer: ReturnType<typeof setInterval> | null;
+  startedAt: number;
+};
+
+const AUDIO_WORKER_ASSET_VERSION = '20261026-rehearsal-download-1';
+const GENERATED_CLICK_SAMPLE_GAIN = 1.41; // +3 dB
+declare const __LIVE_AUDIO_PRODUCER_URL__: string;
 const DEFAULT_WORKLET_MODULE_URL = `/workers/MultitrackWorkletProcessor.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
-const DEFAULT_PRODUCER_WORKER_URL = `/workers/AudioProducerWorker.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
+const DEFAULT_PRODUCER_WORKER_URL = typeof __LIVE_AUDIO_PRODUCER_URL__ !== 'undefined'
+  ? __LIVE_AUDIO_PRODUCER_URL__
+  : `/workers/AudioProducerWorker.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_WORKLET_PROCESSOR_NAME = 'multitrack-worklet-processor';
 const DEFAULT_SAMPLE_RATE = 48_000;
 const DEFAULT_CHANNEL_COUNT = 1;
@@ -993,6 +1070,10 @@ const PRODUCER_DIAGNOSTIC_RATE_LIMIT_MS = 10_000;
 const CONTENT_ALIGNMENT_GUARD_SECONDS = 20;
 const CONTENT_SYNC_SPREAD_TOLERANCE_FRAMES = AAC_FRAME_SIZE * 2;
 const SEEK_NO_OP_TOLERANCE_SECONDS = 0.015;
+// Section starts cached ahead of time: the same 3 s decode preroll used by a
+// prepared jump plus enough audio to cover the switch and the first refills.
+const SECTION_PREFETCH_PREROLL_SECONDS = 3;
+const SECTION_PREFETCH_AHEAD_SECONDS = 6;
 const FLIGHT_RECORDER_MIN_INTERVAL_MS = 5_000;
 const AAC_SAMPLE_RATE_INDEXES = new Map<number, number>([
   [96000, 0],
@@ -1057,12 +1138,30 @@ const readBrowserMemorySnapshot = () => {
 export class StreamingMultitrackEngine {
   public readonly context: AudioContext;
   public readonly masterGain: GainNode;
+  private outputMeterNode: AudioWorkletNode | null = null;
+  private outputMeterLoading: Promise<void> | null = null;
+  private levelMeter = { peak: 0, held: 0, musicPeak: 0, musicAt: -1, outputAt: -1 };
   public workletNode: AudioWorkletNode | null = null;
   public onEnded: (() => void) | null = null;
+  private groupGains = new Map<string, number>();
+  private dynamicGuideOverrides = new Set<string>();
+  private guideDuckRequestSerial = 0;
+  private guideDuckRequests = new Map<number, { resolve: () => void; reject: () => void; timer: ReturnType<typeof setTimeout> }>();
+  private clickSamplesPromise: Promise<Float32Array[]> | null = null;
+  private clickSamplesNode: AudioWorkletNode | null = null;
+  private workletProcessorFailed = false;
+  private renderFaulted = false;
+  public onRenderError: ((message: string) => void) | null = null;
   private producerWorker: Worker | null = null;
   private readonly producerWorkers: Worker[] = [];
   private producerRuntimeWarmRequested = false;
   private producerSessionId = 0;
+  private producerSessionSerial = 0;
+  private sectionJumpSerial = 0;
+  private sectionEndSerial = 0;
+  private pendingSectionEnd: { serial: number; endSeconds: number; control: Int32Array; resolve: (result: boolean) => void } | null = null;
+  private pendingSectionJump: SectionJumpPreparation | null = null;
+  private standbySectionPool: StandbySectionPool | null = null;
   private streamingPath: 'worker' | 'main-thread' | 'uninitialized' = 'uninitialized';
   private decoderProbeQueue: Promise<void> = Promise.resolve();
 
@@ -1095,6 +1194,9 @@ export class StreamingMultitrackEngine {
   private activeSeekSerial = 0;
   private producerSeekSerial = 0;
   private startBarrierSerial = 0;
+  private deviceDownloadSerial = 0;
+  private deviceDownloadWorker: Worker | null = null;
+  private deviceDownloadCancel: (() => void) | null = null;
   private pendingProducerSeek: PendingProducerSeek | null = null;
   private pendingWorkletFlush: PendingWorkletFlush | null = null;
   private activeSeekDebugBlock: SeekBackDebugBlock | null = null;
@@ -1444,6 +1546,8 @@ export class StreamingMultitrackEngine {
     trackList: TrackData[],
     options?: { onProgress?: (loaded: number, total: number) => void },
   ): Promise<TrackData[]> {
+    this.cancelSectionJump();
+    this.releaseStandbySectionPool();
     const normalizedTracks = trackList.map((track) => ({
       ...track,
       volume: this.clampVolume(track.volume, MAX_TRACK_VOLUME),
@@ -1477,6 +1581,9 @@ export class StreamingMultitrackEngine {
       return levels;
     }, {});
 
+    this.groupGains.clear();
+    this.resetLevelMeter();
+    this.dynamicGuideOverrides.clear();
     const onProgress = options?.onProgress;
     if (onProgress) {
       try {
@@ -1524,7 +1631,7 @@ export class StreamingMultitrackEngine {
     const trackStates = trackDefinitions.map((trackDefinition, index) =>
       this.createProducerOnlyTrackRuntime(index, trackDefinition),
     );
-    const sessionId = Math.max(this.producerSessionId, this.preloadedNextSession?.sessionId || 0) + 1;
+    const sessionId = this.reserveProducerSessionId();
 
     this.preloadedNextSession = {
       sessionId,
@@ -1547,6 +1654,8 @@ export class StreamingMultitrackEngine {
   }
 
   async switchToPreloadedSong(): Promise<TrackData[]> {
+    this.cancelSectionJump();
+    this.releaseStandbySectionPool();
     const preloaded = this.preloadedNextSession;
 
     if (!preloaded) {
@@ -1964,6 +2073,7 @@ export class StreamingMultitrackEngine {
   }
 
   private omitTrackAfterProducerError(trackState: TrackRuntime, message: ProducerErrorMessage): void {
+    this.cancelSectionJump();
     const track = this.tracks[trackState.index];
     const trackId = message.trackId || track?.id || `track-${trackState.index}`;
     const trackLabel = message.trackName || track?.name || trackId;
@@ -2097,6 +2207,8 @@ export class StreamingMultitrackEngine {
     trackDefinitions: StreamingTrackDefinition[],
     onProgress?: (loaded: number, total: number) => void,
   ): Promise<void> {
+    this.cancelSectionJump();
+    this.releaseStandbySectionPool();
     this.ensureWebCodecsSupport();
 
     if (!this.context.audioWorklet) {
@@ -2105,12 +2217,19 @@ export class StreamingMultitrackEngine {
 
     // Reserve the next producer session before the first await. Messages still
     // arriving from the previous song are stale from this point onward.
-    const initializingSessionId = this.producerSessionId + 1;
+    const initializingSessionId = this.reserveProducerSessionId();
     this.producerSessionId = initializingSessionId;
     this.warmAudioProducerRuntime();
     await this.context.audioWorklet.addModule(this.workletModuleUrl);
     if (this.producerSessionId !== initializingSessionId) {
       return;
+    }
+    if (this.workletProcessorFailed && this.workletNode) {
+      this.workletNode.port.onmessage = null;
+      this.workletNode.onprocessorerror = null;
+      this.workletNode.disconnect();
+      this.workletNode = null;
+      this.workletProcessorFailed = false;
     }
     this.ensureWorkletNode();
     this.resetTracks();
@@ -2245,27 +2364,6 @@ export class StreamingMultitrackEngine {
               `track-ready-timeout en "${trackLabel}" (index ${trackState.index}): ${timeoutDetail}`,
             ),
           );
-          return;
-        }
-
-        // A single stalled stem must not prevent every healthy stem from loading.
-        // Keep one active track as the minimum so the engine never reports ready
-        // with an empty session.
-        if (!trackState.omitted && this.getActiveTrackStates().length > 1) {
-          this.omitTrackAfterProducerError(trackState, {
-            type: 'producer-error',
-            code: 'track-ready-timeout',
-            message: `La pista "${trackLabel}" no produjo audio inicial a tiempo. Se omitió para cargar las demás pistas.`,
-            sessionId: this.producerSessionId,
-            trackIndex: trackState.index,
-            trackId: track?.id,
-            trackName: trackLabel,
-            sourceFileName: track?.sourceFileName,
-            url: trackState.config.url,
-            availableRead: trackState.ringBuffer.availableRead(),
-            availableWrite: trackState.ringBuffer.availableWrite(),
-          });
-          resolve();
           return;
         }
 
@@ -2513,6 +2611,7 @@ export class StreamingMultitrackEngine {
   }
 
   async play(): Promise<void> {
+    if (this.renderFaulted) throw new Error('Recarga la sesión para recuperar el audio.');
     if (this.transportPlaying) {
       return;
     }
@@ -2533,6 +2632,7 @@ export class StreamingMultitrackEngine {
     }
 
     const auditSummary = await this.runSyncAudit({ reason: 'play', seekSerial: this.activeSeekSerial });
+    if (this.renderFaulted) return;
     if (this.shouldBlockPlaybackForContentMismatch(auditSummary)) {
       this.transportPlaying = false;
       this.startTime = 0;
@@ -2560,6 +2660,8 @@ export class StreamingMultitrackEngine {
   }
 
   pause(): void {
+    this.cancelSectionJump();
+    this.releaseStandbySectionPool();
     if (!this.transportPlaying) {
       return;
     }
@@ -2585,6 +2687,8 @@ export class StreamingMultitrackEngine {
   }
 
   stop(): void {
+    this.cancelSectionJump();
+    this.releaseStandbySectionPool();
     this.startBarrierSerial += 1;
     this.pauseTime = 0;
     this.startTime = 0;
@@ -2612,6 +2716,7 @@ export class StreamingMultitrackEngine {
   }
 
   getCurrentTime(): number {
+    this.adoptCommittedSectionJump();
     if (this.transportPlaying) {
       return Math.max(0, this.context.currentTime - this.startTime);
     }
@@ -2626,10 +2731,363 @@ export class StreamingMultitrackEngine {
     }, 0);
   }
 
+  private reserveProducerSessionId(): number {
+    this.producerSessionSerial = Math.max(
+      this.producerSessionSerial,
+      this.producerSessionId,
+      this.preloadedNextSession?.sessionId || 0,
+      this.pendingSectionJump?.sessionId || 0,
+    ) + 1;
+    return this.producerSessionSerial;
+  }
+
+  /** Decode a separate destination while every current stem keeps rendering. */
+  async prepareSectionJump(targetSeconds: number, boundarySeconds: number, songTracks?: TrackData[], pauseAtTarget = false, deferSchedule = false): Promise<PreparedSectionJump> {
+    this.cancelSectionJump();
+    if (
+      this.disposed || this.renderFaulted || !this.transportPlaying || !this.producerWorker ||
+      !supportsPreparedSectionJump(readLiveBrowserCapabilities()) ||
+      this.loopEnabled || typeof SharedArrayBuffer !== 'function' ||
+      !Number.isFinite(targetSeconds) || targetSeconds < 0 || !Number.isFinite(boundarySeconds) ||
+      boundarySeconds - this.getCurrentTime() < .25 || this.trackStates.length === 0 ||
+      this.trackStates.some(track => track.omitted || !track.ringBuffer.usesSharedMemory || track.config.container !== 'm4a')
+    ) throw new Error('No se puede preparar este salto sin interrumpir las pistas.');
+
+    const definitions = songTracks ? songTracks.map(track => this.normalizeTrackDefinition(this.buildStreamingTrackDefinition(track))) : this.trackStates.map(track => ({ ...track.config }));
+    if (definitions.some(track => track.container !== 'm4a')) throw new Error('El destino necesita stems M4A.');
+    const standby = songTracks ? null : this.standbySectionPool;
+    if (songTracks) this.releaseStandbySectionPool();
+    this.standbySectionPool = null;
+    const tracks = standby?.tracks || definitions.map((definition, index) => this.createProducerOnlyTrackRuntime(index, definition));
+    const serial = Math.max(this.sectionJumpSerial, this.producerSeekSerial, this.activeSeekSerial) + 1;
+    this.sectionJumpSerial = serial;
+    this.producerSeekSerial = serial;
+    const controlBuffer = new SharedArrayBuffer(24);
+    const pending: SectionJumpPreparation = {
+      serial, sessionId: standby?.sessionId || this.reserveProducerSessionId(), sourceSessionId: this.producerSessionId,
+      targetSeconds, boundarySeconds, songTracks, pauseAtTarget, deferSchedule,
+      targetSample: Math.round(targetSeconds * this.context.sampleRate),
+      minimumFrames: Math.ceil(this.context.sampleRate * .5),
+      control: new Int32Array(controlBuffer, 0, 1), timing: new Float64Array(controlBuffer, 8, 2),
+      tracks, workers: standby?.workers.slice() || [], seekReady: new Set(), phase: 'seeking',
+      ready: this.createDeferred<PreparedSectionJump>(), completion: this.createDeferred<boolean>(),
+      readySettled: false, timer: null, startedAt: performance.now(),
+    };
+    // A cancellation can precede the caller receiving the prepared handle.
+    void pending.completion.promise.catch(() => {});
+    this.pendingSectionJump = pending;
+    try {
+      const metadata = this.buildProducerTrackMetadata(definitions, songTracks || this.tracks, tracks);
+      const workerCount = standby?.workers.length || this.resolveProducerWorkerCount(tracks.length);
+      for (let index = 0; index < workerCount; index++) {
+        const worker = standby?.workers[index] || new Worker(this.producerWorkerUrl);
+        if (!standby) pending.workers.push(worker);
+        worker.onmessage = event => {
+          if (this.pendingSectionJump === pending) {
+            this.handleSectionJumpProducerMessage(pending, event.data);
+          } else if (this.producerWorkers.includes(worker)) {
+            this.handleProducerMessage(event.data as ProducerInboundMessage | null);
+          }
+        };
+        worker.onerror = event => {
+          if (this.pendingSectionJump === pending) this.failSectionJump(pending, `No se pudo preparar el audio: ${event.message}`);
+          else if (this.producerWorkers.includes(worker)) this.handleWorkletMessage({ type: 'render-error', code: 'producer-worker-error', seekSerial: this.activeSeekSerial, renderedFrames: 0 });
+        };
+        const decodePrerollFrames = Math.min(pending.targetSample, Math.round(this.context.sampleRate * 3));
+        worker.postMessage(standby ? {
+          type: 'seek', sessionId: pending.sessionId, targetSample: pending.targetSample,
+          seekSerial: pending.serial, decodePrerollFrames,
+          exactSampleSeek: true, hardReset: true, requireCompleteReady: true, bufferedAdvance: false,
+        } : {
+          type: 'init-session', sessionId: pending.sessionId, sampleRate: this.context.sampleRate,
+          diagnosticsEnabled: isLiveDiagnosticsEnabled(),
+          tracks: metadata.filter(track => track.trackIndex % workerCount === index),
+          initialSeek: { targetSample: pending.targetSample, seekSerial: pending.serial, decodePrerollFrames, decoderStaggerStepMs: 120 },
+        });
+      }
+      pending.timer = setInterval(() => {
+        if (this.pendingSectionJump !== pending) return;
+        if (Atomics.load(pending.control, 0) === 1) { this.adoptCommittedSectionJump(); return; }
+        if (Atomics.load(pending.control, 0) < 0) { this.failSectionJump(pending, 'El destino no estaba listo para el límite de sección.'); return; }
+        if (!this.transportPlaying || this.producerSessionId !== pending.sourceSessionId || this.disposed || this.renderFaulted) {
+          this.failSectionJump(pending, 'Salto cancelado al cambiar el transporte.'); return;
+        }
+        const remaining = boundarySeconds - (this.context.currentTime - this.startTime);
+        if (remaining < (pending.phase === 'scheduled' ? -.1 : .02)) {
+          this.failSectionJump(pending, 'El destino no estuvo listo a tiempo; la canción continúa.');
+        } else if (pending.phase !== 'scheduled' && performance.now() - pending.startedAt > 30000) {
+          this.failSectionJump(pending, 'Se agotó el tiempo para preparar todas las pistas.');
+        }
+      }, 20);
+    } catch (error) {
+      this.failSectionJump(pending, error instanceof Error ? error.message : 'No se pudo preparar el salto.');
+    }
+    return pending.ready.promise;
+  }
+
+  cancelSectionJump(serial?: number): void {
+    if (serial === undefined) this.cancelSectionEnd();
+    const pending = this.pendingSectionJump;
+    if (!pending || (serial !== undefined && pending.serial !== serial)) return;
+    // The render thread wins once state=1. Adopt before pause/manual seek can
+    // inspect the clock or terminate the producers that are now audible.
+    if (Atomics.compareExchange(pending.control, 0, 0, -1) === 1) {
+      this.adoptCommittedSectionJump();
+      return;
+    }
+    this.failSectionJump(pending, 'Salto cancelado.');
+  }
+
+  scheduleSectionEnd(endSeconds: number): { completion: Promise<boolean>; cancel: () => void } {
+    this.cancelSectionEnd();
+    if (!this.workletNode || !this.transportPlaying || !Number.isFinite(endSeconds) || endSeconds <= this.getCurrentTime()) {
+      throw new Error('No se pudo programar el final del arreglo.');
+    }
+    const serial = ++this.sectionEndSerial;
+    const controlBuffer = new SharedArrayBuffer(4);
+    const control = new Int32Array(controlBuffer);
+    const completion = new Promise<boolean>(resolve => { this.pendingSectionEnd = { serial, endSeconds, control, resolve }; });
+    this.workletNode.port.postMessage({ type: 'prepare-section-end', serial, endSeconds, controlBuffer });
+    return { completion, cancel: () => { if (this.pendingSectionEnd?.serial === serial) this.cancelSectionEnd(); } };
+  }
+
+  private cancelSectionEnd(): void {
+    const pending = this.pendingSectionEnd;
+    if (!pending) return;
+    // Once the audio thread has stopped, adopt it even if its message has not
+    // reached the UI yet; a pause/seek must not lose the completed endpoint.
+    const committed = Atomics.compareExchange(pending.control, 0, 0, -1) === 1;
+    this.workletNode?.port.postMessage({ type: 'cancel-section-end', serial: pending.serial });
+    this.pendingSectionEnd = null;
+    if (committed) {
+      this.pauseTime = pending.endSeconds; this.transportPlaying = false;
+      this.postProducerTransportState(false);
+    }
+    pending.resolve(committed);
+  }
+
+  private releaseStandbySectionPool(): void {
+    const standby = this.standbySectionPool;
+    if (!standby) return;
+    this.standbySectionPool = null;
+    for (const worker of standby.workers) { worker.onmessage = null; worker.onerror = null; worker.terminate(); }
+    for (const track of standby.tracks) {
+      track.abortController.abort();
+      try { track.decoder?.close(); } catch { /* already closed */ }
+    }
+  }
+
+  private failSectionJump(pending: SectionJumpPreparation, reason: string): void {
+    if (this.pendingSectionJump !== pending) return;
+    if (Atomics.compareExchange(pending.control, 0, 0, -1) === 1) {
+      this.adoptCommittedSectionJump();
+      return;
+    }
+    this.pendingSectionJump = null;
+    if (pending.timer !== null) clearInterval(pending.timer);
+    this.workletNode?.port.postMessage({ type: 'cancel-section-switch', serial: pending.serial });
+    for (const worker of pending.workers) { worker.onmessage = null; worker.onerror = null; worker.terminate(); }
+    for (const track of pending.tracks) track.abortController.abort();
+    if (!pending.readySettled) { pending.readySettled = true; pending.ready.reject(new Error(reason)); }
+    pending.completion.resolve(false);
+    this.logFlatLiveDiagnostic('streaming:section-switch-cancelled', { serial: pending.serial, reason });
+  }
+
+  private handleSectionJumpProducerMessage(pending: SectionJumpPreparation, message: ProducerInboundMessage | null): void {
+    if (!message || typeof message !== 'object' || !('sessionId' in message) || message.sessionId !== pending.sessionId) return;
+    if (message.type === 'producer-track-ready' && pending.songTracks) {
+      const track = pending.songTracks[message.trackIndex];
+      if (track && Number(message.durationSeconds) > 0) track.durationSeconds = Number(message.durationSeconds);
+    }
+    if (message.type === 'producer-error') {
+      this.failSectionJump(pending, 'No se pudieron preparar todas las pistas del destino.'); return;
+    }
+    if (message.type !== 'producer-seek-ready' || message.seekSerial !== pending.serial || message.targetSample !== pending.targetSample) return;
+    const track = pending.tracks[message.trackIndex];
+    if (!track || pending.phase !== 'seeking') return;
+    const aligned = message.firstNormalWriteStartSample === pending.targetSample &&
+      typeof message.lastNormalWriteEndSample === 'number' && message.lastNormalWriteEndSample - pending.targetSample >= pending.minimumFrames;
+    if (message.fallback === true || message.realContentReady !== true || !aligned || track.ringBuffer.availableRead() < pending.minimumFrames) {
+      this.failSectionJump(pending, 'Una pista del destino no tiene audio completo y sincronizado.'); return;
+    }
+    pending.seekReady.add(message.trackIndex);
+    if (pending.seekReady.size !== pending.tracks.length) return;
+    const now = this.context.currentTime - this.startTime;
+    if (pending.boundarySeconds - now < .02 || !this.transportPlaying || this.producerSessionId !== pending.sourceSessionId) {
+      this.failSectionJump(pending, 'El destino no estuvo listo a tiempo; la canción continúa.'); return;
+    }
+    const valid = pending.tracks.every(state => state.ringBuffer.availableRead() >= pending.minimumFrames &&
+      Atomics.load(state.ringBuffer.indices, 0) === pending.targetSample % (2 * state.ringBuffer.capacity));
+    if (!valid) { this.failSectionJump(pending, 'Las pistas del destino no comparten la misma posición.'); return; }
+    if (pending.songTracks || pending.deferSchedule) {
+      pending.phase = 'ready'; pending.readySettled = true;
+      pending.ready.resolve({ serial: pending.serial, completion: pending.completion.promise });
+      return;
+    }
+    this.schedulePreparedSwitch(pending);
+  }
+
+  /** Warm the shared stem block cache at each section start in the background. */
+  prefetchSectionStarts(startSeconds: number[]): void {
+    if (this.disposed || this.streamingPath !== 'worker' || this.producerSessionId <= 0) return;
+    const regions = Array.from(new Set(
+      startSeconds.filter(seconds => Number.isFinite(seconds) && seconds >= 0).map(seconds => Math.round(seconds * 1000) / 1000),
+    )).map(seconds => ({
+      startSeconds: Math.max(0, seconds - SECTION_PREFETCH_PREROLL_SECONDS),
+      endSeconds: seconds + SECTION_PREFETCH_AHEAD_SECONDS,
+    }));
+    if (regions.length === 0) return;
+    this.postProducerMessage({ type: 'prefetch-regions', sessionId: this.producerSessionId, regions });
+  }
+
+  /**
+   * Saves complete stems of one rehearsal on this device in a separate producer
+   * Worker. It waits while the transport plays, and only this rehearsal is kept.
+   */
+  downloadTracksToDevice(
+    tracks: TrackData[],
+    options: { rehearsalId: string; songIds: string[]; onProgress?: (progress: DeviceDownloadProgress) => void },
+  ): { completion: Promise<DeviceDownloadResult>; cancel: () => void } {
+    this.cancelDeviceDownload();
+    const urls = Array.from(new Set(tracks.map(track => this.normalizeTrackDefinition(this.buildStreamingTrackDefinition(track)).url)));
+    const serial = ++this.deviceDownloadSerial;
+    const worker = new Worker(this.producerWorkerUrl);
+    this.deviceDownloadWorker = worker;
+    const completion = new Promise<DeviceDownloadResult>(resolve => {
+      const finish = (result: DeviceDownloadResult) => {
+        if (this.deviceDownloadWorker === worker) { this.deviceDownloadWorker = null; this.deviceDownloadCancel = null; }
+        worker.onmessage = null; worker.onerror = null; worker.terminate();
+        resolve(result);
+      };
+      this.deviceDownloadCancel = () => finish({ ok: false, cancelled: true, totalBytes: 0, error: null });
+      worker.onmessage = event => {
+        const message = event.data as DeviceDownloadWorkerMessage | null;
+        if (!message || message.serial !== serial) return;
+        if (message.type === 'stem-download-progress') {
+          options.onProgress?.({ doneBlocks: message.doneBlocks, totalBlocks: message.totalBlocks, held: message.held });
+        } else if (message.type === 'stem-download-complete') {
+          finish({ ok: message.ok, cancelled: false, totalBytes: message.totalBytes || 0, error: message.error || null });
+        }
+      };
+      worker.onerror = event => finish({ ok: false, cancelled: false, totalBytes: 0, error: event.message || 'No se pudo guardar el ensayo.' });
+    });
+    worker.postMessage({
+      type: 'download-stems', serial, urls, held: this.transportPlaying,
+      rehearsalId: options.rehearsalId, songIds: options.songIds,
+    });
+    return { completion, cancel: () => this.cancelDeviceDownload() };
+  }
+
+  cancelDeviceDownload(): void {
+    this.deviceDownloadCancel?.();
+  }
+
+  async prepareRestart(pauseAtTarget = false, targetSeconds = 0): Promise<PreparedSectionJump> {
+    return this.prepareSectionJump(targetSeconds, Math.max(this.getDuration(),this.getCurrentTime())+60,undefined,pauseAtTarget,true);
+  }
+
+  async prepareSongChange(tracks: TrackData[], pauseAtTarget = false, targetSeconds = 0): Promise<PreparedSectionJump> {
+    if (!tracks.length) throw new Error('No hay stems activos en el destino.');
+    const normalized = tracks.map(track => ({ ...track, volume: this.clampVolume(track.volume, MAX_TRACK_VOLUME), isMuted: !!track.isMuted, outputRoute: resolveTrackOutputRoute(track) }));
+    return this.prepareSectionJump(targetSeconds, Math.max(this.getDuration(), this.getCurrentTime()) + 60, normalized, pauseAtTarget);
+  }
+
+  schedulePreparedSongChange(serial: number, boundary: number): void {
+    const pending = this.pendingSectionJump;
+    if (!pending || pending.serial !== serial || pending.phase !== 'ready' || boundary - this.getCurrentTime() < .05) throw new Error('El cambio no está listo para el final de esta sección.');
+    pending.boundarySeconds = boundary; this.schedulePreparedSwitch(pending);
+  }
+
+  private schedulePreparedSwitch(pending: SectionJumpPreparation): void {
+    pending.phase = 'scheduled';
+    try {
+      this.postWorkletMessage({
+        type: 'prepare-section-switch', serial: pending.serial,
+        boundarySeconds: pending.boundarySeconds, targetSeconds: pending.targetSeconds,
+        replaceSong: !!pending.songTracks, pauseAtTarget: pending.pauseAtTarget,
+        minimumFrames: pending.minimumFrames, controlBuffer: pending.control.buffer as SharedArrayBuffer,
+        tracks: pending.tracks.map(state => ({
+          ...(pending.songTracks ? { id: pending.songTracks[state.index].id, volume: state.volume, isMuted: state.muted, outputRoute: state.outputRoute, isCue: isGuideRoutingTrack(pending.songTracks[state.index]) } : {}),
+          trackIndex: state.index, capacity: state.ringBuffer.capacity,
+          sampleRate: this.context.sampleRate, channelCount: 1, usesSharedMemory: true,
+          sampleBuffer: state.ringBuffer.sampleStorage, indexBuffer: state.ringBuffer.indexStorage,
+        })),
+      });
+      if (!pending.readySettled) { pending.readySettled = true; pending.ready.resolve({ serial: pending.serial, completion: pending.completion.promise }); }
+      this.logFlatLiveDiagnostic('streaming:section-switch-ready', {
+        serial: pending.serial, tracks: pending.seekReady.size, target: pending.targetSeconds,
+        remainingSeconds: pending.boundarySeconds - this.getCurrentTime(), preparationMs: Math.round(performance.now() - pending.startedAt),
+      });
+    } catch (error) { this.failSectionJump(pending, error instanceof Error ? error.message : 'No se pudo programar el salto.'); }
+  }
+
+  private adoptCommittedSectionJump(message?: { serial: number; contextTime: number; positionSeconds: number }): void {
+    const pending = this.pendingSectionJump;
+    if (!pending || (message && message.serial !== pending.serial) || Atomics.load(pending.control, 0) !== 1) return;
+    const boundaryContextTime = message?.contextTime ?? pending.timing[0];
+    if (!Number.isFinite(boundaryContextTime) || boundaryContextTime <= 0) return;
+    this.pendingSectionJump = null;
+    if (pending.timer !== null) clearInterval(pending.timer);
+    const oldWorkers = this.producerWorkers.slice();
+    const oldTracks = this.trackStates.splice(0);
+    const oldSessionId = this.producerSessionId;
+    this.producerSessionId = pending.sessionId;
+    this.producerWorkers.splice(0, this.producerWorkers.length, ...pending.workers);
+    this.producerWorker = pending.workers[0] || null;
+    for (let index = 0; index < pending.tracks.length; index++) {
+      const next = pending.tracks[index], old = oldTracks[index];
+      if (old && !pending.songTracks) { next.volume = old.volume; next.muted = old.muted; next.outputRoute = old.outputRoute; }
+      next.readyResolved = true; next.ready.resolve();
+      this.trackStates.push(next);
+    }
+    if (pending.songTracks) {
+      this.tracks = pending.songTracks; this.trackIndexById = new Map(this.tracks.map((track,index) => [track.id,index]));
+      this.loadWarnings = []; this.soloTrackIds.clear(); this.groupGains.clear(); this.dynamicGuideOverrides.clear();
+      this.trackMeterLevels = Object.fromEntries(this.tracks.map(track => [track.id,0]));
+      this.configureSharedTelemetry(this.tracks); this.awaitingSongAdoption = true;
+    }
+    this.transportPlaying = pending.pauseAtTarget ? false : this.transportPlaying;
+    this.startTime = boundaryContextTime - pending.targetSeconds;
+    this.pauseTime = pending.targetSeconds;
+    this.restartFromHead = false;
+    this.streamingPath = 'worker';
+    this.lastProducerMessageAt = performance.now();
+    this.latestProducerTrackState.clear(); this.latestWorkletTrackStatus.clear(); this.latestUnderflowByTrack.clear();
+    this.activeSeekSerial = pending.serial;
+    this.pendingPlaybackContentCheck = null;
+    this.releasePreloadedNextSession();
+    this.postProducerTransportState(this.transportPlaying);
+    this.releaseStandbySectionPool();
+    // The former producer has a parsed MP4 index and a warmed decoder. Keep
+    // one idle pool for the next repeat instead of paying fresh startup again.
+    for (const worker of oldWorkers) {
+      worker.onmessage = null; worker.onerror = null;
+      worker.postMessage({ type: 'transport-state', sessionId: oldSessionId, playing: false });
+    }
+    if (pending.songTracks) {
+      oldWorkers.forEach(worker => worker.terminate()); oldTracks.forEach(track => track.abortController.abort());
+    } else this.standbySectionPool = { sessionId: oldSessionId, workers: oldWorkers, tracks: oldTracks };
+    pending.completion.resolve(true);
+    this.logFlatLiveDiagnostic('streaming:section-switch-complete', {
+      serial: pending.serial, tracks: pending.tracks.length, target: pending.targetSeconds, contextTime: boundaryContextTime,
+    });
+  }
+
+  private awaitingSongAdoption = false;
+  isAwaitingSongAdoption(): boolean { return this.awaitingSongAdoption; }
+  consumePreparedSong(tracks: TrackData[]): boolean {
+    if (!this.awaitingSongAdoption) return false;
+    const matches = tracks.length === this.tracks.length && tracks.every((track,index) => track.id === this.tracks[index].id && track.url === this.tracks[index].url);
+    this.awaitingSongAdoption = false; return matches;
+  }
+
   async seekTo(
     timeInSeconds: number,
     options?: { wasPlayingBeforeUiSeek?: boolean; forceFreshStart?: boolean },
   ): Promise<void> {
+    this.cancelSectionJump();
+    this.releaseStandbySectionPool();
+    if (this.renderFaulted) throw new Error('Recarga la sesión para recuperar el audio.');
     if (!Number.isFinite(timeInSeconds)) {
       return;
     }
@@ -2946,6 +3404,126 @@ export class StreamingMultitrackEngine {
     );
   }
 
+  setGuideOverride(trackId: string, enabled: boolean): void {
+    const index = this.trackIndexById.get(trackId);
+    if (index === undefined) return;
+    if (enabled) this.dynamicGuideOverrides.add(trackId); else this.dynamicGuideOverrides.delete(trackId);
+    this.workletNode?.port.postMessage({ type: 'track-guide-override', trackIndex: index, enabled });
+  }
+
+  async loadGeneratedClickSamples(): Promise<void> {
+    if (!this.workletNode || this.renderFaulted) throw new Error('El motor de audio todavía no está listo.');
+    if (!this.clickSamplesPromise) {
+      this.clickSamplesPromise = Promise.all(['accents', 'quarter', 'eighth', 'sixteenth'].map(async name => {
+        const response = await fetch(`/audio/click-classic/${name}.wav`, { signal: AbortSignal.timeout(10000) });
+        if (!response.ok) throw new Error('No se pudieron cargar los sonidos del metrónomo.');
+        const data = await response.arrayBuffer();
+        if (data.byteLength > 500000) throw new Error('Muestra de click demasiado grande.');
+        const audio = await this.context.decodeAudioData(data);
+        if (audio.length < 1 || audio.duration > 2) throw new Error('Muestra de click inválida.');
+        const mono = new Float32Array(audio.length);
+        for (let channel = 0; channel < audio.numberOfChannels; channel += 1) {
+          const samples = audio.getChannelData(channel);
+          for (let frame = 0; frame < samples.length; frame += 1) mono[frame] += samples[frame] / audio.numberOfChannels;
+        }
+        if (mono.some(value => !Number.isFinite(value) || Math.abs(value) > 1)) throw new Error('Muestra de click inválida.');
+        return mono;
+      })).then(samples => {
+        // El archivo del acento es más bajo que el de las negras (pico 0,36 frente a 0,60): se iguala al
+        // pico de la negra para que el «uno» no suene más débil que un pulso normal con el mismo fader.
+        const peak = (pcm: Float32Array) => pcm.reduce((max, value) => Math.max(max, Math.abs(value)), 0);
+        const accentPeak = peak(samples[0]), quarterPeak = peak(samples[1]);
+        if (accentPeak > 0 && quarterPeak > accentPeak) {
+          const gain = Math.min(4, quarterPeak / accentPeak);
+          samples[0] = samples[0].map(value => Math.max(-1, Math.min(1, value * gain)));
+        }
+        // Click generado +3 dB en todas las capas (los archivos tienen pico ~0,6): se oye mejor sobre la
+        // banda sin mover faders ni mezclas guardadas, y conserva el balance entre capas.
+        return samples.map(pcm => pcm.map(value => Math.max(-1, Math.min(1, value * GENERATED_CLICK_SAMPLE_GAIN))));
+      }).catch(error => { this.clickSamplesPromise = null; throw error; });
+    }
+    const samples = await this.clickSamplesPromise;
+    if (!this.workletNode || this.renderFaulted) throw new Error('El motor de audio se cerró.');
+    // FIFO on the same port guarantees the samples arrive before activation.
+    this.workletNode.port.postMessage({ type: 'click-samples', samples });
+    this.clickSamplesNode = this.workletNode;
+  }
+
+  setGeneratedClick(trackId: string, settings: GeneratedClickSettings | null): boolean {
+    const trackIndex = this.trackIndexById.get(trackId);
+    const normalized = settings ? normalizeGeneratedClick(settings) : null;
+    if (trackIndex === undefined || !this.workletNode || this.renderFaulted ||
+        (settings && (!normalized || this.clickSamplesNode !== this.workletNode))) return false;
+    this.workletNode.port.postMessage({ type: 'track-generated-click', trackIndex, settings: normalized });
+    return true;
+  }
+
+  getGuideAudioGraph(trackId: string): GuideAudioGraph | null {
+    if (!this.trackIndexById.has(trackId)) return null;
+    return {
+      context: this.context, destination: this.masterGain,
+      setOverride: enabled => this.setGuideOverride(trackId, enabled),
+      scheduleRecordedGuideDuck: (startAudioTime, endAudioTime, boundarySeconds, voiceEndAudioTime) => {
+        const trackIndex = this.trackIndexById.get(trackId);
+        if (trackIndex === undefined || !this.workletNode || this.disposed || this.renderFaulted) {
+          return Promise.reject(new Error('La guía grabada no está disponible.'));
+        }
+        const requestId = ++this.guideDuckRequestSerial;
+        return new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            this.guideDuckRequests.delete(requestId);
+            reject(new Error('No se confirmó el silencio de la guía grabada.'));
+          }, 500);
+          this.guideDuckRequests.set(requestId, { resolve, reject: () => reject(new Error('Guía cancelada.')), timer });
+          this.workletNode!.port.postMessage({ type: 'track-guide-duck', requestId, trackIndex, startAudioTime, endAudioTime, boundarySeconds, voiceEndAudioTime });
+        });
+      },
+      clearRecordedGuideDuck: () => {
+        const trackIndex = this.trackIndexById.get(trackId);
+        if (trackIndex !== undefined) this.workletNode?.port.postMessage({ type: 'track-guide-duck-clear', trackIndex });
+      },
+      readState: () => {
+        const index = this.trackIndexById.get(trackId), track = index === undefined ? undefined : this.trackStates[index];
+        if (!track) return { gain: 0, route: 'left' };
+        const silent = track.muted || (this.soloTrackIds.size > 0 && !this.soloTrackIds.has(trackId));
+        return { gain: silent ? 0 : track.volume * (this.groupGains.get(trackId) ?? 1), route: track.outputRoute };
+      },
+    };
+  }
+
+  getLevelMeterSnapshot(): LiveDirectorLevelMeter | null {
+    if (this.disposed) return null;
+    if (!this.outputMeterLoading) {
+      this.outputMeterLoading = this.context.audioWorklet.addModule('/workers/OutputMeterProcessor.js').then(() => {
+        if (this.disposed) return;
+        const node = new AudioWorkletNode(this.context, 'ld-output-meter', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], channelCount: 2, channelCountMode: 'explicit' });
+        node.port.onmessage = event => {
+          const data = event.data;
+          if (!Number.isFinite(data?.peak) || !Number.isFinite(data?.held) || !Number.isFinite(data?.audioTime)) return;
+          this.levelMeter.peak = data.peak; this.levelMeter.held = data.held; this.levelMeter.outputAt = data.audioTime;
+        };
+        node.onprocessorerror = () => { node.disconnect(); if (this.outputMeterNode === node) this.outputMeterNode = null; };
+        this.masterGain.connect(node); node.connect(this.context.destination);
+        this.outputMeterNode = node;
+        this.workletNode?.port.postMessage({ type: 'music-meter-enabled', enabled: true });
+      }).catch(() => { /* Meter failure never interrupts the transport. */ });
+    }
+    return this.outputMeterNode ? { ...this.levelMeter, audioTime: this.context.currentTime, master: this.masterGain.gain.value } : null;
+  }
+
+  resetLevelMeter(): void {
+    this.levelMeter = { peak: 0, held: 0, musicPeak: 0, musicAt: -1, outputAt: -1 };
+    this.outputMeterNode?.port.postMessage({ type: 'reset' });
+  }
+
+  setTrackGroupGain(trackId: string, gain: number): void {
+    const track = this.getTrackStateOrNull(trackId, 'group gain');
+    if (!track) return;
+    const safeGain = Number.isFinite(gain) ? Math.max(0, Math.min(4, gain)) : 1;
+    this.groupGains.set(trackId, safeGain);
+    this.workletNode?.port.postMessage({ type: 'track-group-gain', trackIndex: track.index, gain: safeGain });
+  }
+
   setTrackVolume(trackIdOrIndex: string | number, volume: number): void {
     const trackState = this.getTrackStateOrNull(trackIdOrIndex, 'volume update');
     if (!trackState) {
@@ -3008,10 +3586,14 @@ export class StreamingMultitrackEngine {
   }
 
   setMasterVolume(volume: number): void {
-    this.masterGain.gain.value = this.clampVolume(volume);
+    const now = this.context.currentTime;
+    this.masterGain.gain.cancelScheduledValues(now);
+    this.masterGain.gain.setValueAtTime(this.clampVolume(volume), now);
   }
 
   toggleLoop(): void {
+    this.cancelSectionJump();
+    this.releaseStandbySectionPool();
     if (this.loopEndInSeconds <= this.loopStartInSeconds) {
       this.loopEnabled = false;
       this.postLoopRegion();
@@ -3023,6 +3605,8 @@ export class StreamingMultitrackEngine {
   }
 
   setLoopPoints(startInSeconds: number, endInSeconds: number): void {
+    this.cancelSectionJump();
+    this.releaseStandbySectionPool();
     const start = Number(startInSeconds);
     const end = Number(endInSeconds);
 
@@ -3117,6 +3701,13 @@ export class StreamingMultitrackEngine {
   }
 
   dispose(): void {
+    for (const request of this.guideDuckRequests.values()) {
+      clearTimeout(request.timer); request.reject();
+    }
+    this.guideDuckRequests.clear();
+    this.cancelSectionJump();
+    this.releaseStandbySectionPool();
+    this.cancelDeviceDownload();
     this.disposed = true;
     this.removePageLifecycleListeners();
     this.removeEngineStateDumper();
@@ -3138,8 +3729,12 @@ export class StreamingMultitrackEngine {
     this.resetTracks();
     if (this.workletNode) {
       this.workletNode.port.onmessage = null;
+      this.workletNode.onprocessorerror = null;
       this.workletNode.disconnect();
       this.workletNode = null;
+    }
+    if (this.outputMeterNode) {
+      this.outputMeterNode.port.onmessage = null; this.outputMeterNode.disconnect(); this.outputMeterNode = null;
     }
     this.terminateProducerWorker('dispose');
     this.tracks = [];
@@ -3393,6 +3988,7 @@ export class StreamingMultitrackEngine {
   private postTrackConfiguration(trackState: TrackRuntime): void {
     this.postWorkletMessage({
       type: 'configure-track',
+      isCue: isGuideRoutingTrack(this.tracks[trackState.index]),
       trackIndex: trackState.index,
       capacity: trackState.ringBuffer.capacity,
       sampleRate: trackState.config.sampleRate,
@@ -3402,6 +3998,11 @@ export class StreamingMultitrackEngine {
       indexBuffer: trackState.ringBuffer.indexStorage,
     });
 
+    const trackId = this.tracks[trackState.index]?.id;
+    if (trackId) {
+      this.setTrackGroupGain(trackId, this.groupGains.get(trackId) ?? 1);
+      this.setGuideOverride(trackId, this.dynamicGuideOverrides.has(trackId));
+    }
     this.postWorkletMessage({
       type: 'track-volume',
       trackIndex: trackState.index,
@@ -4080,6 +4681,8 @@ export class StreamingMultitrackEngine {
       sessionId: this.producerSessionId,
       playing,
     });
+    // A rehearsal download never competes with audio that is sounding.
+    this.deviceDownloadWorker?.postMessage({ type: 'download-hold', held: playing });
   }
 
   private recordProducerTrackState(
@@ -4324,6 +4927,18 @@ export class StreamingMultitrackEngine {
       return;
     }
 
+    if (message.type === 'producer-section-prefetch') {
+      this.logFlatLiveDiagnostic('streaming:section-prefetch', {
+        sessionId: message.sessionId,
+        regions: message.regionCount,
+        tracks: message.trackCount,
+        fetchedBlocks: message.fetchedBlocks,
+        cancelled: message.cancelled,
+        elapsedMs: message.elapsedMs,
+      });
+      return;
+    }
+
     if (message.type === 'producer-debug-log') {
       if (message.level === 'error') {
         console.error('[StreamingMultitrackEngine]', ...(Array.isArray(message.args) ? message.args : []));
@@ -4361,6 +4976,11 @@ export class StreamingMultitrackEngine {
     }
 
     if (message.type === 'producer-track-ready') {
+      const track = this.tracks[message.trackIndex];
+      const durationSeconds = Number(message.durationSeconds);
+      if (track && Number.isFinite(durationSeconds) && durationSeconds > 0) {
+        track.durationSeconds = Math.max(Number(track.durationSeconds) || 0, durationSeconds);
+      }
       this.recordProducerTrackState(message.trackIndex, {
         messageType: message.type,
         decodedUntilSample: message.decodedUntilSample,
@@ -4535,7 +5155,7 @@ export class StreamingMultitrackEngine {
       }, 'warn');
       if (typeof message.trackIndex === 'number') {
         const trackState = this.trackStates[message.trackIndex];
-        if (trackState && (!trackState.readyResolved || message.code === 'unsupported-format')) {
+        if (trackState && (message.code === 'unsupported-format' || message.code === 'decoder-error')) {
           this.omitTrackAfterProducerError(trackState, message);
           return;
         }
@@ -5283,6 +5903,7 @@ export class StreamingMultitrackEngine {
   }
 
   private resetTracks(): void {
+    this.renderFaulted = false;
     this.streamingPath = 'uninitialized';
     this.latestWorkletTrackStatus.clear();
     this.latestProducerTrackState.clear();
@@ -5333,11 +5954,13 @@ export class StreamingMultitrackEngine {
       this.workletNode.port.onmessage = (event) => {
         this.handleWorkletMessage(event.data as WorkletInboundMessage | null);
       };
+      this.workletNode.onprocessorerror = () => this.handleWorkletMessage({ type: 'render-error', code: 'processor-error', seekSerial: this.activeSeekSerial, renderedFrames: 0 });
       this.workletNode.connect(this.masterGain);
       this.workletNode.port.postMessage({
         type: 'debug-enabled',
         enabled: isLiveDiagnosticsEnabled(),
       });
+      if (this.outputMeterNode) this.workletNode.port.postMessage({ type: 'music-meter-enabled', enabled: true });
     }
 
     return this.workletNode;
@@ -5345,6 +5968,57 @@ export class StreamingMultitrackEngine {
 
   private handleWorkletMessage(message: WorkletInboundMessage | null): void {
     if (!message || typeof message !== 'object') {
+      return;
+    }
+
+    if (message.type === 'music-meter') {
+      if (Number.isFinite(message.peak) && Number.isFinite(message.audioTime)) {
+        this.levelMeter.musicPeak = message.peak; this.levelMeter.musicAt = message.audioTime;
+      }
+      return;
+    }
+
+    if (message.type === 'section-end-skipped') {
+      if (this.pendingSectionEnd?.serial === message.serial) this.cancelSectionEnd();
+      return;
+    }
+    if (message.type === 'section-end-complete') {
+      const pending = this.pendingSectionEnd;
+      if (pending?.serial !== message.serial) return;
+      this.pendingSectionEnd = null;
+      this.pauseTime = message.endSeconds;
+      this.transportPlaying = false;
+      this.postProducerTransportState(false);
+      pending.resolve(true);
+      this.onEnded?.();
+      return;
+    }
+    if (message.type === 'track-guide-duck-ready') {
+      const request = this.guideDuckRequests.get(message.requestId);
+      if (request) {
+        clearTimeout(request.timer); this.guideDuckRequests.delete(message.requestId); request.resolve();
+      }
+      return;
+    }
+    if (message.type === 'section-switch-complete') {
+      this.adoptCommittedSectionJump(message);
+      return;
+    }
+    if (message.type === 'section-switch-skipped') {
+      const pending = this.pendingSectionJump;
+      if (pending && pending.serial === message.serial) this.failSectionJump(pending, message.reason || 'El salto no estaba listo para ejecutarse.');
+      return;
+    }
+    if (message.type === 'section-switch-prepared') return;
+
+    if (message.type === 'render-error') {
+      if (this.renderFaulted) return;
+      this.renderFaulted = true;
+      this.workletProcessorFailed = message.code === 'processor-error';
+      this.pause();
+      this.activeSeekSerial += 1;
+      this.startBarrierSerial += 1;
+      this.onRenderError?.('El motor de audio se detuvo por un fallo de mezcla. Recarga la sesión y pulsa reproducir cuando esté preparada.');
       return;
     }
 
@@ -5367,6 +6041,8 @@ export class StreamingMultitrackEngine {
         referenceSeconds: message.referenceSeconds,
         audibleZeroTracks: message.audibleZeroTracks,
         minAvailableRead: message.minAvailableRead,
+        renderLoadPct: message.renderLoadPct ?? null,
+        renderPeakPct: message.renderPeakPct ?? null,
         trackCount: message.tracks.filter((trackStatus) => !this.isTrackIndexOmitted(trackStatus.index)).length,
       };
       message.tracks.forEach((trackStatus) => {
@@ -5756,8 +6432,9 @@ class Mp4BoxDemuxer implements EncodedAudioChunkDemuxer {
     }
 
     const audioTrackId = audioTrack.id;
-    const trackDuration = Number(audioTrack.duration);
-    const trackTimescale = Number(audioTrack.timescale);
+    const hasPresentationDuration = Number(audioTrack.movie_duration) > 0 && Number(audioTrack.movie_timescale) > 0;
+    const trackDuration = Number(hasPresentationDuration ? audioTrack.movie_duration : audioTrack.duration);
+    const trackTimescale = Number(hasPresentationDuration ? audioTrack.movie_timescale : audioTrack.timescale);
     if (Number.isFinite(trackDuration) && trackDuration > 0 && Number.isFinite(trackTimescale) && trackTimescale > 0) {
       this.durationSeconds = trackDuration / trackTimescale;
     }

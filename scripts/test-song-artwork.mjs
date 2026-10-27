@@ -3,6 +3,7 @@ import sharp from 'sharp';
 import { createSongArtworkWebp } from '../src/lib/server/song-artwork-storage.js';
 import {
   buildStoredSongArtworkUrl,
+  getLiveDirectorSongArtworkUrl,
   getSongArtworkCandidates,
   getSongArtworkObjectKey,
 } from '../src/utils/songArtwork.js';
@@ -22,6 +23,11 @@ assert.match(
 );
 assert.equal(getSongArtworkCandidates({ ...song, portada: 'https://example.com/cover.webp' })[0], 'https://example.com/cover.webp');
 assert.equal(getSongArtworkObjectKey('../invalid'), '');
+
+assert.equal(new URL(getLiveDirectorSongArtworkUrl(song)).searchParams.get('cors'), '1');
+assert.equal(getLiveDirectorSongArtworkUrl({ portada: '/cover.webp' }), '/cover.webp');
+assert.equal(getLiveDirectorSongArtworkUrl({ portada: 'https://example.com/cover.webp' }), 'https://example.com/cover.webp');
+assert.equal(getLiveDirectorSongArtworkUrl({}), '');
 
 const placeholder = await createSongArtworkWebp(null);
 const metadata = await sharp(placeholder).metadata();

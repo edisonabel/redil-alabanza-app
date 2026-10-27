@@ -3,6 +3,7 @@ import { fetchWithSessionRetry } from './authenticatedFetch.js';
 const MAX_EVENT_MIX_TRACKS = 64;
 const MAX_TRACK_ID_LENGTH = 160;
 const PENDING_EVENT_MIX_STORAGE_PREFIX = 'redil:live-director:event-mix:pending:v1:';
+const pendingMixReads = new Map();
 
 const clampVolume = (value, fallback = 1) => {
   const numeric = Number(value);
@@ -11,6 +12,27 @@ const clampVolume = (value, fallback = 1) => {
 };
 
 const normalizeTrackId = (value = '') => String(value || '').trim().slice(0, MAX_TRACK_ID_LENGTH);
+const MIX_GROUP_IDS = new Set(['keys', 'acoustic', 'electric', 'bass', 'vocals', 'rhythm', 'other', 'cues']);
+
+// Buses de la mezcla del evento: nivel y silencio por grupo, y a qué grupo va cada stem.
+// El solo es momentáneo y no se guarda. Sin datos válidos devuelve null (mezclas antiguas).
+export const normalizeLiveDirectorMixGroups = (value = null) => {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+  if (!source) return null;
+  const gains = {}, muted = {}, assignments = {};
+  for (const [id, gain] of Object.entries(source.gains || {})) {
+    if (MIX_GROUP_IDS.has(id) && Number.isFinite(Number(gain))) gains[id] = clampVolume(gain, 1);
+  }
+  for (const [id, isMuted] of Object.entries(source.muted || {})) {
+    if (MIX_GROUP_IDS.has(id) && isMuted === true) muted[id] = true;
+  }
+  for (const [trackId, groupId] of Object.entries(source.assignments || {}).slice(0, MAX_EVENT_MIX_TRACKS)) {
+    const id = normalizeTrackId(trackId);
+    if (id && MIX_GROUP_IDS.has(groupId)) assignments[id] = groupId;
+  }
+  return Object.keys(gains).length || Object.keys(muted).length || Object.keys(assignments).length
+    ? { gains, muted, assignments } : null;
+};
 
 export const normalizeLiveDirectorEventMix = (value = null) => {
   const source = value && typeof value === 'object' && !Array.isArray(value) ? value : null;
@@ -33,16 +55,20 @@ export const normalizeLiveDirectorEventMix = (value = null) => {
 
   if (tracks.length === 0) return null;
 
+  const groups = normalizeLiveDirectorMixGroups(source.groups);
   return {
     version: 1,
     tracks,
+    ...(groups ? { groups } : {}),
     updatedAt: String(source.updatedAt || source.updated_at || '').trim(),
     updatedBy: String(source.updatedBy || source.updated_by || '').trim(),
   };
 };
 
-export const buildLiveDirectorEventMix = (tracks = []) => normalizeLiveDirectorEventMix({
+/** @param {Array<any>} [tracks] @param {object | null} [groups] */
+export const buildLiveDirectorEventMix = (tracks = [], groups = null) => normalizeLiveDirectorEventMix({
   version: 1,
+  groups,
   tracks: (Array.isArray(tracks) ? tracks : []).map((track) => ({
     id: track?.id,
     enabled: track?.enabled !== false,
@@ -66,15 +92,20 @@ export const applyLiveDirectorEventMix = (session = null, rawMix = null) => {
         volume: eventTrack.volume,
       };
     }),
+    ...(mix.groups ? { mixGroups: mix.groups } : {}),
   };
 };
 
 export const liveDirectorEventMixSignature = (value = null) => {
   const mix = normalizeLiveDirectorEventMix(value);
   if (!mix) return '';
-  return mix.tracks
+  const tracks = mix.tracks
     .map((track) => `${track.id}:${track.enabled ? '1' : '0'}:${track.volume.toFixed(4)}`)
     .join('|');
+  if (!mix.groups) return tracks;
+  const entries = (record) => Object.entries(record).sort(([a], [b]) => a.localeCompare(b));
+  const { gains, muted, assignments } = mix.groups;
+  return `${tracks}#${entries(gains).map(([id, gain]) => `${id}:${gain.toFixed(4)}`).join(',')}#${entries(muted).map(([id]) => id).join(',')}#${entries(assignments).map(([id, group]) => `${id}:${group}`).join(',')}`;
 };
 
 const buildPendingEventMixStorageKey = (eventId = '', songId = '') => (
@@ -152,7 +183,7 @@ export const stagePendingLiveDirectorEventMix = ({ eventId = '', songId = '', mi
   }
 };
 
-const clearPendingLiveDirectorEventMixIfMatching = ({ eventId, songId, signature }) => {
+export const clearPendingLiveDirectorEventMixIfMatching = ({ eventId, songId, signature }) => {
   const storage = getLocalStorage();
   if (!storage) return false;
 
@@ -177,14 +208,23 @@ const parseJsonResponse = async (response) => {
 
 export async function fetchLiveDirectorEventMix({ eventId = '', songId = '' } = {}) {
   const params = new URLSearchParams({ evento_id: eventId, cancion_id: songId });
-  const response = await fetchWithSessionRetry(`/api/live-director-event-mix?${params.toString()}`, {
-    method: 'GET',
-    headers: { accept: 'application/json' },
-    credentials: 'same-origin',
-    cache: 'no-store',
-  });
-  const payload = await parseJsonResponse(response);
-  return normalizeLiveDirectorEventMix(payload?.mix);
+  const key = params.toString();
+  // Permission resolution can rerun the caller while its first read is still
+  // pending. Share that read instead of starting another cold SSR/R2 request.
+  if (pendingMixReads.has(key)) return pendingMixReads.get(key);
+  const read = (async () => {
+    const response = await fetchWithSessionRetry(`/api/live-director-event-mix?${key}`, {
+      method: 'GET',
+      headers: { accept: 'application/json' },
+      credentials: 'same-origin',
+      cache: 'no-store',
+    });
+    const payload = await parseJsonResponse(response);
+    return normalizeLiveDirectorEventMix(payload?.mix);
+  })();
+  pendingMixReads.set(key, read);
+  try { return await read; }
+  finally { if (pendingMixReads.get(key) === read) pendingMixReads.delete(key); }
 }
 
 export async function saveLiveDirectorEventMix({ eventId = '', songId = '', mix = null } = {}) {
@@ -231,4 +271,12 @@ export async function retryPendingLiveDirectorEventMix({ eventId = '', songId = 
   const pending = readPendingLiveDirectorEventMix({ eventId, songId });
   if (!pending) return null;
   return saveLiveDirectorEventMix({ eventId, songId, mix: pending.mix });
+}
+
+export async function fetchLiveDirectorEventMixPermission(eventId) {
+  // Ask the server for the current user's authority in this specific event.
+  const params = new URLSearchParams({ evento_id: eventId, permission: '1' });
+  const response = await fetchWithSessionRetry(`/api/live-director-event-mix?${params}`, { credentials: 'same-origin', cache: 'no-store' });
+  const body = await parseJsonResponse(response);
+  return body.canEdit === true;
 }

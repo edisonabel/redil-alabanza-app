@@ -1,0 +1,474 @@
+[
+  {
+    "key": "hold",
+    "label": "Hold",
+    "url": "/audio/guide-es/hold.wav",
+    "duration": 0.7527,
+    "source": "Spanish - Hold (Sostener).wav",
+    "kind": "instruction"
+  },
+  {
+    "key": "last-time",
+    "label": "Last Time",
+    "url": "/audio/guide-es/last-time.wav",
+    "duration": 0.8628,
+    "source": "Spanish - Last Time (Ultima Vez).wav",
+    "kind": "instruction"
+  },
+  {
+    "key": "1",
+    "label": "1",
+    "url": "/audio/guide-es/1.wav",
+    "duration": 0.5175,
+    "source": "Spanish - 1.wav",
+    "kind": "count"
+  },
+  {
+    "key": "2",
+    "label": "2",
+    "url": "/audio/guide-es/2.wav",
+    "duration": 0.5468,
+    "source": "Spanish - 2.wav",
+    "kind": "count"
+  },
+  {
+    "key": "3",
+    "label": "3",
+    "url": "/audio/guide-es/3.wav",
+    "duration": 0.5417,
+    "source": "Spanish - 3.wav",
+    "kind": "count"
+  },
+  {
+    "key": "4",
+    "label": "4",
+    "url": "/audio/guide-es/4.wav",
+    "duration": 0.5507,
+    "source": "Spanish - 4.wav",
+    "kind": "count"
+  },
+  {
+    "key": "5",
+    "label": "5",
+    "url": "/audio/guide-es/5.wav",
+    "duration": 0.5747,
+    "source": "Spanish - 5.wav",
+    "kind": "count"
+  },
+  {
+    "key": "6",
+    "label": "6",
+    "url": "/audio/guide-es/6.wav",
+    "duration": 0.6275,
+    "source": "Spanish - 6.wav",
+    "kind": "count"
+  },
+  {
+    "key": "7",
+    "label": "7",
+    "url": "/audio/guide-es/7.wav",
+    "duration": 0.5552,
+    "source": "Spanish - 7.wav",
+    "kind": "count"
+  },
+  {
+    "key": "baja-intensidad",
+    "label": "Baja Intensidad",
+    "url": "/audio/guide-es/baja-intensidad.wav",
+    "duration": 1.0158,
+    "source": "Spanish - Baja Intensidad (Breakdown).wav",
+    "kind": "section"
+  },
+  {
+    "key": "coro",
+    "label": "Coro",
+    "url": "/audio/guide-es/coro.wav",
+    "duration": 0.523,
+    "source": "Spanish - Coro (Chorus).wav",
+    "kind": "section"
+  },
+  {
+    "key": "coro-1",
+    "label": "Coro 1",
+    "url": "/audio/guide-es/coro-1.wav",
+    "duration": 0.8427,
+    "source": "Spanish - Coro 1 (Chorus 1).wav",
+    "kind": "section"
+  },
+  {
+    "key": "coro-2",
+    "label": "Coro 2",
+    "url": "/audio/guide-es/coro-2.wav",
+    "duration": 0.8742,
+    "source": "Spanish - Coro 2 (Chorus 2).wav",
+    "kind": "section"
+  },
+  {
+    "key": "coro-3",
+    "label": "Coro 3",
+    "url": "/audio/guide-es/coro-3.wav",
+    "duration": 0.873,
+    "source": "Spanish - Coro 3 (Chorus 3).wav",
+    "kind": "section"
+  },
+  {
+    "key": "coro-4",
+    "label": "Coro 4",
+    "url": "/audio/guide-es/coro-4.wav",
+    "duration": 0.9566,
+    "source": "Spanish - Coro 4 (Chorus 4).wav",
+    "kind": "section"
+  },
+  {
+    "key": "ending",
+    "label": "Ending",
+    "url": "/audio/guide-es/ending.wav",
+    "duration": 0.5651,
+    "source": "Spanish - Ending (Final).wav",
+    "kind": "section"
+  },
+  {
+    "key": "exhortation",
+    "label": "Exhortation",
+    "url": "/audio/guide-es/exhortation.wav",
+    "duration": 1.1068,
+    "source": "Spanish - Exhortation.wav",
+    "kind": "section"
+  },
+  {
+    "key": "instrumental",
+    "label": "Instrumental",
+    "url": "/audio/guide-es/instrumental.wav",
+    "duration": 1.0042,
+    "source": "Spanish - Instrumental.wav",
+    "kind": "section"
+  },
+  {
+    "key": "interludio",
+    "label": "Interludio",
+    "url": "/audio/guide-es/interludio.wav",
+    "duration": 0.9183,
+    "source": "Spanish - Interludio (Interlude).wav",
+    "kind": "section"
+  },
+  {
+    "key": "intro",
+    "label": "Intro",
+    "url": "/audio/guide-es/intro.wav",
+    "duration": 0.6104,
+    "source": "Spanish - Intro.wav",
+    "kind": "section"
+  },
+  {
+    "key": "outro",
+    "label": "Outro",
+    "url": "/audio/guide-es/outro.wav",
+    "duration": 0.5958,
+    "source": "Spanish - Outro.wav",
+    "kind": "section"
+  },
+  {
+    "key": "post-coro",
+    "label": "Post Coro",
+    "url": "/audio/guide-es/post-coro.wav",
+    "duration": 0.845,
+    "source": "Spanish - Post Coro (Post Chorus).wav",
+    "kind": "section"
+  },
+  {
+    "key": "pre-coro",
+    "label": "Pre Coro",
+    "url": "/audio/guide-es/pre-coro.wav",
+    "duration": 0.7871,
+    "source": "Spanish - Pre Coro (Pre Chorus).wav",
+    "kind": "section"
+  },
+  {
+    "key": "pre-coro-1",
+    "label": "Pre Coro 1",
+    "url": "/audio/guide-es/pre-coro-1.wav",
+    "duration": 1.0909,
+    "source": "Spanish - Pre Coro 1 (Pre Chorus 1).wav",
+    "kind": "section"
+  },
+  {
+    "key": "pre-coro-2",
+    "label": "Pre Coro 2",
+    "url": "/audio/guide-es/pre-coro-2.wav",
+    "duration": 1.1195,
+    "source": "Spanish - Pre Coro 2 (Pre Chorus 2).wav",
+    "kind": "section"
+  },
+  {
+    "key": "pre-coro-3",
+    "label": "Pre Coro 3",
+    "url": "/audio/guide-es/pre-coro-3.wav",
+    "duration": 1.1053,
+    "source": "Spanish - Pre Coro 3 (Pre Chorus 3).wav",
+    "kind": "section"
+  },
+  {
+    "key": "pre-coro-4",
+    "label": "Pre Coro 4",
+    "url": "/audio/guide-es/pre-coro-4.wav",
+    "duration": 1.1736,
+    "source": "Spanish - Pre Coro 4 (Pre Chorus 4).wav",
+    "kind": "section"
+  },
+  {
+    "key": "puente",
+    "label": "Puente",
+    "url": "/audio/guide-es/puente.wav",
+    "duration": 0.64,
+    "source": "Spanish - Puente (Bridge).wav",
+    "kind": "section"
+  },
+  {
+    "key": "puente-1",
+    "label": "Puente 1",
+    "url": "/audio/guide-es/puente-1.wav",
+    "duration": 0.9568,
+    "source": "Spanish - Puente 1 (Bridge 1).wav",
+    "kind": "section"
+  },
+  {
+    "key": "puente-2",
+    "label": "Puente 2",
+    "url": "/audio/guide-es/puente-2.wav",
+    "duration": 0.9317,
+    "source": "Spanish - Puente 2 (Bridge 2).wav",
+    "kind": "section"
+  },
+  {
+    "key": "puente-3",
+    "label": "Puente 3",
+    "url": "/audio/guide-es/puente-3.wav",
+    "duration": 0.9298,
+    "source": "Spanish - Puente 3 (Bridge 3).wav",
+    "kind": "section"
+  },
+  {
+    "key": "puente-4",
+    "label": "Puente 4",
+    "url": "/audio/guide-es/puente-4.wav",
+    "duration": 0.9627,
+    "source": "Spanish - Puente 4 (Bridge 4).wav",
+    "kind": "section"
+  },
+  {
+    "key": "rap",
+    "label": "Rap",
+    "url": "/audio/guide-es/rap.wav",
+    "duration": 0.5516,
+    "source": "Spanish - Rap.wav",
+    "kind": "section"
+  },
+  {
+    "key": "refrain",
+    "label": "Refrain",
+    "url": "/audio/guide-es/refrain.wav",
+    "duration": 0.7335,
+    "source": "Spanish - Refrain.wav",
+    "kind": "section"
+  },
+  {
+    "key": "repetir",
+    "label": "Repetir",
+    "url": "/audio/guide-es/repetir.wav",
+    "duration": 0.7289,
+    "source": "Spanish - Repetir (Tag).wav",
+    "kind": "section"
+  },
+  {
+    "key": "solo",
+    "label": "Solo",
+    "url": "/audio/guide-es/solo.wav",
+    "duration": 0.555,
+    "source": "Spanish - Solo.wav",
+    "kind": "section"
+  },
+  {
+    "key": "vamp",
+    "label": "Vamp",
+    "url": "/audio/guide-es/vamp.wav",
+    "duration": 0.5732,
+    "source": "Spanish - Vamp.wav",
+    "kind": "section"
+  },
+  {
+    "key": "verso",
+    "label": "Verso",
+    "url": "/audio/guide-es/verso.wav",
+    "duration": 0.5752,
+    "source": "Spanish - Verso (Verse).wav",
+    "kind": "section"
+  },
+  {
+    "key": "verso-1",
+    "label": "Verso 1",
+    "url": "/audio/guide-es/verso-1.wav",
+    "duration": 0.9232,
+    "source": "Spanish - Verso 1 (Verse 1).wav",
+    "kind": "section"
+  },
+  {
+    "key": "verso-2",
+    "label": "Verso 2",
+    "url": "/audio/guide-es/verso-2.wav",
+    "duration": 0.9567,
+    "source": "Spanish - Verso 2 (Verse 2).wav",
+    "kind": "section"
+  },
+  {
+    "key": "verso-3",
+    "label": "Verso 3",
+    "url": "/audio/guide-es/verso-3.wav",
+    "duration": 0.9529,
+    "source": "Spanish - Verso 3 (Verse 3).wav",
+    "kind": "section"
+  },
+  {
+    "key": "verso-4",
+    "label": "Verso 4",
+    "url": "/audio/guide-es/verso-4.wav",
+    "duration": 0.9712,
+    "source": "Spanish - Verso 4 (Verse 4).wav",
+    "kind": "section"
+  },
+  {
+    "key": "verso-5",
+    "label": "Verso 5",
+    "url": "/audio/guide-es/verso-5.wav",
+    "duration": 0.9697,
+    "source": "Spanish - Verso 5 (Verse 5).wav",
+    "kind": "section"
+  },
+  {
+    "key": "verso-6",
+    "label": "Verso 6",
+    "url": "/audio/guide-es/verso-6.wav",
+    "duration": 1.0427,
+    "source": "Spanish - Verso 6 (Verse 6).wav",
+    "kind": "section"
+  },
+  {
+    "key": "build",
+    "label": "Build",
+    "url": "/audio/guide-es/build.wav",
+    "duration": 1.2098,
+    "source": "Spanish - Build (Sube Intensidad).wav",
+    "kind": "instruction"
+  },
+  {
+    "key": "break",
+    "label": "Break",
+    "url": "/audio/guide-es/break.wav",
+    "duration": 0.6197,
+    "source": "Spanish - Break (Pausa).wav",
+    "kind": "instruction"
+  },
+  {
+    "key": "hits",
+    "label": "Hits",
+    "url": "/audio/guide-es/hits.wav",
+    "duration": 0.693,
+    "source": "Spanish - Hits.wav",
+    "kind": "instruction"
+  },
+  {
+    "key": "drums-in",
+    "label": "Drums In",
+    "url": "/audio/guide-es/drums-in.wav",
+    "duration": 1.1427,
+    "source": "Spanish - Drums In (Entra Bateria).wav",
+    "kind": "instruction"
+  },
+  {
+    "key": "all-in",
+    "label": "All In",
+    "url": "/audio/guide-es/all-in.wav",
+    "duration": 0.9487,
+    "source": "Spanish - All In (Toda La Banda).wav",
+    "kind": "instruction"
+  },
+  {
+    "key": "key-change-up",
+    "label": "Key Change Up",
+    "url": "/audio/guide-es/key-change-up.wav",
+    "duration": 0.9264,
+    "source": "Spanish - Key Change Up (Sube Tono).wav",
+    "kind": "instruction"
+  },
+  {
+    "key": "key-change-down",
+    "label": "Key Change Down",
+    "url": "/audio/guide-es/key-change-down.wav",
+    "duration": 0.888,
+    "source": "Spanish - Key Change Down (Baja Tono).wav",
+    "kind": "instruction"
+  },
+  {
+    "key": "softly",
+    "label": "Softly",
+    "url": "/audio/guide-es/softly.wav",
+    "duration": 0.6913,
+    "source": "Spanish - Softly (Suave).wav",
+    "kind": "instruction"
+  },
+  {
+    "key": "a-capella",
+    "label": "A Capella",
+    "url": "/audio/guide-es/a-capella.wav",
+    "duration": 0.9143,
+    "source": "Spanish - A Capella.wav",
+    "kind": "instruction"
+  },
+  {
+    "key": "swell",
+    "label": "Swell",
+    "url": "/audio/guide-es/swell.wav",
+    "duration": 0.7076,
+    "source": "Spanish - Swell.wav",
+    "kind": "instruction"
+  },
+  {
+    "key": "big-ending",
+    "label": "Big Ending",
+    "url": "/audio/guide-es/big-ending.wav",
+    "duration": 1.1486,
+    "source": "Spanish - Big Ending (Final Grande).wav",
+    "kind": "instruction"
+  },
+  {
+    "key": "keys",
+    "label": "Keys",
+    "url": "/audio/guide-es/keys.wav",
+    "duration": 0.7504,
+    "source": "Spanish - Keys (Teclado).wav",
+    "kind": "instruction"
+  },
+  {
+    "key": "bass",
+    "label": "Bass",
+    "url": "/audio/guide-es/bass.wav",
+    "duration": 0.7101,
+    "source": "Spanish - Bass (Bajo).wav",
+    "kind": "instruction"
+  },
+  {
+    "key": "drums",
+    "label": "Drums",
+    "url": "/audio/guide-es/drums.wav",
+    "duration": 0.7748,
+    "source": "Spanish - Drums (Bateria).wav",
+    "kind": "instruction"
+  },
+  {
+    "key": "guitar",
+    "label": "Guitar",
+    "url": "/audio/guide-es/guitar.wav",
+    "duration": 0.7007,
+    "source": "Spanish - Guitar (Guitara).wav",
+    "kind": "instruction"
+  }
+]

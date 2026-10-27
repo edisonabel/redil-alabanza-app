@@ -28,6 +28,11 @@ export type LiveDirectorPersistedSession = {
   songTitle: string;
   mode: 'sequence' | 'folder';
   sectionOffsetSeconds?: number;
+  /** REAPER-calibrated markers belong to this multitrack session, not the original song/chart. */
+  sectionMarkers?: Array<{ id: string; sectionName: string; startSec: number }>;
+  /** Spoken guide instructions (Sube intensidad, Hits…) from the RPP; never sections. */
+  instructionMarkers?: LiveDirectorInstructionMarker[];
+  reaperTiming?: { source: 'reaper-rpp'; projectName?: string; tempo: number; meter: string; unoSeconds: number | null; finAudioSeconds: number | null; appliedAt: string };
   folder: string;
   manifestUrl: string;
   updatedAt: string;
@@ -35,11 +40,14 @@ export type LiveDirectorPersistedSession = {
   unmatchedFiles: string[];
 };
 
+export type LiveDirectorInstructionMarker = { id: string; name: string; startSec: number };
+
 export type LiveDirectorSectionVisual = {
   id: string;
   name: string;
   startTime: number;
   endTime: number;
+  endTimeSource?: 'marker' | 'next-marker' | 'fallback' | 'audio';
   shortLabel: string;
   accent: string;
   surface: string;
@@ -182,6 +190,31 @@ export const normalizePersistedLiveDirectorSession = (
     return null;
   }
 
+  const sectionMarkers = Array.isArray(sessionRecord.sectionMarkers)
+    ? sessionRecord.sectionMarkers.map((marker, index) => {
+        if (!marker || typeof marker !== 'object') return null;
+        const candidate = marker as { id?: unknown; sectionName?: unknown; name?: unknown; startSec?: unknown };
+        const sectionName = String(candidate.sectionName || candidate.name || '').trim();
+        const startSec = clampTime(candidate.startSec);
+        if (!sectionName || startSec == null) return null;
+        return { id: String(candidate.id || `${slugifyLiveDirectorSegment(sectionName)}-${index + 1}`), sectionName, startSec };
+      }).filter((marker): marker is { id: string; sectionName: string; startSec: number } => Boolean(marker))
+      .sort((left, right) => left.startSec - right.startSec)
+    : [];
+  const instructionMarkers = Array.isArray(sessionRecord.instructionMarkers)
+    ? sessionRecord.instructionMarkers.map((marker, index) => {
+        if (!marker || typeof marker !== 'object') return null;
+        const name = String(marker.name || '').trim();
+        const startSec = clampTime(marker.startSec);
+        if (!name || startSec == null) return null;
+        return { id: String(marker.id || `cue-${index + 1}`), name, startSec };
+      }).filter((marker): marker is LiveDirectorInstructionMarker => Boolean(marker))
+      .sort((left, right) => left.startSec - right.startSec)
+    : [];
+  const timing = sessionRecord.reaperTiming && typeof sessionRecord.reaperTiming === 'object'
+    ? sessionRecord.reaperTiming as LiveDirectorPersistedSession['reaperTiming']
+    : undefined;
+
   return {
     version: 1,
     songId,
@@ -190,6 +223,11 @@ export const normalizePersistedLiveDirectorSession = (
     sectionOffsetSeconds: Number.isFinite(Number(sessionRecord.sectionOffsetSeconds))
       ? Number(sessionRecord.sectionOffsetSeconds)
       : 0,
+    ...(sectionMarkers.length ? { sectionMarkers } : {}),
+    ...(instructionMarkers.length ? { instructionMarkers } : {}),
+    ...(timing?.source === 'reaper-rpp' && Number.isFinite(Number(timing.tempo)) && typeof timing.meter === 'string'
+      ? { reaperTiming: { ...timing, tempo: Number(timing.tempo), appliedAt: String(timing.appliedAt || '') } }
+      : {}),
     folder:
       String(sessionRecord.folder || '').trim() || buildLiveDirectorSongFolder(songId, songTitle),
     manifestUrl: String(sessionRecord.manifestUrl || '').trim(),
@@ -201,6 +239,33 @@ export const normalizePersistedLiveDirectorSession = (
   };
 };
 
+/** Multitrack timing takes precedence over the independent lyric/chart map. */
+export const resolveLiveDirectorSessionSections = (
+  session: Pick<LiveDirectorPersistedSession, 'sectionMarkers'> | null | undefined,
+  fallbackSections: LiveDirectorSectionVisual[] | null | undefined,
+): LiveDirectorSectionVisual[] | null => (
+  buildLiveDirectorSectionsFromMarkers(session?.sectionMarkers) || fallbackSections || null
+);
+
+/** A timing-only RPP update must refresh even when stems and updatedAt match. */
+export const shouldRefreshLiveDirectorSession = (
+  current: LiveDirectorPersistedSession | null | undefined,
+  fetched: LiveDirectorPersistedSession | null | undefined,
+): boolean => {
+  if (!fetched?.tracks?.length) return false;
+  if (!current?.tracks?.length) return true;
+  const signature = (session: LiveDirectorPersistedSession) => JSON.stringify({
+    updatedAt: session.updatedAt,
+    offset: session.sectionOffsetSeconds ?? 0,
+    markers: session.sectionMarkers ?? [],
+    instructions: session.instructionMarkers ?? [],
+    timing: session.reaperTiming ?? null,
+    tracks: session.tracks.map(track => [track.id, track.url, track.optimizedUrl,
+      track.enabled !== false, track.volume, track.isMuted, track.outputRoute]),
+  });
+  return signature(current) !== signature(fetched);
+};
+
 export const buildLiveDirectorSectionsFromMarkers = (
   rawMarkers: unknown,
 ): LiveDirectorSectionVisual[] | null => {
@@ -209,7 +274,7 @@ export const buildLiveDirectorSectionsFromMarkers = (
       const candidate = (marker || {}) as RawSongMarker;
       const name = String(candidate.sectionName || candidate.name || `Section ${index + 1}`).trim();
       const startTime = clampTime(candidate.startSec);
-      const endTime = clampTime(candidate.endSec);
+      const endTime = candidate.endSec == null || candidate.endSec === '' ? null : clampTime(candidate.endSec);
 
       if (startTime == null) {
         return null;
@@ -250,6 +315,7 @@ export const buildLiveDirectorSectionsFromMarkers = (
       name: marker.name,
       startTime: marker.startTime,
       endTime: resolvedEndTime,
+      endTimeSource: marker.endTime != null ? 'marker' : nextMarker ? 'next-marker' : 'fallback',
       shortLabel: buildSectionShortLabel(marker.name, kind, occurrence),
       accent: toRgba(visual.rgb, 0.95),
       surface: toRgba(visual.rgb, 0.14),
@@ -280,4 +346,36 @@ export const applyLiveDirectorSectionOffset = (
       endTime: nextStart != null ? Math.max(shiftedStart + 0.25, Math.min(shiftedEnd, nextStart)) : shiftedEnd,
     };
   });
+};
+
+/** Audio duration is absolute: shifting section markers must not move the file end. */
+export const resolveLiveDirectorTerminalSectionEnd = (
+  sections: LiveDirectorSectionVisual[],
+  audioDurationSeconds: number,
+): LiveDirectorSectionVisual[] => {
+  const last = sections.at(-1);
+  if (!last || !Number.isFinite(audioDurationSeconds) || audioDurationSeconds < last.startTime + 0.25) return sections;
+  // Un fin estimado se extiende hasta el final del audio. Un fin marcado se respeta, salvo que un
+  // desfase lo deje después del audio: entonces termina con el audio (si no, su cambio nunca llegaría).
+  const extend = last.endTimeSource === 'fallback';
+  if (!extend && last.endTime <= audioDurationSeconds) return sections;
+  return sections.map((section, index) => index === sections.length - 1
+    ? { ...section, endTime: audioDurationSeconds, endTimeSource: 'audio' }
+    : section);
+};
+
+/** Playback metadata follows the same applied RPP as its section map. */
+export const resolveLiveDirectorReaperTransportTiming = (
+  session: Pick<LiveDirectorPersistedSession, 'reaperTiming'> | null | undefined,
+) => {
+  const timing = session?.reaperTiming;
+  if (timing?.source !== 'reaper-rpp' || !Number.isFinite(timing.tempo) || timing.tempo <= 0) return null;
+  const meter = /^(\d+)\/(\d+)$/.exec(timing.meter);
+  const numerator = Number(meter?.[1]), denominator = Number(meter?.[2]);
+  return {
+    bpm: timing.tempo,
+    timeSignature: numerator > 0 && [1, 2, 4, 8, 16].includes(denominator) ? { numerator, denominator } : undefined,
+    clickGrid: typeof timing.unoSeconds === 'number' && Number.isFinite(timing.unoSeconds) && timing.unoSeconds >= 0
+      ? { bpm: timing.tempo, originSeconds: timing.unoSeconds } : undefined,
+  };
 };

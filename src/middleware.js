@@ -17,14 +17,9 @@ const supabaseServer = createClient(supabaseUrl, supabaseAnonKey, {
 });
 
 const protectedRoutes = ['/', '/admin', '/programacion', '/repertorio', '/historial-cantos', '/perfil', '/equipo', '/herramientas', '/configuracion', '/ensayo', '/monitor', '/panel', '/audio-lab'];
-const authenticatedApiRoutes = new Set([
-  '/api/audio',
-  '/api/mp3-proxy',
-  '/api/mp3-cover-art',
-  '/api/song-artwork',
-  '/api/auto-markers',
-  '/api/event-playlist',
-  '/api/profile-data',
+const authLifecycleApiRoutes = new Set([
+  '/api/auth/session',
+  '/api/auth/logout',
 ]);
 
 const staticAssetRegex = /\.(png|ico|svg|webmanifest|css|js|txt|map|woff2?|ttf|eot|json)$/i;
@@ -80,6 +75,7 @@ const resolveCrossOriginIsolationHeaders = (path = '') => {
 const withRouteHeaders = (response, path) => {
   // Netlify's static header rules do not consistently cover Astro SSR
   // responses, so the document policy must also be set by the function.
+  if (!staticAssetRegex.test(path) || isApiRoute(path)) response.headers.set('Cache-Control', 'private, no-store');
   response.headers.set('Content-Security-Policy', contentSecurityPolicy);
   for (const [header, value] of Object.entries(baseSecurityHeaders)) {
     response.headers.set(header, value);
@@ -114,6 +110,8 @@ const redirectTo = (location, status = 302) => new Response(null, {
 
 const isProtectedRoute = (path) =>
   protectedRoutes.some((route) => path === route || path.startsWith(`${route}/`));
+
+const isApiRoute = (path) => path === '/api' || path.startsWith('/api/');
 
 const resolveAuthState = async (cookies, isSecure) => {
   const { accessToken, refreshToken } = getServerAuthTokens(cookies);
@@ -163,20 +161,32 @@ export const onRequest = defineMiddleware(async (context, next) => {
   locals.canManageMinistries = false;
   locals.canManageOperations = false;
 
-  if (
+  if (!isApiRoute(path) && (
     path.startsWith('/_astro') ||
     path.startsWith('/assets') ||
     path === '/sw.js' ||
     path.startsWith('/workbox-') ||
     staticAssetRegex.test(path)
-  ) {
+  )) {
     return withRouteHeaders(await next(), path);
   }
 
   const protectedPath = isProtectedRoute(path);
-  const authState = protectedPath || path === '/login' || authenticatedApiRoutes.has(path)
+  const apiPath = isApiRoute(path);
+  const shouldResolveAuth = protectedPath
+    || path === '/login'
+    || (apiPath && !authLifecycleApiRoutes.has(path));
+  const tokensBeforeResolution = shouldResolveAuth ? getServerAuthTokens(cookies) : null;
+  const hadServerAuthTokens = Boolean(
+    tokensBeforeResolution?.accessToken || tokensBeforeResolution?.refreshToken,
+  );
+  const authState = shouldResolveAuth
     ? await resolveAuthState(cookies, isSecure)
     : null;
+
+  if (apiPath && shouldResolveAuth && hadServerAuthTokens && !authState?.accessToken) {
+    clearServerAuthCookies(cookies, isSecure);
+  }
 
   if (path === '/login') {
     if (authState?.accessToken) {
@@ -198,6 +208,12 @@ export const onRequest = defineMiddleware(async (context, next) => {
   if (authState?.user) {
     locals.user = authState.user;
     locals.accessToken = authState.accessToken;
+
+    // API handlers only need the verified user/access token. Avoid running the
+    // page bootstrap RPC for every API request after centralizing auth refresh.
+    if (!protectedPath) {
+      return withRouteHeaders(await next(), path);
+    }
 
     const supabaseAuthed = createClient(supabaseUrl, supabaseAnonKey, {
       auth: {

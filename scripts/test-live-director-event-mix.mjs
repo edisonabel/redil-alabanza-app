@@ -3,7 +3,9 @@ import { readFile } from 'node:fs/promises';
 import { fetchWithSessionRetry } from '../src/utils/authenticatedFetch.js';
 import {
   applyLiveDirectorEventMix,
+  fetchLiveDirectorEventMix,
   buildLiveDirectorEventMix,
+  clearPendingLiveDirectorEventMixIfMatching,
   liveDirectorEventMixSignature,
   normalizeLiveDirectorEventMix,
   readPendingLiveDirectorEventMix,
@@ -175,6 +177,24 @@ assert.equal(
   null,
   'El reintento debe recuperar y limpiar el ultimo pending confirmado.',
 );
+
+// Reverting to an already-confirmed value may be coalesced without a request.
+stagePendingLiveDirectorEventMix({ ...eventContext, mix: pendingMixA });
+assert.equal(clearPendingLiveDirectorEventMixIfMatching({ ...eventContext, signature: liveDirectorEventMixSignature(pendingMixB) }),false);
+assert.equal(clearPendingLiveDirectorEventMixIfMatching({ ...eventContext, signature: liveDirectorEventMixSignature(pendingMixA) }),true);
+assert.equal(readPendingLiveDirectorEventMix(eventContext),null,'An already-confirmed snapshot does not leave a perpetual recovery record');
+
+let reads = 0;
+globalThis.fetch = async () => {
+  reads += 1;
+  await new Promise(resolve => setTimeout(resolve, 15));
+  return new Response(JSON.stringify({mix: pendingMixB}), {status: 200, headers: {'content-type': 'application/json'}});
+};
+const simultaneousReads = await Promise.all([fetchLiveDirectorEventMix(eventContext), fetchLiveDirectorEventMix(eventContext)]);
+assert.equal(reads, 1, 'Concurrent consumers share the same event mix request');
+assert.deepEqual(simultaneousReads[0], simultaneousReads[1]);
+await fetchLiveDirectorEventMix(eventContext);
+assert.equal(reads, 2, 'A later read revalidates the mix rather than serving stale cached settings');
 
 const failedPresyncCalls = [];
 globalThis.window.__REDIL_AUTH_MANAGER__ = {

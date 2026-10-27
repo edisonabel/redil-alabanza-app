@@ -13,6 +13,8 @@ export type ChordProBlock = {
   typeMarker: string;
   fullTitle: string;
   lines: ParsedChordLine[];
+  pageBreakBefore?: boolean;
+  repeatOfTitle?: string;
 };
 
 type SectionKind =

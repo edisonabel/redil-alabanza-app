@@ -1,3 +1,4 @@
+import { getLiveDirectorEventAccess } from '../../lib/server/live-director-event-permissions.js';
 import type { APIRoute } from 'astro';
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import {
@@ -17,6 +18,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 const MAX_EVENT_MIX_TRACKS = 64;
 const MAX_TRACK_ID_LENGTH = 160;
 const EVENT_MIX_OBJECT_PREFIX = 'live-director/event-mixes';
+const MIX_GROUP_IDS = new Set(['keys', 'acoustic', 'electric', 'bass', 'vocals', 'rhythm', 'other', 'cues']);
 
 let cachedR2Context: { bucket: string; client: S3Client } | null = null;
 
@@ -94,7 +96,22 @@ const sanitizeMix = (value: unknown) => {
     throw new ApiSecurityError('La mezcla debe mantener al menos un stem activo.', 400);
   }
 
-  return { version: 1, tracks };
+  // Buses (opcional): nivel 0–1 y silencio por grupo conocido, y asignación stem → grupo.
+  const rawGroups = source?.groups && typeof source.groups === 'object' && !Array.isArray(source.groups)
+    ? source.groups as Record<string, unknown> : null;
+  const asRecord = (value: unknown) => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  const gains: Record<string, number> = {}, muted: Record<string, true> = {}, assignments: Record<string, string> = {};
+  if (rawGroups) {
+    for (const [id, gain] of Object.entries(asRecord(rawGroups.gains))) {
+      if (MIX_GROUP_IDS.has(id) && Number.isFinite(Number(gain))) gains[id] = Math.round(Math.max(0, Math.min(1, Number(gain))) * 10000) / 10000;
+    }
+    for (const [id, isMuted] of Object.entries(asRecord(rawGroups.muted))) if (MIX_GROUP_IDS.has(id) && isMuted === true) muted[id] = true;
+    for (const [trackId, groupId] of Object.entries(asRecord(rawGroups.assignments))) {
+      if (seenTrackIds.has(trackId) && typeof groupId === 'string' && MIX_GROUP_IDS.has(groupId)) assignments[trackId] = groupId;
+    }
+  }
+  const hasGroups = Object.keys(gains).length > 0 || Object.keys(muted).length > 0 || Object.keys(assignments).length > 0;
+  return { version: 1, tracks, ...(hasGroups ? { groups: { gains, muted, assignments } } : {}) };
 };
 
 const getAuthenticatedDatabase = async (cookies: Parameters<typeof requireAuthenticatedUser>[0]) => {
@@ -103,32 +120,15 @@ const getAuthenticatedDatabase = async (cookies: Parameters<typeof requireAuthen
   return { user, database: createSupabaseUserClient(accessToken) };
 };
 
-const requireEventAccess = async (userId: string, eventId: string) => {
-  if (!serviceRoleClient) {
-    throw new ApiSecurityError('Servicio de autorizacion no configurado.', 503);
+const requireEventAccess = async (userId: string, eventId: string, write = false) => {
+  if (!serviceRoleClient) throw new ApiSecurityError('Servicio de autorizacion no configurado.', 503);
+  let access;
+  try { access = await getLiveDirectorEventAccess(serviceRoleClient, userId, eventId); }
+  catch { throw new ApiSecurityError('No se pudo validar el acceso al evento.', 503); }
+  if (!access.canRead || (write && !access.canWrite)) {
+    throw new ApiSecurityError(write ? 'Solo el director musical de este evento y el administrador pueden guardar cambios.' : 'Debes estar asignado a este evento.', 403);
   }
-
-  const [profileResult, assignmentResult] = await Promise.all([
-    serviceRoleClient
-      .from('perfiles')
-      .select('is_admin')
-      .eq('id', userId)
-      .maybeSingle(),
-    serviceRoleClient
-      .from('asignaciones')
-      .select('id')
-      .eq('evento_id', eventId)
-      .eq('perfil_id', userId)
-      .limit(1)
-      .maybeSingle(),
-  ]);
-
-  if (profileResult.error || assignmentResult.error) {
-    throw new ApiSecurityError('No se pudo validar el acceso al evento.', 503);
-  }
-  if (!profileResult.data?.is_admin && !assignmentResult.data) {
-    throw new ApiSecurityError('Debes estar asignado a este evento para guardar su mezcla.', 403);
-  }
+  return access;
 };
 
 const requireEventPlaylistSong = async (
@@ -159,7 +159,7 @@ const requireEventPlaylistSong = async (
   }
 };
 
-const readMix = async (eventId: string, songId: string) => {
+const readMix = async (eventId: string, songId: string): Promise<Record<string, unknown> | null> => {
   const { bucket, client } = getR2Context();
 
   try {
@@ -211,13 +211,20 @@ const readContext = (value: Record<string, unknown> | URLSearchParams) => {
 
 export const GET: APIRoute = async ({ cookies, url }) => {
   try {
+    if (url.searchParams.get('permission') === '1') {
+      const eventId = String(url.searchParams.get('evento_id') || '');
+      if (!isUuid(eventId)) throw new ApiSecurityError('Evento inválido.', 400);
+      const { user } = await getAuthenticatedDatabase(cookies);
+      const access = await requireEventAccess(user.id, eventId);
+      return json({ canEdit: access.canWrite });
+    }
     const { eventId, songId } = readContext(url.searchParams);
     const { user, database } = await getAuthenticatedDatabase(cookies);
-    await Promise.all([
+    const [access] = await Promise.all([
       requireEventAccess(user.id, eventId),
       requireEventPlaylistSong(database, eventId, songId),
     ]);
-    return json({ mix: await readMix(eventId, songId) });
+    return json({ mix: await readMix(eventId, songId), canEdit: access.canWrite });
   } catch (error) {
     console.error('[live-director-event-mix] GET failed:', error);
     return securityErrorResponse(error);
@@ -239,7 +246,7 @@ export const PUT: APIRoute = async ({ request, cookies, url }) => {
     const mix = sanitizeMix(payload.mix);
     const { user, database } = await getAuthenticatedDatabase(cookies);
     await Promise.all([
-      requireEventAccess(user.id, eventId),
+      requireEventAccess(user.id, eventId, true),
       requireEventPlaylistSong(database, eventId, songId),
     ]);
 

@@ -1,8 +1,8 @@
 // Measure the sum, then apply one static gain to every musical stem. No
 // per-instrument compression or normalization: the source balance survives.
-export const SONG_TARGET_LUFS = -18;
-export const SONG_PEAK_DB = -3;
-export const MAX_SONG_BOOST_DB = 12;
+export const SONG_TARGET_LUFS = -14;
+export const SONG_PEAK_DB = -2;
+export const MAX_SONG_BOOST_DB = 24;
 const MIX_FILES = ['song-level-a.wav', 'song-level-b.wav'];
 export type LoudnessMeasurement = { integrated: number; peak: number };
 type LevelFfmpeg = { exec: (args: string[]) => Promise<number>; deleteFile: (path: string) => Promise<unknown> };
