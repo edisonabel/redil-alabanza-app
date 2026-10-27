@@ -6344,7 +6344,11 @@ export function LiveDirectorView({
           // Al elegir una canción en el teléfono, la tira se cierra y vuelve la mezcla completa.
           onClickCapture={isUltraCompactLandscape ? (event) => { const target = event.target as HTMLElement; if (target.closest('button') && !target.closest('[data-live-director-control="song-transition"]')) setShowPhoneSongStrip(false); } : undefined}
           className={`shrink-0 overflow-hidden ${isUltraCompactLandscape ? `pr-0 pb-0 ${showPhoneSongStrip ? '' : 'hidden'}` : isCompactLandscape ? 'pr-0.5' : ''}`}>
-          <div className={`overflow-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.96),rgba(27,29,30,0.96))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isUltraCompactLandscape ? 'px-1.5 py-1' : isCompactLandscape ? 'px-2 py-1.5' : 'px-4 py-4'}`}>
+          {/* En el evento las portadas van sin panel de fondo, como en Playback: solo un margen arriba para
+              el círculo de transición, que asoma sobre el borde de las portadas. */}
+          <div className={isEnsayoMode
+            ? `overflow-hidden ${isUltraCompactLandscape ? 'pt-1' : 'pt-1.5'}`
+            : `overflow-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.96),rgba(27,29,30,0.96))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isUltraCompactLandscape ? 'px-1.5 py-1' : isCompactLandscape ? 'px-2 py-1.5' : 'px-4 py-4'}`}>
             {isEnsayoMode ? (
               <div className="flex h-full items-center">
                 <div className="hide-scrollbar -mx-0.5 -my-4 overflow-x-auto overflow-y-hidden">

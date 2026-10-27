@@ -73,8 +73,9 @@ export const EnsayoQueueCard = memo(function EnsayoQueueCard({
           <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.04)_0%,rgba(0,0,0,0.18)_42%,rgba(0,0,0,0.78)_100%)]" />
         </div>
 
-        {queueNumber && <span aria-hidden="true" data-live-queue-number={queueNumber} className={`pointer-events-none absolute left-2 top-2 z-20 flex h-7 min-w-7 items-center justify-center rounded-lg border px-1.5 text-sm font-bold tabular-nums shadow-sm ${active ? 'border-cyan-100/60 bg-cyan-100 text-[#172529]' : 'border-white/25 bg-black/75 text-white'}`}>{queueNumber}</span>}
-        {queued && <span className={`absolute right-1 top-2 z-20 rounded-md bg-black/85 px-1.5 py-1 text-[9px] font-bold ${queued==='ready'?'text-emerald-100':'text-amber-100'}`}>{queued==='ready'?'LISTO':'PREPARANDO'}</span>}
+        {/* Sin número visible (las teclas 1-9 siguen eligiendo la canción); la esquina superior derecha
+            queda para el círculo de transición, como en Playback. */}
+        {queued && <span className={`absolute left-1.5 top-1.5 z-20 rounded-md bg-black/85 px-1.5 py-1 text-[9px] font-bold ${queued==='ready'?'text-emerald-100':'text-amber-100'}`}>{queued==='ready'?'LISTO':'PREPARANDO'}</span>}
         <div className="relative z-10 mt-auto min-w-0">
           <p className={`truncate font-semibold leading-tight text-white drop-shadow-[0_3px_10px_rgba(0,0,0,0.52)] ${ultraCompact ? 'text-[0.68rem]' : compact ? 'text-[0.76rem]' : 'text-[0.9rem]'
             }`}>

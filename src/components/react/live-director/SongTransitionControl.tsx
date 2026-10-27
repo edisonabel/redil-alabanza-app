@@ -86,7 +86,7 @@ export const SongTransitionControl = memo(function SongTransitionControl({
     onChange({ mode, continuePad: transitionAllowsPad(mode) && transition.continuePad });
     onOpenChange(false);
   };
-  const row = 'flex w-full items-center gap-3 px-4 text-left text-[0.95rem] font-medium text-white/92 outline-none transition-colors focus-visible:bg-white/8 hover:bg-white/6 disabled:cursor-not-allowed disabled:text-white/35 disabled:hover:bg-transparent';
+  const row = 'ui-no-press flex w-full items-center gap-3 px-4 text-left text-[0.95rem] font-medium text-white/92 outline-none transition-colors focus-visible:bg-white/8 hover:bg-white/6 disabled:cursor-not-allowed disabled:text-white/35 disabled:hover:bg-transparent';
 
   return (
     <>
@@ -104,10 +104,11 @@ export const SongTransitionControl = memo(function SongTransitionControl({
         aria-label={`Transición: ${label}. ${fromTitle} → ${toTitle}`}
         title={`${label}${transition.continuePad ? ' · Continuar Pad' : ''}${current ? ' · L' : ''}`}
         onClick={() => onOpenChange(!open)}
-        className={`absolute left-1/2 top-1/2 z-30 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/18 bg-[#2a2c2e] text-white shadow-[0_4px_14px_rgba(0,0,0,0.45)] transition hover:bg-[#3a3c3f] focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300 ${open ? 'ring-2 ring-white/40' : ''} ${compact ? 'h-7 w-7 [&_svg]:h-4 [&_svg]:w-4' : 'h-8 w-8 [&_svg]:h-[18px] [&_svg]:w-[18px]'}`}
+        // Como en Playback: pequeño, en el borde superior entre las dos portadas.
+        className={`ui-no-press absolute left-1/2 z-30 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-[#26282a]/95 text-white shadow-[0_3px_10px_rgba(0,0,0,0.5)] transition hover:bg-[#3a3c3f] focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300 ${open ? 'ring-2 ring-white/40' : ''} ${compact ? 'top-2 h-5 w-5 [&_svg]:h-3 [&_svg]:w-3' : 'top-2.5 h-6 w-6 [&_svg]:h-3.5 [&_svg]:w-3.5'}`}
       >
         {ICONS[transition.mode]}
-        {transition.continuePad && <span aria-hidden="true" className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border border-[#2a2c2e] bg-emerald-400" />}
+        {transition.continuePad && <span aria-hidden="true" className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-[#26282a] bg-emerald-400" />}
       </button>
       {open && createPortal(
         <div
