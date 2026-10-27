@@ -3427,7 +3427,17 @@ export class StreamingMultitrackEngine {
         }
         if (mono.some(value => !Number.isFinite(value) || Math.abs(value) > 1)) throw new Error('Muestra de click inválida.');
         return mono;
-      })).catch(error => { this.clickSamplesPromise = null; throw error; });
+      })).then(samples => {
+        // El archivo del acento es más bajo que el de las negras (pico 0,36 frente a 0,60): se iguala al
+        // pico de la negra para que el «uno» no suene más débil que un pulso normal con el mismo fader.
+        const peak = (pcm: Float32Array) => pcm.reduce((max, value) => Math.max(max, Math.abs(value)), 0);
+        const accentPeak = peak(samples[0]), quarterPeak = peak(samples[1]);
+        if (accentPeak > 0 && quarterPeak > accentPeak) {
+          const gain = Math.min(4, quarterPeak / accentPeak);
+          samples[0] = samples[0].map(value => Math.max(-1, Math.min(1, value * gain)));
+        }
+        return samples;
+      }).catch(error => { this.clickSamplesPromise = null; throw error; });
     }
     const samples = await this.clickSamplesPromise;
     if (!this.workletNode || this.renderFaulted) throw new Error('El motor de audio se cerró.');

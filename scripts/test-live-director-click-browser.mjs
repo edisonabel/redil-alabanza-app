@@ -27,9 +27,14 @@ try {
   const generated = page.getByRole('button', { name: 'Click generado', exact: true });
   await open();
   assert.equal(await recorded.getAttribute('aria-pressed'), 'true');
-  assert.equal(await page.getByRole('slider', { name: 'Volume for Acento', exact: true }).getAttribute('aria-disabled'), 'true');
+  // Providencia tiene mapa REAPER: compás y «uno» ya confirmados, el acento está disponible desde el inicio.
+  assert.equal(await page.getByRole('slider', { name: 'Volume for Acento', exact: true }).getAttribute('aria-disabled'), 'false');
+  assert.equal(await page.getByRole('checkbox', { name: /El pulso de referencia/ }).isChecked(), true);
   const tempo = page.getByRole('spinbutton', { name: 'BPM del click generado', exact: true });
   await tempo.fill('0'); assert.ok(await generated.isDisabled());
+  // Cambiar la rejilla quita la confirmación: el acento vuelve a quedar protegido.
+  assert.equal(await page.getByRole('slider', { name: 'Volume for Acento', exact: true }).getAttribute('aria-disabled'), 'true');
+  await page.getByRole('checkbox', { name: /El pulso de referencia/ }).check().catch(() => {});
   await tempo.fill('120');
   cases.push('recorded-default-and-invalid-grid-accent-guard');
   await page.route('**/audio/click-classic/quarter.wav', route => route.fulfill({ status: 503, body: 'Temporary sample failure' }));

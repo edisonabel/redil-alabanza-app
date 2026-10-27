@@ -31,11 +31,23 @@ try {
   await page.evaluate(() => (document.activeElement instanceof HTMLElement) && document.activeElement.blur()); // foco fuera de los controles
 
   // Instrucciones: sin Shift, con Shift (incluidas V y B) y sin disparar con Cmd/Ctrl.
-  for (const key of ['z', 'x', 'c', 'n', 'm', ',', '.', '/']) assert.ok(await spoke(key), `La tecla ${key} dice su instrucción`);
-  for (const key of ['Shift+Z', 'Shift+V', 'Shift+B', 'Shift+.']) assert.ok(await spoke(key), `${key} dice su instrucción`);
+  // Toda la fila de encima del espacio (V y B incluidas) y sus variantes con Shift.
+  for (const key of ['z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/']) assert.ok(await spoke(key), `La tecla ${key} dice su instrucción`);
+  for (const key of ['Shift+Z', 'Shift+X', 'Shift+C', 'Shift+B', 'Shift+N', 'Shift+M', 'Shift+,']) assert.ok(await spoke(key), `${key} dice su instrucción`);
+  assert.equal(await page.locator('[data-live-director-section-surface]').count() > 0, true, 'V ya no cambia de vista: sigue en secciones');
   assert.equal(await spoke('Meta+c'), false, 'Cmd+C no dice «Pausa»');
-  assert.equal(await page.locator('[data-live-director-section-surface]').count() > 0, true);
   results.instructions = true;
+
+  // Esc: con un menú abierto solo lo cierra; sonando pide confirmación para salir.
+  await page.keyboard.press('i'); assert.equal(await page.getByRole('menu', { name: 'Instrucciones' }).count(), 1);
+  await page.keyboard.press('Escape'); await page.waitForTimeout(200);
+  assert.equal(await page.getByRole('menu', { name: 'Instrucciones' }).count(), 0, 'Esc cierra el menú');
+  assert.equal(await page.getByRole('dialog', { name: '¿Salir del Live Director?' }).count(), 0, 'Esc con menú abierto no sale');
+  await page.keyboard.press('Escape');
+  assert.equal(await page.getByRole('dialog', { name: '¿Salir del Live Director?' }).count(), 1, 'Esc sonando pide confirmación');
+  await page.getByRole('button', { name: 'Cancelar', exact: true }).click();
+  assert.equal(await page.evaluate(() => window.__streamingEngineDumpOwner.getIsPlaying()), true, 'Cancelar sigue sonando');
+  results.escape = true;
 
   // Botones con tecla nueva.
   await page.keyboard.press('g'); assert.equal(await control('groups').getAttribute('aria-pressed'), 'true', 'G abre grupos');
@@ -45,7 +57,7 @@ try {
   await page.keyboard.press('l'); assert.equal(await control('chain-next-song').getAttribute('aria-pressed'), 'true', 'L encadena');
   await page.keyboard.press('l'); assert.equal(await control('chain-next-song').getAttribute('aria-pressed'), 'false');
   await page.keyboard.press('i'); assert.equal(await page.getByRole('menu', { name: 'Instrucciones' }).count(), 1, 'I abre el menú');
-  assert.equal(await page.locator('[data-guide-instruction="build"] kbd').innerText(), 'Z', 'El menú muestra la tecla');
+  assert.equal(await page.locator('[data-guide-instruction="softly"] kbd').innerText(), 'Z', 'El menú muestra la tecla');
   await page.keyboard.press('i'); assert.equal(await page.getByRole('menu', { name: 'Instrucciones' }).count(), 0);
   await control('play-pause').click(); await page.waitForFunction(() => !window.__streamingEngineDumpOwner.getIsPlaying());
   await page.keyboard.press('a'); assert.equal(await page.getByRole('slider', { name: 'Nivel de canción en decibelios' }).count(), 1, 'A abre el nivel');
@@ -59,7 +71,7 @@ try {
   results.controls = ['G', 'H', 'L', 'I', 'A', 'T', 'Shift+E'];
 
   // Cada botón anuncia su tecla.
-  for (const [name, key] of [['groups', 'G'], ['repeat-hold', 'H'], ['chain-next-song', 'L'], ['guide-instructions', 'I'], ['edit-song', 'Shift+E'], ['song-level', 'A']]) {
+  for (const [name, key] of [['back', 'Escape'], ['groups', 'G'], ['repeat-hold', 'H'], ['chain-next-song', 'L'], ['guide-instructions', 'I'], ['edit-song', 'Shift+E'], ['song-level', 'A']]) {
     assert.equal(await control(name).getAttribute('aria-keyshortcuts'), key, `${name} anuncia ${key}`);
   }
   assert.deepEqual(errors, []);

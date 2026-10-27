@@ -289,13 +289,15 @@ const DISABLE_BACKWARD_SEEK_WHILE_PLAYING = true;
 const LIVE_DIRECTOR_COMBINED_MIN_HEIGHT = 900;
 const LIVE_DIRECTOR_COMPACT_MAX_HEIGHT = 700;
 const CHAIN_MIN_PREPARE_SECONDS = 4;
-// Instrucciones «se dicen ahora» en la fila inferior del teclado (posición física: sirve igual en
-// teclado español e inglés). V y B ya son Secciones y Volver, así que sin Shift se saltan.
+// Instrucciones «se dicen ahora»: toda la fila de encima del espacio (posición física, sirve igual en
+// teclado español e inglés). Lógica: Z baja / X sube (con Shift, el tono), C A capella, V última Vez,
+// B entra Batería, M Mantener; los instrumentos van juntos con Shift (B N M ,).
 const INSTRUCTION_KEYS: Record<string, string> = {
-  KeyZ: 'build', KeyX: 'softly', KeyC: 'break', KeyN: 'all-in', KeyM: 'drums-in', Comma: 'last-time', Period: 'hold', Slash: 'a-capella',
+  KeyZ: 'softly', KeyX: 'build', KeyC: 'a-capella', KeyV: 'last-time', KeyB: 'drums-in', KeyN: 'all-in', KeyM: 'hold',
+  Comma: 'break', Period: 'hits', Slash: 'big-ending',
 };
 const INSTRUCTION_SHIFT_KEYS: Record<string, string> = {
-  KeyZ: 'hits', KeyX: 'swell', KeyC: 'big-ending', KeyV: 'key-change-up', KeyB: 'key-change-down', KeyN: 'keys', KeyM: 'bass', Comma: 'drums', Period: 'guitar',
+  KeyZ: 'key-change-down', KeyX: 'key-change-up', KeyC: 'swell', KeyB: 'drums', KeyN: 'bass', KeyM: 'keys', Comma: 'guitar',
 };
 const keyCodeLabel = (code: string) => code === 'Comma' ? ',' : code === 'Period' ? '.' : code === 'Slash' ? '-' : code.replace(/^Key/, '');
 const INSTRUCTION_SHORTCUT_LABELS: Record<string, string> = Object.fromEntries([
@@ -5039,7 +5041,7 @@ export function LiveDirectorView({
           return;
         }
 
-        if (event.code === 'KeyV' && !isManualTempoMode && !desktopCombined) {
+        if (event.code === 'KeyS' && event.shiftKey && !isManualTempoMode && !desktopCombined) {
           event.preventDefault();
           setSurfaceView((previous) => previous === 'mix' ? 'sections' : 'mix');
           return;
@@ -5068,21 +5070,12 @@ export function LiveDirectorView({
           return;
         }
 
-        if (event.code === 'KeyS' && canUseStemsToolbar) {
+        if (event.code === 'KeyS' && !event.shiftKey && canUseStemsToolbar) {
           event.preventDefault();
           handleStemsToolbarAction();
           return;
         }
 
-        if (event.code === 'KeyB') {
-          event.preventDefault();
-          if (isPlaying) {
-            setShowBackConfirm(true);
-          } else {
-            void exitLiveDirector();
-          }
-          return;
-        }
       }
 
       if (
@@ -5146,6 +5139,18 @@ export function LiveDirectorView({
         event.preventDefault();
         setVisualSectionTime(null);
         releaseSectionsAutoFollowNow();
+        return;
+      }
+
+      // Salir con Esc, solo cuando no queda nada que cancelar (salto, repetición, conteo y selección ya
+      // respondieron arriba) ni hay un menú o panel abierto; sonando, pide confirmación.
+      if ((event.key === 'Escape' || event.code === 'Escape') && desktopSectionKeyboardEnabled && !globalShortcutTargetBlocked) {
+        const overlayOpen = Array.from(document.querySelectorAll<HTMLElement>('dialog[open], [role="dialog"], [role="menu"]'))
+          .some(element => element.getClientRects().length > 0 || element.matches('dialog[open]'));
+        if (!overlayOpen) {
+          event.preventDefault();
+          if (isPlaying) setShowBackConfirm(true); else void exitLiveDirector();
+        }
         return;
       }
 
@@ -5485,7 +5490,7 @@ export function LiveDirectorView({
                   : null}
                   <span className="flex-1"/>
                   {dynamicGuide.nextInstruction && <span data-live-director-control="next-instruction" title="Próxima instrucción de la guía" className="min-w-0 truncate text-[10px] text-white/50">Próx. instrucción · <span className="text-white/75">{dynamicGuide.nextInstruction.name}</span></span>}
-                  <button type="button" data-live-director-control="guide-instructions" aria-label="Instrucciones" aria-haspopup="menu" aria-expanded={Boolean(instructionMenuAnchor)} disabled={dynamicGuide.status !== 'ready'} aria-keyshortcuts="I" title={dynamicGuide.status === 'ready' ? 'Decir una instrucción ahora · I (o directo con Z X C N M , . -)' : 'Disponible con la guía automática'} onClick={event => { const rect = event.currentTarget.getBoundingClientRect(); setInstructionMenuAnchor(open => open ? null : { top: rect.bottom + 6, right: window.innerWidth - rect.right }); }} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white/35 hover:bg-white/5 hover:text-white/80 disabled:opacity-40 disabled:hover:bg-transparent"><Megaphone size={14}/></button>
+                  <button type="button" data-live-director-control="guide-instructions" aria-label="Instrucciones" aria-haspopup="menu" aria-expanded={Boolean(instructionMenuAnchor)} disabled={dynamicGuide.status !== 'ready'} aria-keyshortcuts="I" title={dynamicGuide.status === 'ready' ? 'Decir una instrucción ahora · I (o directo con Z X C V B N M , . -)' : 'Disponible con la guía automática'} onClick={event => { const rect = event.currentTarget.getBoundingClientRect(); setInstructionMenuAnchor(open => open ? null : { top: rect.bottom + 6, right: window.innerWidth - rect.right }); }} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white/35 hover:bg-white/5 hover:text-white/80 disabled:opacity-40 disabled:hover:bg-transparent"><Megaphone size={14}/></button>
                   {instructionMenuAnchor && dynamicGuide.status === 'ready' && createPortal(<div role="menu" aria-label="Instrucciones" data-guide-instruction-menu="true" style={{ position: 'fixed', top: instructionMenuAnchor.top, right: instructionMenuAnchor.right }} className="z-[80] w-[27rem] max-w-[calc(100vw-1rem)] rounded-xl border border-white/10 bg-[#17181a] p-2 shadow-[0_14px_32px_rgba(0,0,0,0.4)]">
                     <p className="px-2 pb-1.5 pt-0.5 text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-white/35">Instrucciones · se dicen ahora</p>
                     <div className="grid grid-cols-3 gap-1">{GUIDE_INSTRUCTION_OPTIONS.map(option => <button key={option.key} type="button" role="menuitem" data-guide-instruction={option.key} aria-keyshortcuts={INSTRUCTION_SHORTCUT_LABELS[option.key]?.replace('⇧', 'Shift+')} onClick={() => { dynamicGuide.speak(option.label); setInstructionMenuAnchor(null); }} className="flex min-w-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2 py-1.5 text-left text-xs text-white/75 hover:bg-white/5 hover:text-white"><span className="min-w-0 flex-1 truncate">{option.label}</span>{INSTRUCTION_SHORTCUT_LABELS[option.key] && <kbd className="shrink-0 rounded border border-white/12 px-1 font-sans text-[0.58rem] font-bold text-white/45">{INSTRUCTION_SHORTCUT_LABELS[option.key]}</kbd>}</button>)}</div>
@@ -6019,7 +6024,9 @@ export function LiveDirectorView({
       </div>}
       {canUseGeneratedClick && clickTrack && selectedMultitrackEngine.loadGeneratedClickSamples && selectedMultitrackEngine.setGeneratedClick &&
         <LiveDirectorClickMixer key={`click:${trackSignature}:${reloadKey}`} open={showClickMixer} onClose={closeClickMixer}
-          onConfirmedMeter={setConfirmedClickMeter} trackId={clickTrack.id} bpm={generatedClickGrid?.bpm ?? bpm} originSeconds={generatedClickGrid?.originSeconds ?? sourceSections[0]?.startTime ?? 0}
+          onConfirmedMeter={setConfirmedClickMeter} trackId={clickTrack.id} bpm={generatedClickGrid?.bpm ?? reaperTransport?.clickGrid?.bpm ?? bpm}
+          originSeconds={generatedClickGrid?.originSeconds ?? reaperTransport?.clickGrid?.originSeconds ?? sourceSections[0]?.startTime ?? 0}
+          meter={reaperTransport?.timeSignature ?? shownMeter} confirmedByReaper={Boolean(reaperTransport?.timeSignature && reaperTransport?.clickGrid)}
           ready={isReady} playing={isPlaying} busy={isSectionSeekBusy || isCongregationFading}
           loadSamples={selectedMultitrackEngine.loadGeneratedClickSamples} onConfigure={selectedMultitrackEngine.setGeneratedClick} />}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(93,214,240,0.08),_transparent_24%),linear-gradient(180deg,#232526_0%,#222425_46%,#202224_100%)]" />
@@ -6048,11 +6055,11 @@ export function LiveDirectorView({
                 className={`${CONTROL_CARD} group relative ${isUltraCompactLandscape ? 'h-11 w-11 px-1.5' : isToolbarCompactLandscape ? 'h-12 w-12 px-2' : 'h-[var(--ld-control-height)] w-[4.25rem] px-2.5'} shrink-0 items-center justify-center text-white/85 hover:bg-white/6 hover:text-white`}
                 style={isToolbarCompactLandscape ? undefined : { flex: '0 0 16%', width: '16%' }}
                 aria-label={resolvedBackLabel}
-                aria-keyshortcuts="B"
-                title={`${resolvedBackLabel} (B)`}
+                aria-keyshortcuts="Escape"
+                title={`${resolvedBackLabel} (Esc)`}
               >
                 <ChevronLeft className={`${isUltraCompactLandscape ? 'h-5 w-5' : isToolbarCompactLandscape ? 'h-6 w-6' : 'h-8 w-8'}`} strokeWidth={isToolbarCompactLandscape ? 2.1 : 2.45} />
-                <KeyboardHint>B</KeyboardHint>
+                <KeyboardHint>ESC</KeyboardHint>
               </button>
 
               <button
@@ -6582,8 +6589,8 @@ export function LiveDirectorView({
                 disabled={isManualTempoMode || showArrangementEditor}
                 aria-pressed={showSectionsPanel}
                 aria-label={showMixReturn ? 'Mostrar faders de mezcla' : 'Mostrar secciones'}
-                aria-keyshortcuts="V"
-                title={`${showMixReturn ? 'Mostrar mezcla' : 'Mostrar secciones'} (V)`}
+                aria-keyshortcuts="Shift+S"
+                title={`${showMixReturn ? 'Mostrar mezcla' : 'Mostrar secciones'} (Shift+S)`}
                 className={`group relative ui-pressable-soft flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-1 rounded-[1.2rem] border transition-all disabled:cursor-not-allowed disabled:opacity-35 ${isUltraCompactLandscape ? 'rounded-[1rem] gap-0.5' : ''
                   } ${showSectionsPanel
                     ? 'border-cyan-300/34 bg-cyan-300/12 text-cyan-50 shadow-[0_0_20px_rgba(129,221,245,0.14)]'
@@ -6599,7 +6606,7 @@ export function LiveDirectorView({
                   {showMixReturn ? 'Mezcla' : 'Secciones'}
                 </span>
                 <span className="pointer-events-none absolute right-1.5 top-1.5 rounded-md border border-white/12 bg-white/8 px-1.5 py-0.5 text-[0.5rem] font-black text-white/72 opacity-0 transition-opacity group-hover:opacity-100">
-                  V
+                  ⇧ S
                 </span>
               </button>
               </>}

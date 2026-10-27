@@ -6,6 +6,8 @@ type Props = {
   open: boolean; onClose: () => void;
   onConfirmedMeter?: (meter: { numerator: number; denominator: number } | null) => void; trackId: string; bpm: number; originSeconds: number;
   ready: boolean; playing: boolean; busy: boolean;
+  /** Compás de la canción; con REAPER el «uno» y el compás ya están confirmados y el acento suena sin marcar la casilla. */
+  meter?: { numerator: number; denominator: number } | null; confirmedByReaper?: boolean;
   loadSamples: () => Promise<void>;
   onConfigure: (trackId: string, settings: GeneratedClickSettings | null) => boolean;
 };
@@ -17,9 +19,9 @@ export function LiveDirectorClickMixer(props: Props) {
   const [error, setError] = useState('');
   const [bpm, setBpm] = useState(props.bpm);
   const [origin, setOrigin] = useState(props.originSeconds);
-  const [numerator, setNumerator] = useState(4);
-  const [denominator, setDenominator] = useState(4);
-  const [accentConfirmed, setAccentConfirmed] = useState(false);
+  const [numerator, setNumerator] = useState(props.meter?.numerator ?? 4);
+  const [denominator, setDenominator] = useState(props.meter?.denominator ?? 4);
+  const [accentConfirmed, setAccentConfirmed] = useState(Boolean(props.confirmedByReaper && props.meter));
   const [levels, setLevels] = useState([.65, 0, .7, .35, 0]);
   const [muted, setMuted] = useState<boolean[]>([]);
   const [solo, setSolo] = useState<boolean[]>([]);
@@ -91,10 +93,10 @@ export function LiveDirectorClickMixer(props: Props) {
     </div>
     <label className="mt-3 flex min-h-10 items-center gap-2 text-xs text-white/75">
       <input type="checkbox" checked={accentConfirmed} disabled={gridLocked || !settings} className="h-4 w-4 accent-cyan-200"
-        onChange={event => setAccentConfirmed(event.target.checked)} />El pulso de referencia es el «uno» y el compás está confirmado.
+        onChange={event => setAccentConfirmed(event.target.checked)} />El pulso de referencia es el «uno» y el compás está confirmado.{props.confirmedByReaper && props.meter && accentConfirmed && numerator === props.meter.numerator && denominator === props.meter.denominator ? ' (tomado de REAPER)' : ''}
     </label>
     <p className="mt-1 text-xs text-white/55">Tempo constante. Si la canción cambia de tempo o compás, conserva el click grabado. Ajustes locales de esta prueba.</p>
-    <div role="status" className="mt-2 min-h-5 text-xs text-amber-100">{error || (!settings ? 'Revisa el tempo, el pulso y el compás antes de activar.' : !accentConfirmed ? 'Acento desactivado hasta confirmar el compás.' : '')}</div>
+    <div role="status" className="mt-2 min-h-5 text-xs text-amber-100">{error || (!settings ? 'Revisa el tempo, el pulso y el compás antes de activar.' : !accentConfirmed ? 'Acento desactivado hasta confirmar el compás.' : 'Acento: un golpe en el «uno» de cada compás.')}</div>
     <div className="mt-2 grid h-[clamp(240px,40dvh,380px)] grid-cols-[repeat(5,minmax(112px,1fr))] gap-2 overflow-x-auto" data-live-director-mixer-scroll="true">
       {CLICK_LAYERS.map((layer, index) => <ChannelStrip key={layer.id} id={`click-${layer.id}`} label={layer.label} shortLabel={layer.shortLabel}
         accent={layer.accent} volume={levels[index]} level={0} isPlaying={props.playing && enabled}
