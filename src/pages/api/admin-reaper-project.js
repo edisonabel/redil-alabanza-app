@@ -7,7 +7,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { createClient } from '@supabase/supabase-js';
 import { getSupabaseServerEnv, getSupabaseServiceRoleKey, readEnv } from '../../lib/server/supabase-env.js';
-import { parseReaperProject, safeReaperProjectName } from '../../utils/reaperProjectParser.js';
+import { parseReaperProject, reviewReaperProject, safeReaperProjectName } from '../../utils/reaperProjectParser.js';
 
 export const prerender = false;
 
@@ -50,13 +50,21 @@ const createR2 = () => {
   }
   return {
     bucket,
-    client: new S3Client({ region: 'auto', endpoint, credentials: { accessKeyId, secretAccessKey } }),
+    client: new S3Client({
+      region: 'auto',
+      endpoint,
+      credentials: { accessKeyId, secretAccessKey },
+      // Recent AWS SDK versions add CRC32 headers by default. R2's S3 API
+      // does not accept x-amz-sdk-checksum-algorithm, so only calculate a
+      // request checksum when the operation explicitly requires one.
+      requestChecksumCalculation: 'WHEN_REQUIRED',
+    }),
   };
 };
 
 const readSong = async (songId) => {
   const { data, error } = await serviceRoleClient.from('canciones')
-    .select('id, titulo').eq('id', songId).maybeSingle();
+    .select('id, titulo, section_markers, multitrack_session').eq('id', songId).maybeSingle();
   if (error) throw error;
   if (!data) throw Object.assign(new Error('No encontré esa canción.'), { status: 404 });
   return data;
@@ -139,24 +147,123 @@ export const POST = async ({ request, cookies }) => {
       return jsonResponse({ error: readableError(error) }, 422);
     }
     const song = await readSong(songId);
+    if (project.songId && project.songId !== String(song.id)) {
+      return jsonResponse({ error: 'Este RPP se preparó para otra canción. Selecciona la canción correcta antes de subirlo.' }, 422);
+    }
+    const review = reviewReaperProject(project, song);
     const { bucket, client } = createR2();
     const fileName = safeReaperProjectName(originalName);
-    const objectKey = `${PROJECT_PREFIX}${song.id}/${Date.now()}-${randomUUID()}-${encodeURIComponent(fileName)}`;
+    // Pass the raw object key to the S3 SDK. It performs the required URI
+    // encoding while signing the request; pre-encoding the filename here
+    // double-encodes spaces and can make R2 reject the signature on PUT.
+    const objectKey = `${PROJECT_PREFIX}${song.id}/${Date.now()}-${randomUUID()}-${fileName}`;
     await client.send(new PutObjectCommand({
       Bucket: bucket,
       Key: objectKey,
       Body: bytes,
       ContentType: 'application/x-reaper-project',
       CacheControl: 'private, no-store',
-      Metadata: { 'song-title': String(song.titulo || '').slice(0, 200) },
     }));
     return jsonResponse({
       project: { key: objectKey, fileName, updatedAt: new Date().toISOString(), size: bytes.length },
-      analysis: project,
+      analysis: { ...project, review },
     }, 201);
   } catch (error) {
     const status = Number(error?.status) || 500;
     console.error('Admin REAPER project upload failed:', error);
+    return jsonResponse({ error: readableError(error) }, status);
+  }
+};
+
+const normalizeProjectSectionName = (value) => String(value || '').replace(/^\[BORRADOR\]\s*/i, '').trim();
+const sectionIdentity = (value) => normalizeProjectSectionName(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+const APPLY_BLOCKERS = new Set([
+  'drafts', 'uno', 'end', 'invalid', 'tempo', 'audio-moved', 'no-media', 'unverified-media',
+  'trimmed', 'song', 'unbound', 'duplicate-anchor', 'duplicate-time', 'duplicate-name',
+  'duplicate-id', 'outside', 'tail', 'range', 'tempo-map', 'media-count', 'order', 'untimed-source',
+]);
+
+export const PUT = async ({ request, cookies }) => {
+  try {
+    const requestUrl = new URL(request.url);
+    const origin = request.headers.get('origin');
+    if (origin && origin !== requestUrl.origin) return jsonResponse({ error: 'Origen no permitido.' }, 403);
+    await requireAdmin(cookies);
+    if (Number(request.headers.get('content-length') || 0) > 32 * 1024) return jsonResponse({ error: 'La solicitud supera el límite permitido.' }, 413);
+    const payload = await request.json().catch(() => null);
+    const songId = String(payload?.songId || '').trim();
+    const key = String(payload?.key || '');
+    const markerIds = Array.isArray(payload?.markerIds) ? payload.markerIds.map(Number) : [];
+    if (!songId || !key.startsWith(`${PROJECT_PREFIX}${songId}/`) || key.includes('..')) return jsonResponse({ error: 'El proyecto no corresponde a esta canción.' }, 400);
+    if (!markerIds.length || markerIds.length > 100 || markerIds.some((id) => !Number.isInteger(id) || id < 0) || new Set(markerIds).size !== markerIds.length) {
+      return jsonResponse({ error: 'Selecciona una lista válida de secciones para aplicar.' }, 400);
+    }
+
+    const song = await readSong(songId);
+    const { bucket, client } = createR2();
+    const stored = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    const bytes = new Uint8Array(await stored.Body.transformToByteArray());
+    if (!bytes.length || bytes.length > MAX_PROJECT_BYTES) return jsonResponse({ error: 'El RPP guardado está vacío o supera 5 MB.' }, 413);
+    const project = parseReaperProject(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+    if (!project.songId || project.songId !== String(song.id)) return jsonResponse({ error: 'El RPP no está vinculado a esta canción.' }, 422);
+    const review = reviewReaperProject(project, song);
+    const blockers = review.issues.filter((issue) => APPLY_BLOCKERS.has(issue.code));
+    if (blockers.length) return jsonResponse({ error: `Corrige primero el RPP: ${blockers.map((issue) => issue.message).join(' ')}`, review }, 409);
+
+    const chosen = project.markers.filter((marker) => !/^(uno|fin audio)$/i.test(normalizeProjectSectionName(marker.name)) && markerIds.includes(marker.id));
+    if (chosen.length !== markerIds.length || chosen.some((marker) => marker.draft)) return jsonResponse({ error: 'Todas las secciones elegidas deben existir en el RPP y estar confirmadas.' }, 422);
+    const chosenNames = chosen.map((marker) => sectionIdentity(marker.name));
+    if (new Set(chosenNames).size !== chosenNames.length) return jsonResponse({ error: 'Hay secciones con el mismo nombre. Numera sus apariciones antes de aplicar.' }, 422);
+
+    // Edison explicitly approved removing the false Outro and keeping Final for this song.
+    if (/^digno\s+y\s+santo$/i.test(String(song.titulo || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim())) {
+      if (chosenNames.includes('outro')) return jsonResponse({ error: 'Para Digno y Santo, quita Outro de la selección y conserva Final, como indicaste.' }, 422);
+      if (!chosenNames.includes('final')) return jsonResponse({ error: 'Para Digno y Santo, incluye la sección Final antes de aplicar.' }, 422);
+    }
+    const markers = [...chosen].sort((a, b) => a.timeSeconds - b.timeSeconds).map((marker) => ({
+      id: `reaper-${marker.id}`,
+      sectionName: normalizeProjectSectionName(marker.name),
+      startSec: marker.timeSeconds,
+    }));
+    if (!markers.length || markers.some((marker, index) => index > 0 && marker.startSec <= markers[index - 1].startSec)) {
+      return jsonResponse({ error: 'Las entradas de las secciones deben estar en orden y tener tiempos distintos.' }, 422);
+    }
+
+    let session = song.multitrack_session;
+    if (typeof session === 'string') {
+      try { session = JSON.parse(session); } catch { session = null; }
+    }
+    if (!session || typeof session !== 'object' || !Array.isArray(session.tracks) || !session.tracks.length) {
+      return jsonResponse({ error: 'La canción no tiene una sesión multitrack disponible para recibir el mapa.' }, 409);
+    }
+    const appliedAt = new Date().toISOString();
+    const nextSession = {
+      ...session,
+      updatedAt: appliedAt,
+      // RPP markers are absolute positions in the original stems. A prior
+      // lyric/MP3 offset must not be added to this newly calibrated map.
+      sectionOffsetSeconds: 0,
+      sectionMarkers: markers,
+      // Spoken instructions inside UNO–FIN AUDIO; they never become sections.
+      instructionMarkers: (project.instructions || [])
+        .filter((cue) => cue.timeSeconds >= (review.unoSeconds ?? 0) && (review.endSeconds == null || cue.timeSeconds < review.endSeconds))
+        .map((cue) => ({ id: `reaper-cue-${cue.id}`, name: cue.name, startSec: cue.timeSeconds })),
+      reaperTiming: {
+        source: 'reaper-rpp',
+        projectName: safeReaperProjectName(key.split('/').at(-1) || 'Proyecto.RPP'),
+        tempo: project.tempo,
+        meter: project.meter,
+        unoSeconds: review.unoSeconds,
+        finAudioSeconds: review.endSeconds,
+        appliedAt,
+      },
+    };
+    const { error: updateError } = await serviceRoleClient.from('canciones').update({ multitrack_session: nextSession }).eq('id', song.id);
+    if (updateError) throw updateError;
+    return jsonResponse({ applied: true, songId: song.id, title: song.titulo, sectionMarkers: markers, instructionMarkers: nextSession.instructionMarkers, reaperTiming: nextSession.reaperTiming });
+  } catch (error) {
+    const status = Number(error?.status) || 500;
+    console.error('Admin REAPER map apply failed:', error);
     return jsonResponse({ error: readableError(error) }, status);
   }
 };

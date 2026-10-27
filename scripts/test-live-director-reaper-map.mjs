@@ -1,0 +1,31 @@
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import { buildSync } from 'esbuild';
+const bundle = buildSync({entryPoints:['src/utils/liveDirectorSongSession.ts'],bundle:true,write:false,platform:'node',format:'iife',globalName:'Timing'});
+const scope={};vm.runInNewContext(bundle.outputFiles[0].text,scope);
+const {normalizePersistedLiveDirectorSession:normalize,buildLiveDirectorSectionsFromMarkers:build,resolveLiveDirectorSessionSections:resolve,shouldRefreshLiveDirectorSession:refresh,resolveLiveDirectorTerminalSectionEnd:finish}=scope.Timing;
+const entries=[['Intro',4.73684210526316],['Verso 1',14.21052631578947],['Coro 1',54.47368421052632],['Interludio 1',74.21052631578948],['Verso 2',83.684210526315789],['Coro 2',121.57894736842105],['Interludio 2',141.31578947368422],['Verso 3',150.78947368421052],['Coro 3',190.26315789473685],['Coro 4',213.15789473684211],['Repeticion',234.47368421052633],['final',241.57894736842104]];
+const markers=entries.map(([sectionName,startSec],i)=>({id:`reaper-${i+1}`,sectionName,startSec}));
+const base={songId:'fixture-song',updatedAt:'old',tracks:[{id:'click',name:'Click',url:'https://fixture.invalid/click.m4a'}]};
+const current=normalize(base), calibrated=normalize({...base,sectionMarkers:markers,reaperTiming:{source:'reaper-rpp',tempo:76,meter:'4/4',unoSeconds:entries[0][1],finAudioSeconds:253.421,appliedAt:'new'}});
+const chart=build([{id:'old',sectionName:'Coro 2',startSec:138}]);
+const sections=finish(resolve(calibrated,chart),253.421);
+assert.equal(sections.length,12);
+for(let i=0;i<entries.length;i++){assert.equal(sections[i].name,entries[i][0]);assert.equal(sections[i].startTime,entries[i][1]);if(i<11)assert.equal(sections[i].endTime,entries[i+1][1]);}
+assert.equal(sections.at(-1).endTime,253.421);
+assert.equal(resolve(current,chart),chart,'Songs without a multitrack map keep their chart fallback');
+assert.equal(chart[0].startTime,138,'Never rewrite independent lyric timing');
+assert.equal(refresh(current,calibrated),true,'Timing-only RPP import refreshes unchanged stems and updatedAt');
+assert.equal(refresh(calibrated,normalize(JSON.stringify(calibrated))),false);
+assert.equal(refresh(calibrated,normalize({...calibrated,sectionMarkers:markers.map((m,i)=>i===5?{...m,startSec:122}:m)})),true);
+assert.equal(refresh(calibrated,null),false);
+console.log('REAPER multitrack precedence, exact entries, audio tail and timing-only refresh: ok');
+
+const {resolveLiveDirectorReaperTransportTiming:transportTiming}=scope.Timing;
+const reaperTransport=transportTiming(calibrated);
+assert.equal(reaperTransport.bpm,76,'RPP tempo overrides stale catalog BPM');
+assert.equal(reaperTransport.timeSignature.numerator,4);
+assert.equal(reaperTransport.timeSignature.denominator,4);
+assert.equal(reaperTransport.clickGrid.originSeconds,entries[0][1]);
+assert.equal(transportTiming(current),null,'Songs without applied RPP keep their catalog settings');
+console.log('RPP tempo, meter and UNO follow the applied transport map: ok');

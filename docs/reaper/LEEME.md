@@ -1,22 +1,55 @@
-# Plantilla para mapear canciones en REAPER
+# Flujo asistido REAPER · rama experimental
 
-Instalada como **File → Project templates → Alabanza - Mapear secciones**. También puedes abrir `Alabanza - Mapear secciones.RPP` y guardar enseguida una copia con el nombre de la nueva canción.
+La herramienta está en **Administración → REAPER** y se presenta como un wizard
+de tres pasos: preparar el paquete, ajustar marcadores en REAPER y subir/revisar/
+aplicar el mapa. **Descargar proyecto + stems** genera un ZIP con los audios
+originales ya colocados en un RPP, los marcadores iniciales, el asistente Lua,
+una referencia de texto y la guía visual PDF.
 
-Incluye tres pistas vacías: Click, Guide y Referencia musical. Timebase de proyecto y pistas en **Time**, timebase del mapa de tempo en **Time**, velocidad 1, metrónomo de REAPER desactivado y Master inicial −12 dB. No contiene audio, marcadores ni mapa de Providencia. Los **120 BPM y 4/4 iniciales son valores de partida**, que debes revisar para cada canción.
+La guía breve de texto está en
+[`public/downloads/Alabanza-REAPER-Instrucciones.md`](../../public/downloads/Alabanza-REAPER-Instrucciones.md),
+y la guía visual de tres páginas con capturas está en
+[`public/downloads/Alabanza-REAPER-Guia-visual.pdf`](../../public/downloads/Alabanza-REAPER-Guia-visual.pdf).
+El asistente está en
+[`public/downloads/Alabanza-Asistente.lua`](../../public/downloads/Alabanza-Asistente.lua).
 
-1. Crear el proyecto desde la plantilla y usar **Save project as…** con el nombre de la canción y su propia carpeta. No guardar la canción encima de la plantilla.
-2. Importar el Click en su pista, la Guide en la suya y una referencia musical en la tercera, todos desde su segundo cero original. Si utilizas todos los stems, añadir pistas separadas conservando su posición relativa y los silencios iniciales.
-3. Medir/corregir BPM y confirmar compás. Marcar `UNO` en el primer uno real, distinguiendo las subdivisiones. Ajustar la cuadrícula sin mover ni estirar el audio. Registrar cambios de tempo/compás donde existan.
-4. Marcar las entradas: `Intro 1`, `Verso 1`, `Coro 1`, etc. El anuncio de la Guide puede anticiparse; su voz no define el inicio. Comprobar principio, mitad y final para detectar deriva.
-5. Marcar `FIN AUDIO` en la duración original, incluyendo la cola. El último clic y el final del archivo pueden ser distintos.
-6. Guardar el RPP de esa canción para revisar/importar sus marcadores. No hace falta renderizar otra vez los stems; conservar el mismo audio y el mismo cero de tiempo.
+El asistente guía cuatro pasos (Tempo y UNO, Secciones, FIN AUDIO, Guardar) con una
+acción principal por paso (Enter), una lista de entradas con tiempo y estado, y dos
+grupos separados: **Sección** (estructura, numeración automática con vista previa) e
+**Instrucción** (avisos hablados que no crean secciones). Confirma la entrada del
+cursor sin redondearla, mide tempo con compases completos y al final guarda el RPP y
+abre `/admin?area=reaper&paso=subir&song=<id>` en la beta. No detecta automáticamente
+el compás ni el nombre de una sección.
 
-## Flujo desde Administración
+Las instrucciones se guardan como marcadores `[INSTRUCCIÓN] Nombre` (violeta). El
+parser las separa en `instructions` y nunca las cuenta como secciones; al aplicar se
+guardan en `multitrack_session.instructionMarkers` (solo las que están entre UNO y
+FIN AUDIO). Los RPP anteriores no tienen ese prefijo y se leen igual que antes.
 
-En **Administración → REAPER**, elige la canción y descarga **stems para REAPER**. Es un ZIP único con Click, Guide e instrumentos como archivos independientes, más un LEEME; no se hace una mezcla estéreo. Abre la plantilla, importa los archivos desde el mismo cero de tiempo, añade marcadores y guarda el `.RPP`.
+Las listas del asistente (`SECTION_TYPES`, `INSTRUCTION_TYPES` y el prefijo) se
+generan desde `public/audio/guide-es/manifest.json` (campo `kind`) con
+`npm run reaper:sections`
+([`src/utils/guideSectionCatalog.ts`](../../src/utils/guideSectionCatalog.ts) decide
+orden y etiqueta en español). Cada etiqueta se comprueba con `resolveGuideCue`, y
+`npm run test:reaper-sections` falla si el bloque generado no coincide con el
+manifiesto o si algún nombre no llega a una voz guía. Las voces de instrucción se
+generan con `scripts/prepare-guide-cues.mjs` (ver `public/audio/guide-es/README.md`).
 
-Puedes subir ese `.RPP` desde la misma pantalla. Administración guarda una copia asociada a la canción y muestra tempo, compás y marcadores para revisarlos. Esta copia no cambia todavía las secciones que usa el reproductor; así podemos revisar el mapa antes de aplicarlo a la beta.
+Al subir un RPP, Administración guarda una copia por canción, muestra diferencias
+con el mapa actual y advierte sobre borradores, duplicados, límites, audio movido o
+estirado y mapas variables. Desde ese informe se puede aplicar explícitamente el
+mapa validado a la sesión multitrack. La aplicación conserva letras, catálogo y
+arreglos de eventos. El mapa ya integrado de Providencia no se altera.
 
-La letra y los acordes siguen en ChordPro, en la ficha de la canción. Playback separa el audio de la letra: ChartBuilder muestra letra/acordes sincronizados, y las cues MIDI pueden mandar comandos a ProPresenter.
+La plantilla vacía sigue disponible para trabajo manual. Sus 120 BPM y 4/4 son
+valores iniciales que se deben revisar por canción.
 
-La plantilla no sustituye la confirmación del compás ni identifica automáticamente las secciones.
+Acceso directo en desarrollo: `http://localhost:4322/admin?area=reaper`.
+
+Validación: `npm run test:reaper-project`, `npm run test:reaper-sections`, `npm run test:live-guide-instructions`,
+`npm run test:live-guide-instructions-ui` (arranca el laboratorio Providencia; necesita red), `npm run test:reaper-preparation`,
+`npm run test:reaper-upload`, `npm run test:reaper-ui`. El último usa el componente
+real con WAV sintético y almacenamiento simulado; nunca visita el Admin autenticado.
+Para la lógica del asistente: Lua 5.3+ con `scripts/test-reaper-assistant.lua`
+(o `npm exec --yes --package=fengari-node-cli -- fengari scripts/test-reaper-assistant.lua`).
+La prueba de Lua simula la API de REAPER; no sustituye la comprobación visual nativa.
