@@ -498,3 +498,12 @@ todas las capas; faders, mezclas guardadas y balance entre capas no cambian.
 Medido en salida: solo acento 0,161 → 0,228 (+3,0 dB). Checks: click (UI, audio,
 calibración, generado), conteo, guía dinámica, build e higiene, acceso beta,
 sesión y recuperación de fetch. Remoto: `/` 302 y API 401 sin sesión.
+
+## Sin aviso «Cargando arreglo del evento…» entre canciones · 27 de octubre de 2026
+
+Beta `6ae1199f8f0e9e45c30233e5`, commit `50d4ed5` (alias privado, sin `--prod`).
+El aviso amarillo superior ya no aparece mientras carga el arreglo al cambiar de
+canción (la canción ya tiene su propio indicador de carga); solo aparece si el
+arreglo falla, con «Reintentar». Checks: cambio de canción sin el aviso, error
+visible con «Reintentar», encadenar, guardado de buses, atajos, final de canción,
+build e higiene (1398). Remoto: `/` 302 y API 401 sin sesión.
