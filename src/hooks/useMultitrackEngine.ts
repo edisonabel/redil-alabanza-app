@@ -10,6 +10,7 @@ import {
   type LiveDirectorLevelMeter,
   type DeviceDownloadProgress,
   type DeviceDownloadResult,
+  type SongBlend,
 } from '../services/StreamingMultitrackEngine';
 import type { TrackOutputRoute } from '../utils/liveDirectorTrackRouting';
 import type { TrackActivityEnvelope } from '../utils/audioActivityEnvelope';
@@ -72,7 +73,7 @@ export type UseMultitrackEngineReturn = {
   refreshTransport?:()=>void;
   prepareRestart?: (pauseAtTarget?: boolean, targetSeconds?: number) => Promise<{serial:number;completion:Promise<boolean>}>;
   prepareSongChange?: (tracks: TrackData[], pauseAtTarget?: boolean, targetSeconds?: number) => Promise<{ serial: number; completion: Promise<boolean> }>;
-  schedulePreparedSongChange?: (serial: number, boundary: number) => void;
+  schedulePreparedSongChange?: (serial: number, boundary: number, blend?: SongBlend) => void;
   prepareSectionJump?: (targetSeconds: number, boundarySeconds: number) => Promise<{ serial: number; completion: Promise<boolean> }>;
   cancelSectionJump?: (serial?: number) => void;
   prefetchSectionStarts?: (startSeconds: number[]) => void;
@@ -930,10 +931,10 @@ export function useMultitrackEngine(
     if (!(engine instanceof StreamingMultitrackEngine)) throw new Error('Este motor no permite preparar otra canción.');
     return engine.prepareSongChange(buildStreamingWorkerTracks(cloneTracks(tracks)), pauseAtTarget,targetSeconds);
   }, []);
-  const schedulePreparedSongChange = useCallback((serial: number, boundary: number) => {
+  const schedulePreparedSongChange = useCallback((serial: number, boundary: number, blend?: SongBlend) => {
     const engine = engineRef.current;
     if (!(engine instanceof StreamingMultitrackEngine)) throw new Error('Cambio preparado no disponible.');
-    engine.schedulePreparedSongChange(serial,boundary);
+    engine.schedulePreparedSongChange(serial,boundary,blend);
   }, []);
   const cancelSectionJump = useCallback((serial?: number) => {
     const engine = engineRef.current;

@@ -14,6 +14,10 @@ const SYNC_FINE_DRIFT_MS = 15;
 const SYNC_HARD_DRIFT_MS = 40;
 const SYNC_HARD_REALIGN_INTERVAL_FRAMES = 4800;
 const GUIDE_DUCK_RAMP_SECONDS = 0.005;
+// Sobreponer / Transición cruzada: como máximo 6 s de la canción anterior sonando con la nueva.
+const SONG_BLEND_MAX_SECONDS = 6;
+// La cola de «Sobreponer» se cierra con este fundido para no cortar en seco al final de la canción.
+const SONG_BLEND_TAIL_RAMP_SECONDS = 0.01;
 // AudioWorkletGlobalScope does not expose performance.now() in every browser.
 // Date.now() is coarse per quantum but its sum over one second stays unbiased.
 const RENDER_CLOCK_IS_PRECISE = typeof performance !== 'undefined' && !!performance && typeof performance.now === 'function';
@@ -57,6 +61,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     this.renderErrorReported = false;
     this.pendingSectionEnd = null;
     this.pendingSectionSwitch = null;
+    this.songBlend = null;
     this.clickSamples = null;
     this.musicMeterEnabled = false;
     this.musicMeterLeft = new Float32Array(BASE_RENDER_FRAME_COUNT);
@@ -129,6 +134,11 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         type === 'PAUSE_AND_ADVANCE' || type === 'RESUME_READING' || type === 'PAUSE' ||
         type === 'transport' || type === 'loop-region') {
       this.cancelSectionSwitch();
+    }
+    // Un reinicio del transporte suelta la cola de la canción anterior; una pausa la conserva.
+    if (type === 'INIT_TRACKS' || type === 'reset-tracks' || type === 'FLUSH_BUFFERS' ||
+        type === 'PAUSE_AND_FLUSH' || type === 'PAUSE_AND_ADVANCE' || type === 'loop-region') {
+      this.songBlend = null;
     }
 
     if (type === 'configure-track') {
@@ -491,6 +501,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
 
   resetTracks() {
     this.songSwitchFadeBoundaryFrame = null;
+    this.songBlend = null;
     this.cancelSectionSwitch();
     this.tracks = [];
     this.trackCount = 0;
@@ -1193,6 +1204,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         }
       }
       this.cancelSectionSwitch();
+      this.songBlend = null;
       this.readingBlocked = true;
       this.fadeInFramesRemaining = 0;
       this.resetAllLoopJumpFades();
@@ -1208,6 +1220,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       return true;
     }
 
+    this.applySongBlend(output, outputChannelCount, frameCount, renderStartFrame);
     this.applySongSwitchFade(output,outputChannelCount,frameCount,renderStartFrame);
     this.publishMusicMeter(frameCount);
     this.applySeekResumeFade(output, outputChannelCount, frameCount);
@@ -1291,7 +1304,14 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       return;
     }
     if (message.replaceSong) this.ensureMeterCapacity(tracks.length);
+    const blendConfig = message.replaceSong && message.blend ? message.blend : null;
+    const blend = blendConfig && (blendConfig.mode === 'overlap' || blendConfig.mode === 'crossfade') &&
+      Number.isInteger(blendConfig.frames) && blendConfig.frames > 0 && blendConfig.frames <= rate * SONG_BLEND_MAX_SECONDS &&
+      message.pauseAtTarget !== true
+      ? this.prepareSongBlend(blendConfig)
+      : null;
     this.pendingSectionSwitch = {
+      blend,
       serial, control, tracks, replaceSong: message.replaceSong === true, pauseAtTarget: message.pauseAtTarget === true,
       nextTracks: message.replaceSong ? tracks.map(entry => entry.active) : null,
       boundaryFrame, targetFrame, targetSeconds: targetFrame / rate, minimumFrames,
@@ -1333,7 +1353,9 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
 
   commitSectionSwitch(plan, boundaryFrame) {
     this.activeSeekSerial = plan.serial;
-    if (plan.replaceSong) { this.tracks = plan.nextTracks; this.trackCount = plan.tracks.length; this.soloCount = 0; this.songSwitchFadeBoundaryFrame = boundaryFrame; }
+    // Con mezcla, la canción anterior sigue sonando desde su propio búfer: no hay hueco que suavizar.
+    this.songBlend = plan.replaceSong && plan.blend ? this.startSongBlend(plan.blend, boundaryFrame) : null;
+    if (plan.replaceSong) { this.tracks = plan.nextTracks; this.trackCount = plan.tracks.length; this.soloCount = 0; this.songSwitchFadeBoundaryFrame = this.songBlend ? null : boundaryFrame; }
     if (plan.pauseAtTarget) this.playing = false;
     for (let index = 0; index < plan.tracks.length; index += 1) {
       const entry = plan.tracks[index];
@@ -1363,8 +1385,70 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     this.fadeInFramesRemaining = 0;
   }
 
+  // Sobreponer / Transición cruzada. La cola son las pistas de la canción anterior (sin click ni guía),
+  // leídas en orden desde su búfer con la ganancia y la salida que tenían al cambiar: el búfer ya trae
+  // por adelantado más audio que la mezcla más larga. Cruzada usa curvas de igual potencia.
+  // La cola se arma al preparar el cambio (fuera del render); al confirmarlo solo se toman las
+  // ganancias y salidas de ese instante.
+  prepareSongBlend(config) {
+    const muted = new Set(Array.isArray(config.mutedTrackIndices) ? config.mutedTrackIndices : []);
+    const tails = [];
+    for (let index = 0; index < this.trackCount; index += 1) {
+      const track = this.tracks[index];
+      if (!track || muted.has(index) || !track.usesSharedMemory || !track.samples || !track.indices) continue;
+      tails.push({ track, samples: track.samples, indices: track.indices, capacity: track.capacity,
+        indexCapacity: track.indexCapacity, gain: 0, route: 'stereo' });
+    }
+    return { mode: config.mode, frames: config.frames, startFrame: 0, tails,
+      rampFrames: Math.max(1, Math.round((sampleRate || 48000) * SONG_BLEND_TAIL_RAMP_SECONDS)) };
+  }
+
+  startSongBlend(blend, startFrame) {
+    for (let index = 0; index < blend.tails.length; index += 1) {
+      const tail = blend.tails[index], track = tail.track;
+      tail.gain = track.isCue || track.generatedClick || track.samples !== tail.samples ? 0 : this.getTrackTargetGain(track);
+      tail.route = track.outputRoute || 'stereo';
+    }
+    blend.startFrame = startFrame;
+    return blend;
+  }
+
+  applySongBlend(output, channels, frames, renderStartFrame) {
+    const blend = this.songBlend;
+    if (!blend || !this.playing) return;
+    const first = Math.max(0, blend.startFrame - renderStartFrame);
+    const last = Math.min(frames, blend.startFrame + blend.frames - renderStartFrame);
+    if (first >= frames) return;
+    const crossfade = blend.mode === 'crossfade';
+    if (crossfade) {
+      for (let i = first; i < last; i += 1) {
+        const inGain = Math.sin(((renderStartFrame + i - blend.startFrame) / blend.frames) * Math.PI / 2);
+        for (let channel = 0; channel < channels; channel += 1) output[channel][i] *= inGain;
+      }
+    }
+    for (let t = 0; t < blend.tails.length; t += 1) {
+      const tail = blend.tails[t];
+      if (tail.gain <= GAIN_FLOOR) continue;
+      let readIndex = Atomics.load(tail.indices, READ_INDEX_SLOT);
+      let available = this.computeAvailableRead(readIndex, Atomics.load(tail.indices, WRITE_INDEX_SLOT), tail.indexCapacity);
+      for (let i = first; i < last && available > 0; i += 1, available -= 1) {
+        const elapsed = renderStartFrame + i - blend.startFrame;
+        const outGain = crossfade
+          ? Math.cos((elapsed / blend.frames) * Math.PI / 2)
+          : Math.min(1, (blend.frames - elapsed) / blend.rampFrames);
+        const sample = tail.samples[this.toSampleIndex(readIndex, tail.capacity)] * tail.gain * outGain;
+        if (channels >= 2 && tail.route === 'right') output[1][i] += sample;
+        else if (channels >= 2 && tail.route === 'left') output[0][i] += sample;
+        else for (let channel = 0; channel < channels; channel += 1) output[channel][i] += sample;
+        readIndex = this.advanceIndex(readIndex, 1, tail.indexCapacity);
+      }
+      Atomics.store(tail.indices, READ_INDEX_SLOT, readIndex);
+    }
+    if (renderStartFrame + frames >= blend.startFrame + blend.frames) this.songBlend = null;
+  }
+
   applySongSwitchFade(output,channels,frames,startFrame) {
-    const boundary=this.pendingSectionSwitch?.replaceSong?this.pendingSectionSwitch.boundaryFrame:this.songSwitchFadeBoundaryFrame;
+    const boundary=this.pendingSectionSwitch?.replaceSong&&!this.pendingSectionSwitch.blend?this.pendingSectionSwitch.boundaryFrame:this.songSwitchFadeBoundaryFrame;
     if(!Number.isFinite(boundary))return;
     const ramp=Math.max(1,Math.round((sampleRate||48000)*.003));
     if(startFrame>boundary+ramp){this.songSwitchFadeBoundaryFrame=null;return;}
