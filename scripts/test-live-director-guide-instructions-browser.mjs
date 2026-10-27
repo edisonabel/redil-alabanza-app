@@ -46,7 +46,7 @@ try {
   assert.ok(!view.sections.some(title => /Sube intensidad|Hits|Pausa/.test(title)), 'Instructions never become section cards');
   assert.match(view.next || '', /Próx\. instrucción · Sube intensidad/);
   await page.click('[data-live-director-control="guide-instructions"]');
-  const items = await page.$$eval('[data-guide-instruction]', nodes => nodes.map(node => node.textContent));
+  const items = await page.$$eval('[data-guide-instruction]', nodes => nodes.map(node => node.querySelector('span')?.textContent ?? node.textContent));
   assert.equal(items.length, 17); assert.equal(items[0], 'Sube intensidad'); assert.ok(items.includes('Hits') && items.includes('Guitarra'));
   await page.screenshot({ path: '.lab/results/guide-instructions-menu.png' });
   const before = await page.evaluate(() => window.__voices.length);

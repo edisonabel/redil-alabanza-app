@@ -42,7 +42,7 @@ export function LiveDirectorSongLevel(props: Props) {
         <div data-live-director-master-meter-fill="true" className="absolute inset-y-0 left-1/2 w-[0.38rem] rounded-full opacity-90 transition-transform duration-75 ease-linear"
           style={{ backgroundColor: color, transform: `translateX(-50%) scaleY(${fill / 100})`, transformOrigin: 'bottom center' }} />
       </div>, props.meterTarget)}
-    <button type="button" data-live-director-control="song-level" aria-label="Ajustar nivel de esta canción" aria-haspopup="dialog" title={`Nivel de esta canción: ${label}${automatic ? ' · Auto picos' : ''}`}
+    <button type="button" data-live-director-control="song-level" aria-label="Ajustar nivel de esta canción" aria-haspopup="dialog" aria-keyshortcuts="A" title={`Nivel de esta canción (A): ${label}${automatic ? ' · Auto picos' : ''}`}
       disabled={disabled} onClick={() => dialog.current?.showModal()}
       className={`mt-1 min-h-7 w-full rounded-lg border px-1 text-[9px] font-semibold tracking-wide focus-visible:outline-2 focus-visible:outline-cyan-200 disabled:opacity-30 ${db !== 0 || automatic ? 'border-cyan-200/30 text-cyan-100' : 'border-white/10 text-white/50 hover:text-white/80'}`}>
       {compact ? automatic ? 'AUTO' : db !== 0 ? label : 'NIVEL' : automatic ? `Auto ${label}` : db !== 0 ? `Nivel ${label}` : 'Nivel canción'}

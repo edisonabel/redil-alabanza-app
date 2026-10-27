@@ -101,6 +101,8 @@
     "test:live-save-queue": "node scripts/test-live-director-save-queue.mjs",
     "test:live-entry-count": "node scripts/test-live-director-entry-count.mjs && node scripts/test-live-director-entry-count-state.mjs",
     "test:live-musical-navigation": "node scripts/test-live-director-musical-navigation.mjs && node scripts/test-live-director-prepared-switch.mjs",
+    "test:live-groups-save-ui": "node scripts/test-live-director-groups-save-browser.mjs",
+    "test:live-shortcuts-ui": "node scripts/test-live-director-shortcuts-browser.mjs",
     "test:live-chain-ui": "node scripts/test-live-director-chain-browser.mjs",
     "test:live-jump-count": "node scripts/test-live-director-jump-count.mjs"
   },

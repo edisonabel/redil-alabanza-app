@@ -31,7 +31,7 @@ function Lab() {
     if(!song)return null;
     const session=normalizePersistedLiveDirectorSession(song.multitrack_session,{songId:song.id,songTitle:song.titulo});
     const localMix=mixes.current[song.id];
-    return session && localMix ? {...session,tracks:session.tracks.map(track=>({...track,...localMix.tracks?.find((t:any)=>t.id===track.id)}))}:session;
+    return session && localMix ? {...session,tracks:session.tracks.map(track=>({...track,...localMix.tracks?.find((t:any)=>t.id===track.id)})),...(localMix.groups?{mixGroups:localMix.groups}:{})}:session;
   },[song]);
   // Como ModoEnsayoDirector: la siguiente canción se carga sonando para el cambio preparado sin silencio.
   const prepareQueueSong=async(id:string)=>{

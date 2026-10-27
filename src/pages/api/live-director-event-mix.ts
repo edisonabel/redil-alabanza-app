@@ -18,6 +18,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 const MAX_EVENT_MIX_TRACKS = 64;
 const MAX_TRACK_ID_LENGTH = 160;
 const EVENT_MIX_OBJECT_PREFIX = 'live-director/light2-beta/event-mixes';
+const MIX_GROUP_IDS = new Set(['keys', 'acoustic', 'electric', 'bass', 'vocals', 'rhythm', 'other', 'cues']);
 
 let cachedR2Context: { bucket: string; client: S3Client } | null = null;
 
@@ -95,7 +96,22 @@ const sanitizeMix = (value: unknown) => {
     throw new ApiSecurityError('La mezcla debe mantener al menos un stem activo.', 400);
   }
 
-  return { version: 1, tracks };
+  // Buses (opcional): nivel 0–1 y silencio por grupo conocido, y asignación stem → grupo.
+  const rawGroups = source?.groups && typeof source.groups === 'object' && !Array.isArray(source.groups)
+    ? source.groups as Record<string, unknown> : null;
+  const asRecord = (value: unknown) => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  const gains: Record<string, number> = {}, muted: Record<string, true> = {}, assignments: Record<string, string> = {};
+  if (rawGroups) {
+    for (const [id, gain] of Object.entries(asRecord(rawGroups.gains))) {
+      if (MIX_GROUP_IDS.has(id) && Number.isFinite(Number(gain))) gains[id] = Math.round(Math.max(0, Math.min(1, Number(gain))) * 10000) / 10000;
+    }
+    for (const [id, isMuted] of Object.entries(asRecord(rawGroups.muted))) if (MIX_GROUP_IDS.has(id) && isMuted === true) muted[id] = true;
+    for (const [trackId, groupId] of Object.entries(asRecord(rawGroups.assignments))) {
+      if (seenTrackIds.has(trackId) && typeof groupId === 'string' && MIX_GROUP_IDS.has(groupId)) assignments[trackId] = groupId;
+    }
+  }
+  const hasGroups = Object.keys(gains).length > 0 || Object.keys(muted).length > 0 || Object.keys(assignments).length > 0;
+  return { version: 1, tracks, ...(hasGroups ? { groups: { gains, muted, assignments } } : {}) };
 };
 
 const getAuthenticatedDatabase = async (cookies: Parameters<typeof requireAuthenticatedUser>[0]) => {

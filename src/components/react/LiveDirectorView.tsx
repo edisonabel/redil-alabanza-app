@@ -50,7 +50,7 @@ import { useLiveDirectorManualTempoTransport } from '../../hooks/useLiveDirector
 import { useNativeIOSMultitrackEngine } from '../../hooks/useNativeIOSMultitrackEngine';
 import type { MultitrackEngineLoadWarning, SongStructure, TrackData } from '../../services/MultitrackEngine';
 import type { SharedStreamingTelemetry } from '../../services/StreamingMultitrackEngine';
-import { LiveDirectorGroupMixer } from './live-director/LiveDirectorGroupMixer';
+import { LiveDirectorGroupMixer, type SavedMixGroups } from './live-director/LiveDirectorGroupMixer';
 import { LiveDirectorClickMixer } from './live-director/LiveDirectorClickMixer';
 import type { GeneratedClickSettings } from '../../utils/liveDirectorGeneratedClick';
 import { ChannelStrip, FaderThumb, PrecisionFaderSurface } from './live-director/ChannelStrip';
@@ -289,6 +289,25 @@ const DISABLE_BACKWARD_SEEK_WHILE_PLAYING = true;
 const LIVE_DIRECTOR_COMBINED_MIN_HEIGHT = 900;
 const LIVE_DIRECTOR_COMPACT_MAX_HEIGHT = 700;
 const CHAIN_MIN_PREPARE_SECONDS = 4;
+// Instrucciones «se dicen ahora» en la fila inferior del teclado (posición física: sirve igual en
+// teclado español e inglés). V y B ya son Secciones y Volver, así que sin Shift se saltan.
+const INSTRUCTION_KEYS: Record<string, string> = {
+  KeyZ: 'build', KeyX: 'softly', KeyC: 'break', KeyN: 'all-in', KeyM: 'drums-in', Comma: 'last-time', Period: 'hold', Slash: 'a-capella',
+};
+const INSTRUCTION_SHIFT_KEYS: Record<string, string> = {
+  KeyZ: 'hits', KeyX: 'swell', KeyC: 'big-ending', KeyV: 'key-change-up', KeyB: 'key-change-down', KeyN: 'keys', KeyM: 'bass', Comma: 'drums', Period: 'guitar',
+};
+const keyCodeLabel = (code: string) => code === 'Comma' ? ',' : code === 'Period' ? '.' : code === 'Slash' ? '-' : code.replace(/^Key/, '');
+const INSTRUCTION_SHORTCUT_LABELS: Record<string, string> = Object.fromEntries([
+  ...Object.entries(INSTRUCTION_KEYS).map(([code, key]) => [key, keyCodeLabel(code)]),
+  ...Object.entries(INSTRUCTION_SHIFT_KEYS).map(([code, key]) => [key, `⇧${keyCodeLabel(code)}`]),
+]);
+// Pulsa el botón de la pantalla: mismo comportamiento que con el ratón, incluido cuando está deshabilitado.
+const pressLiveDirectorControl = (selector: string) => {
+  const control = document.querySelector<HTMLButtonElement>(selector);
+  if (!control || control.disabled) return false;
+  control.click(); return true;
+};
 // The internal pad masters are intentionally lush, but their raw gain is too hot
 // for live control. Apply a fixed -8 dB trim before the pad reaches either engine.
 const INTERNAL_PAD_GAIN_TRIM = Math.pow(10, -8 / 20);
@@ -3571,7 +3590,8 @@ export function LiveDirectorView({
   };
   const eventAdvance = useLiveDirectorEventAdvance({
     enabled: experimentalTools && Boolean(eventId && onSelectQueueSong) && !isManualTempoMode,
-    autoAdvance: chainNextSong,
+    // Sin cuenta 5-4-3-2-1: la siguiente solo entra por «Encadenar» (cambio preparado sin silencio).
+    autoAdvance: false,
     identity: `${transportIdentity}:${reloadKey}`, songId: activeQueueSongId || songId,
     nextSong: nextEventSong?.kind === 'manual-tempo' ? undefined : nextEventSong,
     playing: isPlaying, ready: currentSessionPrepared,
@@ -3916,6 +3936,12 @@ export function LiveDirectorView({
     }
   }, [experimentalTools, canManagePersistedSongSession, enqueueSessionSave, hasPersistedSongContext, manualSession, onSessionPersisted, songId]);
 
+  // Buses de la mezcla del evento: llegan con la sesión (applyLiveDirectorEventMix) y se guardan con los stems.
+  const savedMixGroups = (initialSession as { mixGroups?: SavedMixGroups } | null | undefined)?.mixGroups ?? null;
+  const eventMixGroupsRef = useRef<SavedMixGroups | null>(savedMixGroups);
+  const eventMixGroupsSongRef = useRef(songId);
+  if (eventMixGroupsSongRef.current !== songId) { eventMixGroupsSongRef.current = songId; eventMixGroupsRef.current = savedMixGroups; }
+
   const commitMixerStateSilent = useCallback((tracksOverride?: TrackData[]) => {
     if (!hasPersistedSongContext || !manualSession || manualSession.songId !== songId ||
         (usesEventMixPersistence && !currentSessionPreparedRef.current)) {
@@ -3943,7 +3969,7 @@ export function LiveDirectorView({
     ));
 
     if (usesEventMixPersistence && onEventMixChange) {
-      const eventMix = buildLiveDirectorEventMix(nextTracks) as LiveDirectorEventMixPayload | null;
+      const eventMix = buildLiveDirectorEventMix(nextTracks, eventMixGroupsRef.current) as LiveDirectorEventMixPayload | null;
       if (eventMix) {
         void Promise.resolve(onEventMixChange(eventMix)).catch((error) => {
           console.warn('[LiveDirectorView] Event mixer autosave failed.', error);
@@ -4959,8 +4985,11 @@ export function LiveDirectorView({
         }
         return;
       }
-      if (experimentalTools && !editing && event.code === 'KeyE') {
-        event.preventDefault(); handleRestartAtSectionEnd(); return;
+      if (experimentalTools && !editing && event.code === 'KeyE' && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        event.preventDefault();
+        if (event.shiftKey) pressLiveDirectorControl('[data-live-director-control="edit-song"]');
+        else handleRestartAtSectionEnd();
+        return;
       }
       if (entryCount.pending && event.key === 'Escape') { event.preventDefault(); entryCount.cancel(); return; }
 
@@ -4977,6 +5006,25 @@ export function LiveDirectorView({
       const isSectionArrow = isLeftSectionArrow || isRightSectionArrow;
       const sectionShortcutTargetBlocked = shouldIgnoreSectionKeyboardTarget(event.target);
       const globalShortcutTargetBlocked = shouldIgnoreSectionKeyboardTarget(event.target);
+
+      if (desktopSectionKeyboardEnabled && !globalShortcutTargetBlocked && experimentalTools && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        const instructionKey = (event.shiftKey ? INSTRUCTION_SHIFT_KEYS : INSTRUCTION_KEYS)[event.code];
+        if (instructionKey) {
+          event.preventDefault();
+          const option = GUIDE_INSTRUCTION_OPTIONS.find(item => item.key === instructionKey);
+          if (option && dynamicGuide.status === 'ready') dynamicGuide.speak(option.label);
+          return;
+        }
+        const control = !event.shiftKey ? ({
+          KeyG: '[data-live-director-control="groups"]',
+          KeyH: '[data-live-director-control="repeat-hold"]',
+          KeyL: '[data-live-director-control="chain-next-song"]',
+          KeyA: '[data-live-director-control="song-level"]',
+          KeyT: 'button[aria-label="Configurar metrónomo"]',
+          KeyI: '[data-live-director-control="guide-instructions"]',
+        } as Record<string, string>)[event.code] : undefined;
+        if (control) { event.preventDefault(); pressLiveDirectorControl(control); return; }
+      }
 
       if (desktopSectionKeyboardEnabled && !globalShortcutTargetBlocked) {
         if (event.code === 'BracketLeft') {
@@ -5121,7 +5169,7 @@ export function LiveDirectorView({
     };
   }, [
     canUseStemsToolbar,
-    musicalNavigation.cancel, handleMusicalQueueSelect, handleRestartAtSectionEnd, entryCount.cancel, entryCount.pending, isEnsayoMode, ensayoSlotSongs, onSelectQueueSong, activeQueueSongId, usesEventMixPersistence,
+    musicalNavigation.cancel, handleMusicalQueueSelect, handleRestartAtSectionEnd, dynamicGuide.status, dynamicGuide.speak, entryCount.cancel, entryCount.pending, isEnsayoMode, ensayoSlotSongs, onSelectQueueSong, activeQueueSongId, usesEventMixPersistence,
     exitLiveDirector,
     getLivePlaybackTime,
     getSectionIndexAtTime,
@@ -5437,10 +5485,10 @@ export function LiveDirectorView({
                   : null}
                   <span className="flex-1"/>
                   {dynamicGuide.nextInstruction && <span data-live-director-control="next-instruction" title="Próxima instrucción de la guía" className="min-w-0 truncate text-[10px] text-white/50">Próx. instrucción · <span className="text-white/75">{dynamicGuide.nextInstruction.name}</span></span>}
-                  <button type="button" data-live-director-control="guide-instructions" aria-label="Instrucciones" aria-haspopup="menu" aria-expanded={Boolean(instructionMenuAnchor)} disabled={dynamicGuide.status !== 'ready'} title={dynamicGuide.status === 'ready' ? 'Decir una instrucción ahora' : 'Disponible con la guía automática'} onClick={event => { const rect = event.currentTarget.getBoundingClientRect(); setInstructionMenuAnchor(open => open ? null : { top: rect.bottom + 6, right: window.innerWidth - rect.right }); }} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white/35 hover:bg-white/5 hover:text-white/80 disabled:opacity-40 disabled:hover:bg-transparent"><Megaphone size={14}/></button>
-                  {instructionMenuAnchor && dynamicGuide.status === 'ready' && createPortal(<div role="menu" aria-label="Instrucciones" data-guide-instruction-menu="true" style={{ position: 'fixed', top: instructionMenuAnchor.top, right: instructionMenuAnchor.right }} className="z-[80] w-96 max-w-[calc(100vw-1rem)] rounded-xl border border-white/10 bg-[#17181a] p-2 shadow-[0_14px_32px_rgba(0,0,0,0.4)]">
+                  <button type="button" data-live-director-control="guide-instructions" aria-label="Instrucciones" aria-haspopup="menu" aria-expanded={Boolean(instructionMenuAnchor)} disabled={dynamicGuide.status !== 'ready'} aria-keyshortcuts="I" title={dynamicGuide.status === 'ready' ? 'Decir una instrucción ahora · I (o directo con Z X C N M , . -)' : 'Disponible con la guía automática'} onClick={event => { const rect = event.currentTarget.getBoundingClientRect(); setInstructionMenuAnchor(open => open ? null : { top: rect.bottom + 6, right: window.innerWidth - rect.right }); }} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white/35 hover:bg-white/5 hover:text-white/80 disabled:opacity-40 disabled:hover:bg-transparent"><Megaphone size={14}/></button>
+                  {instructionMenuAnchor && dynamicGuide.status === 'ready' && createPortal(<div role="menu" aria-label="Instrucciones" data-guide-instruction-menu="true" style={{ position: 'fixed', top: instructionMenuAnchor.top, right: instructionMenuAnchor.right }} className="z-[80] w-[27rem] max-w-[calc(100vw-1rem)] rounded-xl border border-white/10 bg-[#17181a] p-2 shadow-[0_14px_32px_rgba(0,0,0,0.4)]">
                     <p className="px-2 pb-1.5 pt-0.5 text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-white/35">Instrucciones · se dicen ahora</p>
-                    <div className="grid grid-cols-3 gap-1">{GUIDE_INSTRUCTION_OPTIONS.map(option => <button key={option.key} type="button" role="menuitem" data-guide-instruction={option.key} onClick={() => { dynamicGuide.speak(option.label); setInstructionMenuAnchor(null); }} className="min-w-0 truncate whitespace-nowrap rounded-lg px-2 py-1.5 text-left text-xs text-white/75 hover:bg-white/5 hover:text-white">{option.label}</button>)}</div>
+                    <div className="grid grid-cols-3 gap-1">{GUIDE_INSTRUCTION_OPTIONS.map(option => <button key={option.key} type="button" role="menuitem" data-guide-instruction={option.key} aria-keyshortcuts={INSTRUCTION_SHORTCUT_LABELS[option.key]?.replace('⇧', 'Shift+')} onClick={() => { dynamicGuide.speak(option.label); setInstructionMenuAnchor(null); }} className="flex min-w-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2 py-1.5 text-left text-xs text-white/75 hover:bg-white/5 hover:text-white"><span className="min-w-0 flex-1 truncate">{option.label}</span>{INSTRUCTION_SHORTCUT_LABELS[option.key] && <kbd className="shrink-0 rounded border border-white/12 px-1 font-sans text-[0.58rem] font-bold text-white/45">{INSTRUCTION_SHORTCUT_LABELS[option.key]}</kbd>}</button>)}</div>
                   </div>, document.body)}
                   {dynamicGuide.status === 'error' ? <button type="button" data-live-director-control="guide-status" data-guide-state="error" aria-label="Reintentar guía automática" title={dynamicGuide.error || 'Reintentar guía automática'} onClick={() => setGuideRetryKey(previous => previous + 1)} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-amber-200/75"><Headphones size={14}/></button>
                   : <span data-live-director-control="guide-status" data-guide-state={dynamicGuide.status} role="img" aria-label={dynamicGuide.status === 'loading' ? 'Preparando guía automática' : dynamicGuide.status === 'off' ? 'Guía grabada' : 'Guía automática'} title={dynamicGuide.status === 'loading' ? 'Preparando guía automática' : dynamicGuide.status === 'off' ? 'Guía grabada' : 'Cuenta en español solo al armar un salto que omite o vuelve a una sección'} className={`flex h-8 w-5 shrink-0 items-center justify-center text-white/30 ${dynamicGuide.status === 'loading' ? 'animate-pulse' : ''}`}><Headphones size={13}/></span>}
@@ -6221,19 +6269,19 @@ export function LiveDirectorView({
                 className={`${CONTROL_CARD} h-11 shrink-0 flex-col px-1.5 font-semibold ${showPhoneSongStrip ? 'border-cyan-300/32 bg-cyan-300/10 text-cyan-100' : 'text-white/75 hover:bg-white/5'}`}
                 style={{ width: scaleRem(4.35, 3.75) }}><ListMusic className="h-3.5 w-3.5" /><span className="mt-0.5 text-[0.46rem] tracking-[0.12em]">CANCIONES</span></button>}
               {canChainNextSong && hasFinePointer && !isToolbarCompactLandscape && !isCompactLandscape && <button type="button" data-live-director-control="chain-next-song"
-                aria-pressed={chainNextSong} onClick={toggleChainNextSong}
+                aria-pressed={chainNextSong} onClick={toggleChainNextSong} aria-keyshortcuts="L"
                 aria-label={chainNextSong ? `Encadenado con ${nextEventSong?.title}: desactivar` : `Encadenar con ${nextEventSong?.title}`}
-                title={chainNextSong ? `Encadenado: «${nextEventSong?.title}» entra sin espacio al terminar esta canción. Clic para desactivar.` : `Encadenar: «${nextEventSong?.title}» entra sin espacio al terminar esta canción.`}
-                className={`${CONTROL_CARD} shrink-0 justify-center px-3 ${chainNextSong ? 'border-cyan-300/40 bg-cyan-300/12 text-cyan-100 shadow-[0_0_16px_rgba(103,232,249,0.12)]' : 'text-white/45 hover:bg-white/5 hover:text-white/75'}`}
-                style={{ minWidth: '3.75rem' }}><Link2 size={20} strokeWidth={2.2} /></button>}
+                title={chainNextSong ? `Encadenado: «${nextEventSong?.title}» entra sin espacio al terminar esta canción. Clic para desactivar · L` : `Encadenar: «${nextEventSong?.title}» entra sin espacio al terminar esta canción · L`}
+                className={`${CONTROL_CARD} group relative shrink-0 justify-center px-3 ${chainNextSong ? 'border-cyan-300/40 bg-cyan-300/12 text-cyan-100 shadow-[0_0_16px_rgba(103,232,249,0.12)]' : 'text-white/45 hover:bg-white/5 hover:text-white/75'}`}
+                style={{ minWidth: '3.75rem' }}><Link2 size={20} strokeWidth={2.2} /><KeyboardHint>L</KeyboardHint></button>}
               {/* El motivo va en el contenedor: Safari no muestra el título de un botón deshabilitado. */}
               {experimentalTools && !isManualTempoMode && <span className="flex flex-1" style={{ minWidth: '4rem' }} data-live-director-edit-reason={editSongUnavailableReason ?? undefined}
-                title={editSongUnavailableReason ?? (arrangementEntries ? 'Editar arreglo de prueba' : 'Editar canción')}><button type="button" data-live-director-control="edit-song"
+                title={editSongUnavailableReason ?? `${arrangementEntries ? 'Editar arreglo de prueba' : 'Editar canción'} · Shift+E`}><button type="button" data-live-director-control="edit-song" aria-keyshortcuts="Shift+E"
                 aria-label="Editar canción" aria-describedby={editSongUnavailableReason ? 'live-director-edit-reason' : undefined}
                 disabled={editSongUnavailableReason !== null}
                 onClick={() => { setShowArrangementEditor(true); setSurfaceView('sections'); }}
-                className={`${CONTROL_CARD} w-full flex-col px-3 text-xs font-semibold tracking-[0.12em] disabled:pointer-events-none disabled:opacity-30 ${arrangementEntries ? 'border-cyan-200/40 text-cyan-100' : 'text-white/75 hover:bg-white/5'}`}
-                ><Pencil size={isUltraCompactLandscape ? 14 : 18}/><span className="mt-1 text-[0.58rem]">EDITAR</span></button>
+                className={`${CONTROL_CARD} group relative w-full flex-col px-3 text-xs font-semibold tracking-[0.12em] disabled:pointer-events-none disabled:opacity-30 ${arrangementEntries ? 'border-cyan-200/40 text-cyan-100' : 'text-white/75 hover:bg-white/5'}`}
+                ><Pencil size={isUltraCompactLandscape ? 14 : 18}/><span className="mt-1 text-[0.58rem]">EDITAR</span><KeyboardHint>⇧ E</KeyboardHint></button>
                 {editSongUnavailableReason && <span id="live-director-edit-reason" className="sr-only">{editSongUnavailableReason}</span>}</span>}
               <button
                 type="button"
@@ -6476,6 +6524,8 @@ export function LiveDirectorView({
               onGroupGain={selectedMultitrackEngine.setTrackGroupGain} songGain={songLevel.gain}
               isPlaying={isPlaying} compact={isCompactLandscape} ultraCompact={isUltraCompactLandscape}
               getTelemetry={getSharedTelemetry} trackLevels={trackLevels}
+              savedGroups={savedMixGroups} groupsKey={`${songId}:${JSON.stringify(savedMixGroups)}`}
+              onGroupsChange={usesEventMixPersistence ? groups => { eventMixGroupsRef.current = groups; commitMixerStateSilent(); } : undefined}
             />}
             <div className={showGroupsPanel ? 'hidden' : 'grid min-h-0 min-w-0'}>
           {showSectionsPanel && !desktopCombined ? sectionSurface : mixerSurface}
@@ -6559,11 +6609,12 @@ export function LiveDirectorView({
                 onClick={() => setSurfaceView(previous => previous === 'groups' ? 'mix' : 'groups')}
                 aria-label={showGroupsPanel ? 'Volver a mezcla individual' : 'Mostrar grupos de mezcla'}
                 aria-pressed={showGroupsPanel}
-                title={showGroupsPanel ? 'Volver a mezcla individual' : 'Grupos de mezcla'}
-                className={`ui-pressable-soft flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-1 rounded-[1.2rem] border px-1 ${showGroupsPanel ? 'border-cyan-300/34 bg-cyan-300/12 text-cyan-50' : 'border-white/8 bg-black/24 text-white/62'}`}
+                title={`${showGroupsPanel ? 'Volver a mezcla individual' : 'Grupos de mezcla'} · G`} aria-keyshortcuts="G"
+                className={`group relative ui-pressable-soft flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-1 rounded-[1.2rem] border px-1 ${showGroupsPanel ? 'border-cyan-300/34 bg-cyan-300/12 text-cyan-50' : 'border-white/8 bg-black/24 text-white/62'}`}
               >
                 <SlidersVertical className={isUltraCompactLandscape ? 'h-3 w-3' : isCompactLandscape ? 'h-3.5 w-3.5' : 'h-6 w-6'} />
                 <span className={`${isUltraCompactLandscape ? 'text-[0.46rem]' : isCompactLandscape ? 'text-[0.52rem]' : 'text-[0.66rem]'} font-black uppercase tracking-[0.12em]`}>Grupos</span>
+                <KeyboardHint>G</KeyboardHint>
               </button> : <div aria-hidden="true" className="min-h-0 w-full flex-1" data-live-director-control-slot="reserved" />}
               {experimentalTools && !isManualTempoMode && <div data-live-director-repeat-controls="true" className="contents">
                 <button type="button" data-live-director-control="repeat-once" aria-label="Repetir sección una vez" aria-keyshortcuts="R" aria-pressed={sectionJump.repeat?.mode === 'once'}
@@ -6575,10 +6626,10 @@ export function LiveDirectorView({
                 </button>
                 <button type="button" data-live-director-control="repeat-hold" aria-label="Mantener sección en repetición" aria-pressed={sectionJump.repeat?.mode === 'hold' && !sectionJump.repeat.exitRequested}
                   disabled={!isPlaying || !isReady || isSectionSeekBusy || isCongregationFading || showArrangementEditor}
-                  title={sectionJump.repeat?.mode === 'hold' ? 'Salir de la repetición al terminar esta pasada' : 'Repetir con conteo de entrada hasta salir'}
-                  className={`ui-pressable-soft flex min-h-8 w-full flex-1 flex-col items-center justify-center gap-1 rounded-[1.2rem] border px-1 disabled:opacity-30 ${sectionJump.repeat?.mode === 'hold' && !sectionJump.repeat.exitRequested ? 'border-cyan-200/45 bg-cyan-200/15 text-cyan-100' : 'border-white/15 bg-black/35 text-white/80 hover:bg-white/5'}`}
+                  aria-keyshortcuts="H" title={`${sectionJump.repeat?.mode === 'hold' ? 'Salir de la repetición al terminar esta pasada' : 'Repetir con conteo de entrada hasta salir'} · H`}
+                  className={`group relative ui-pressable-soft flex min-h-8 w-full flex-1 flex-col items-center justify-center gap-1 rounded-[1.2rem] border px-1 disabled:opacity-30 ${sectionJump.repeat?.mode === 'hold' && !sectionJump.repeat.exitRequested ? 'border-cyan-200/45 bg-cyan-200/15 text-cyan-100' : 'border-white/15 bg-black/35 text-white/80 hover:bg-white/5'}`}
                   onClick={() => sectionJump.repeat?.mode === 'hold' && !sectionJump.repeat.exitRequested ? sectionJump.exitRepeat() : startRepeatFromTimeline('hold')}>
-                  <InfinityIcon size={isCompactLandscape ? 26 : 30}/><span className={isCompactLandscape ? 'sr-only' : 'text-[10px] font-semibold'}>{sectionJump.repeat?.exitRequested ? 'Saliendo' : 'Hasta salir'}</span>
+                  <InfinityIcon size={isCompactLandscape ? 26 : 30}/><span className={isCompactLandscape ? 'sr-only' : 'text-[10px] font-semibold'}>{sectionJump.repeat?.exitRequested ? 'Saliendo' : 'Hasta salir'}</span><KeyboardHint>H</KeyboardHint>
                 </button>
               </div>}
             </div>
