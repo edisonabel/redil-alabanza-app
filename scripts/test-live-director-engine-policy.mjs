@@ -7,6 +7,7 @@ import {
   resolveStreamingFallbackPolicy,
   resolveStreamingSeekPolicy,
   supportsDesktopExactSeekRoute,
+  supportsPreparedSectionJump,
 } from '../src/utils/liveDirectorEnginePolicy.ts';
 import { detectLiveChromeFamily } from '../src/utils/liveDiagnostics.ts';
 
@@ -211,7 +212,7 @@ assert.match(
 );
 assert.match(
   engineSource,
-  /const initializingSessionId = this\.producerSessionId \+ 1;\s+this\.producerSessionId = initializingSessionId;\s+this\.warmAudioProducerRuntime\(\);\s+await this\.context\.audioWorklet\.addModule/,
+  /const initializingSessionId = this\.reserveProducerSessionId\(\);\s+this\.producerSessionId = initializingSessionId;\s+this\.warmAudioProducerRuntime\(\);\s+await this\.context\.audioWorklet\.addModule/,
   'The next producer session must be reserved before initialization yields.',
 );
 assert.match(
@@ -424,8 +425,16 @@ assert.match(
 );
 assert.match(
   workletSource,
-  /resetTracks\(\) \{\s+this\.tracks = \[\];\s+this\.trackCount = 0;/,
+  // Puede reiniciar antes otros estados del cambio de canción; lo esencial es vaciar las pistas.
+  /resetTracks\(\) \{(?:\s+this\.\w+ = [^;]+;)*\s+this\.cancelSectionSwitch\(\);\s+this\.tracks = \[\];\s+this\.trackCount = 0;/,
   'The worklet reset must remove tracks left over when the next song has fewer stems.',
 );
 
 console.log('Live Director engine policy regression checks passed.');
+
+const sharedDesktop = {audioDecoder:true,sharedArrayBuffer:true,crossOriginIsolated:true};
+assert.equal(supportsPreparedSectionJump({...sharedDesktop,isSafari:true}),true);
+assert.equal(supportsPreparedSectionJump({...sharedDesktop,isChromeFamily:true}),true);
+for(const missing of ['audioDecoder','sharedArrayBuffer','crossOriginIsolated']) assert.equal(supportsPreparedSectionJump({...sharedDesktop,[missing]:false}),false);
+assert.equal(supportsPreparedSectionJump({...sharedDesktop,isIOS:true}),false);
+assert.equal(supportsPreparedSectionJump({...sharedDesktop,isAndroid:true}),false);

@@ -1,5 +1,7 @@
+import {queueNumberShortcut} from '../../../utils/liveDirectorEntryCount';
 import { memo } from 'react';
-import { Plus, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Download, Plus, X } from 'lucide-react';
+import type { RehearsalDownloadState } from '../../../hooks/useLiveDirectorRehearsalDownload';
 
 type EnsayoQueueSong = {
   id: string;
@@ -13,6 +15,8 @@ type EnsayoQueueCardProps = {
   song: EnsayoQueueSong;
   coverUrl?: string | null;
   active?: boolean;
+  queueNumber?: number;
+  queued?: 'preparing'|'ready';
   compact?: boolean;
   ultraCompact?: boolean;
   onClick?: () => void;
@@ -23,6 +27,8 @@ export const EnsayoQueueCard = memo(function EnsayoQueueCard({
   song,
   coverUrl,
   active = false,
+  queueNumber,
+  queued,
   compact = false,
   ultraCompact = false,
   onClick,
@@ -43,7 +49,7 @@ export const EnsayoQueueCard = memo(function EnsayoQueueCard({
           : compact
             ? 'h-[5.1rem] p-1.5'
             : 'h-[5.55rem] p-1.75'
-          } ${active
+          } ${queued ? queued==='ready'?'border-emerald-200/80':'border-amber-200/70' : active
             ? 'border-white/80'
             : 'border-white/8 hover:border-white/14'
           }`}
@@ -52,6 +58,11 @@ export const EnsayoQueueCard = memo(function EnsayoQueueCard({
             'linear-gradient(180deg,rgba(22,24,26,0.98),rgba(15,17,18,0.98))',
         }}
         aria-label={`Abrir ${song.title}`}
+        aria-pressed={active}
+        aria-keyshortcuts={queueNumber ? queueNumberShortcut(queueNumber) : undefined}
+        title={queueNumber ? `${queueNumber}. ${song.title}${queueNumberShortcut(queueNumber) ? ` · Tecla ${queueNumberShortcut(queueNumber)}` : ''}` : song.title}
+        data-live-queue-song={song.id}
+        data-live-queue-preparation={queued}
       >
         <div className="absolute inset-0 overflow-hidden rounded-[1rem]">
           {coverUrl ? (
@@ -62,6 +73,8 @@ export const EnsayoQueueCard = memo(function EnsayoQueueCard({
           <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.04)_0%,rgba(0,0,0,0.18)_42%,rgba(0,0,0,0.78)_100%)]" />
         </div>
 
+        {queueNumber && <span aria-hidden="true" data-live-queue-number={queueNumber} className={`pointer-events-none absolute left-2 top-2 z-20 flex h-7 min-w-7 items-center justify-center rounded-lg border px-1.5 text-sm font-bold tabular-nums shadow-sm ${active ? 'border-cyan-100/60 bg-cyan-100 text-[#172529]' : 'border-white/25 bg-black/75 text-white'}`}>{queueNumber}</span>}
+        {queued && <span className={`absolute right-1 top-2 z-20 rounded-md bg-black/85 px-1.5 py-1 text-[9px] font-bold ${queued==='ready'?'text-emerald-100':'text-amber-100'}`}>{queued==='ready'?'LISTO':'PREPARANDO'}</span>}
         <div className="relative z-10 mt-auto min-w-0">
           <p className={`truncate font-semibold leading-tight text-white drop-shadow-[0_3px_10px_rgba(0,0,0,0.52)] ${ultraCompact ? 'text-[0.68rem]' : compact ? 'text-[0.76rem]' : 'text-[0.9rem]'
             }`}>
@@ -125,6 +138,80 @@ export const EnsayoQueueAddCard = memo(function EnsayoQueueAddCard({
           Click + Pad
         </span>
       </span>
+    </button>
+  );
+});
+
+type EnsayoQueueSaveCardProps = {
+  state: RehearsalDownloadState;
+  compact?: boolean;
+  ultraCompact?: boolean;
+  onSave: () => void;
+  onCancel: () => void;
+};
+
+const formatMegabytes = (bytes: number) => `${Math.max(1, Math.round(bytes / (1024 * 1024)))} MB`;
+
+/** Same footprint as the Click + Pad card; saves this rehearsal's stems on the device. */
+export const EnsayoQueueSaveCard = memo(function EnsayoQueueSaveCard({
+  state,
+  compact = false,
+  ultraCompact = false,
+  onSave,
+  onCancel,
+}: EnsayoQueueSaveCardProps) {
+  const busy = state.phase === 'resolving' || state.phase === 'downloading';
+  const percent = state.phase === 'downloading' ? Math.floor(state.progress * 100) : 0;
+  const label = state.phase === 'saved'
+    ? 'En este equipo'
+    : state.phase === 'downloading'
+      ? state.held ? `En pausa · ${percent}%` : `Guardando ${percent}%`
+      : state.phase === 'resolving'
+        ? 'Preparando…'
+        : state.phase === 'error' ? 'Reintentar' : 'Guardar ensayo';
+  const title = state.phase === 'saved'
+    ? `Ensayo guardado en este equipo (${formatMegabytes(state.totalBytes)}). Pulsa para verificar.`
+    : state.phase === 'downloading'
+      ? state.held ? 'Se reanuda al pausar la reproducción. Pulsa para cancelar.' : 'Pulsa para cancelar.'
+      : state.phase === 'error'
+        ? state.message
+        : 'Guarda solo los stems de este ensayo en el equipo. Al guardar otro ensayo, este se reemplaza.';
+  const Icon = state.phase === 'saved' ? CheckCircle2 : state.phase === 'error' ? AlertTriangle : Download;
+  const tone = state.phase === 'saved'
+    ? 'border-emerald-200/30 text-emerald-100/85 hover:border-emerald-200/45'
+    : state.phase === 'error'
+      ? 'border-amber-200/35 text-amber-100/85 hover:border-amber-200/50'
+      : busy
+        ? 'border-cyan-300/30 text-cyan-100/85'
+        : 'border-white/14 text-white/48 hover:border-cyan-300/34 hover:bg-cyan-300/6 hover:text-cyan-100';
+  return (
+    <button
+      type="button"
+      onClick={busy ? onCancel : onSave}
+      data-live-rehearsal-download={state.phase}
+      className={`group relative flex shrink-0 items-center justify-center overflow-hidden rounded-[1.15rem] border border-dashed bg-black/12 transition active:scale-[0.98] ${tone} ${ultraCompact
+        ? 'h-[4.7rem]'
+        : compact
+          ? 'h-[5.1rem]'
+          : 'h-[5.55rem]'
+      }`}
+      style={{ width: ultraCompact ? '7.5rem' : compact ? '8.2rem' : '8.9rem' }}
+      aria-label={busy ? `Cancelar guardado del ensayo (${label})` : state.phase === 'saved' ? 'Ensayo guardado en este equipo. Verificar' : 'Guardar este ensayo en el equipo'}
+      title={title}
+    >
+      <span className="flex flex-col items-center gap-1">
+        <span className={`flex items-center justify-center rounded-full bg-white/7 transition group-hover:bg-cyan-300/12 ${ultraCompact ? 'h-7 w-7' : 'h-8 w-8'}`}>
+          <Icon className={`${ultraCompact ? 'h-4 w-4' : 'h-[1.1rem] w-[1.1rem]'} ${state.phase === 'resolving' ? 'animate-pulse' : ''}`} />
+        </span>
+        <span role="status" className={`${ultraCompact ? 'text-[0.48rem]' : compact ? 'text-[0.54rem]' : 'text-[0.6rem]'} font-medium uppercase tracking-[0.16em] tabular-nums`}>
+          {label}
+        </span>
+      </span>
+      {state.phase === 'downloading' && (
+        <span aria-hidden="true" className="absolute inset-x-3 bottom-2 h-0.5 overflow-hidden rounded-full bg-white/8">
+          <span className="block h-full origin-left rounded-full bg-cyan-200/70 transition-transform duration-300" style={{ transform: `scaleX(${state.progress})` }} />
+        </span>
+      )}
     </button>
   );
 });

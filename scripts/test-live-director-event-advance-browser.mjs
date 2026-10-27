@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { mkdir, writeFile } from 'node:fs/promises';
+const LAB = process.env.LD_LAB_URL || 'http://127.0.0.1:4322'; // laboratorio Providencia (configurable)
 const { chromium } = createRequire(import.meta.url)('/Users/edisonaular/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
 // No autoplay-policy override: reuse the audio session unlocked by the initial Play gesture.
 const browser = await chromium.launch({ headless: true, executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', args: ['--mute-audio'] });
@@ -8,12 +9,15 @@ const page = await browser.newPage({ viewport: { width: 1728, height: 1000 } });
 const errors = [], writes = [], results = {};
 let arrangement = false, delayNext = false, releaseNext;
 const EVENT = '11111111-1111-4111-8111-111111111111';
+// El avance automático ahora es consciente: solo si «Encadenar» está activo para esa canción.
+// Providencia → Tu palabra encadenadas; el final queda a <4 s, así que actúa la cuenta de 5 s de respaldo.
+await page.addInitScript(event => { try { localStorage.setItem(`live-director:chain:${event}`, JSON.stringify(['f2ce26b1-eac1-4937-b9e8-aa9f9d8338c9'])); } catch {} }, EVENT);
 page.on('pageerror', e => errors.push(e.message));
 page.on('request', r => { if (!['GET','HEAD'].includes(r.method())) writes.push(r.url()); });
 const play = page.locator('[data-live-director-control="play-pause"]');
 const chooser = page.getByRole('combobox', { name: 'Canción de prueba' });
 async function open(event = true, retain = false) {
-  await page.goto(`http://127.0.0.1:4322/?${event ? `labEvent=${EVENT}&` : ''}${retain ? 'labRetainView=1' : ''}`);
+  await page.goto(`${LAB}/?${event ? `labEvent=${EVENT}&` : ''}${retain ? 'labRetainView=1' : ''}`);
   await page.waitForFunction(() => window.__streamingEngineDumpOwner?.getTracks().length === 15 && !document.querySelector('[data-live-director-control="play-pause"]')?.disabled, null, { timeout: 90000 });
 }
 async function nearEnd() {
@@ -29,7 +33,7 @@ try {
     if (!isFirst && delayNext) await new Promise(resolve => { releaseNext = resolve; });
     await route.fulfill({ contentType:'application/json', body:JSON.stringify({ arrangement: arrangement && isFirst ? {version:1,sourceSignature:'source-v1',entries:[{id:'last-only',sectionId:'outro-3-1'}]} : null, revision:'', sourceSignature:'source-v1', canEdit:true }) });
   });
-  const preview=await page.request.get('http://127.0.0.1:4322/api/live-director-event-arrangement?evento_id=lab-playback-preview&cancion_id=f2ce26b1-eac1-4937-b9e8-aa9f9d8338c9');
+  const preview=await page.request.get(`${LAB}/api/live-director-event-arrangement?evento_id=lab-playback-preview&cancion_id=f2ce26b1-eac1-4937-b9e8-aa9f9d8338c9`);
   assert.equal(preview.status(),200);assert.equal((await preview.json()).canEdit,false);
   await open();
   const ids = await chooser.locator('option').evaluateAll(els => els.map(e => e.value));

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { fetchEventArrangement, saveEventArrangement } from '../utils/liveDirectorEventArrangement';
+import { saveEventArrangement } from '../utils/liveDirectorEventArrangement';
+import { readEventArrangementForRehearsal } from '../utils/rehearsalDeviceData';
 import type { ArrangementEntry } from '../utils/liveDirectorArrangement';
 type State = { key: string; loading: boolean; canEdit: boolean; error: string; entries: ArrangementEntry[] | null; revision: string; sourceSignature: string };
 export function useLiveDirectorEventArrangement(eventId: string, songId: string) {
@@ -11,7 +12,7 @@ export function useLiveDirectorEventArrangement(eventId: string, songId: string)
     if (!eventId || !songId) return;
     let cancelled = false;
     setState({ key, loading: true, canEdit: false, error: '', entries: null, revision: '', sourceSignature: '' });
-    void fetchEventArrangement(eventId, songId).then(result => {
+    void readEventArrangementForRehearsal(eventId, songId).then(result => {
       if (cancelled) return;
       if (result.arrangement?.entries && result.arrangement.sourceSignature !== result.sourceSignature) throw new Error('Las secciones originales cambiaron. El arreglo del evento necesita revisión.');
       setState({ key, loading: false, canEdit: result.canEdit, error: '', entries: result.arrangement?.entries ?? null, revision: result.revision, sourceSignature: result.sourceSignature });

@@ -3,13 +3,14 @@ import { createRequire } from 'node:module';
 import { mkdir, writeFile } from 'node:fs/promises';
 const require = createRequire(import.meta.url);
 const { chromium } = require('/Users/edisonaular/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const LAB = process.env.LD_LAB_URL || 'http://127.0.0.1:4322'; // laboratorio Providencia (configurable)
 const browser = await chromium.launch({ headless: true, executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', args: ['--mute-audio', '--autoplay-policy=no-user-gesture-required'] });
 const page = await browser.newPage({ viewport: { width: 1728, height: 1000 } });
 const errors = [], writes = [];
 page.on('pageerror', error => errors.push(error.message)); page.on('request', req => { if (!['GET', 'HEAD'].includes(req.method())) writes.push(req.url()); });
 try {
   await mkdir('.lab/results', { recursive: true });
-  await page.goto('http://127.0.0.1:4322/');
+  await page.goto(`${LAB}/`);
   await page.waitForFunction(() => window.__streamingEngineDumpOwner?.getTracks().length === 15 && !document.querySelector('[data-live-director-control="play-pause"]')?.disabled, null, { timeout: 90000 });
   await page.waitForFunction(() => window.__streamingEngineDumpOwner.getLevelMeterSnapshot() !== null);
   const visibleMaster = Number(await page.getByRole('slider', { name: 'Master volume', exact: true }).getAttribute('aria-valuenow')) / 100;
@@ -40,7 +41,7 @@ try {
   const auto = page.getByRole('button', { name: 'Ajuste automático por picos', exact: true });
   await auto.click(); assert.equal(await auto.getAttribute('aria-pressed'), 'true');
   await page.waitForTimeout(1800);
-  const slider = page.getByRole('slider', { name: 'Atenuación de canción en decibelios', exact: true });
+  const slider = page.getByRole('slider', { name: 'Nivel de canción en decibelios', exact: true });
   assert.equal(await slider.inputValue(), '0', 'Loud cue/output alone must not attenuate music');
   // Feed constant PCM to one real worklet track, retaining all existing routing/control paths.
   await page.evaluate(() => {
@@ -51,18 +52,18 @@ try {
     e.workletNode.port.postMessage({ type: 'configure-track', trackIndex, capacity, sampleRate: e.context.sampleRate, channelCount: 1, usesSharedMemory: true, sampleBuffer, indexBuffer, isCue: false, volume: 1, outputRoute: 'right' });
     e.setTrackVolume('drums', 1); e.resetLevelMeter();
   });
-  await page.waitForFunction(() => Number(document.querySelector('input[aria-label="Atenuación de canción en decibelios"]').value) < -4, null, { timeout: 10000 });
-  const db = Number(await slider.inputValue()); assert.ok(db >= -4.5 && db <= -4.2, `Expected fixed peak adjustment around -4.3 dB, got ${db}`);
+  await page.waitForFunction(() => Number(document.querySelector('input[aria-label="Nivel de canción en decibelios"]').value) <= -.9, null, { timeout: 10000 });
+  const db = Number(await slider.inputValue()); assert.ok(db >= -1.2 && db <= -.9, `Expected fixed peak adjustment around -1 dB, got ${db}`);
   await page.waitForTimeout(1500); assert.equal(Number(await slider.inputValue()), db, 'Stable signal cannot trigger runaway attenuation');
   const measured = await page.evaluate(() => {
     const e = window.__streamingEngineDumpOwner; return { meter: e.getLevelMeterSnapshot(), groups: Object.fromEntries(e.groupGains), drums: e.getTracks().find(t => t.id === 'drums').volume };
   });
-  assert.ok(measured.meter.musicPeak * measured.meter.master <= 10 ** (-6 / 20) + .003);
+  assert.ok(measured.meter.musicPeak * measured.meter.master <= 10 ** (-1 / 20) + .003);
   assert.equal(measured.groups.click, 1); assert.equal(measured.groups.guide, 1); assert.equal(measured.drums, 1);
   await page.getByRole('button', { name: 'Reiniciar pico retenido', exact: true }).click();
   await page.waitForTimeout(250);
   const heldAfter = await page.evaluate(() => window.__streamingEngineDumpOwner.getLevelMeterSnapshot().held);
-  assert.ok(heldAfter <= .504 && heldAfter > .48, 'Held peak resets to the adjusted real output');
+  assert.ok(heldAfter <= .895 && heldAfter > .86, 'Held peak resets to the adjusted real output');
   await page.screenshot({ path: '.lab/results/level-meter-auto-panel.png' });
   await page.getByRole('button', { name: 'Cerrar nivel de canción', exact: true }).click();
   await page.waitForTimeout(1500); assert.match(await page.locator('[data-live-director-control="song-level"]').innerText(), /Auto/);

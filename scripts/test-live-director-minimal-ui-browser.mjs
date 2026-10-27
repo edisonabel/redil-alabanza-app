@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 const require = createRequire(import.meta.url);
 const { chromium } = require('/Users/edisonaular/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const LAB = process.env.LD_LAB_URL || 'http://127.0.0.1:4322'; // laboratorio Providencia (configurable)
 const browser = await chromium.launch({ headless: true, executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'] });
 const page = await browser.newPage({ viewport: { width: 1728, height: 1000 } });
 const errors = [], writes = [], results = [];
@@ -14,7 +15,7 @@ const play = async wanted => {
 };
 try {
   await mkdir('.lab/results', { recursive: true });
-  await page.goto('http://127.0.0.1:4322/', { waitUntil: 'domcontentloaded' });
+  await page.goto(`${LAB}/`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => document.querySelector('[data-live-director-control="play-pause"]') && !document.querySelector('[data-live-director-control="play-pause"]').disabled, null, { timeout: 90000 });
   await page.waitForFunction(() => document.querySelector('[data-live-director-control="guide-status"]')?.dataset.guideState === 'ready', null, { timeout: 20000 });
   assert.equal(await page.locator('[data-live-director-control="tools"]').count(), 0);
@@ -87,7 +88,7 @@ try {
 
   for (const [width, height] of [[1280, 800], [1280, 720], [844, 390]]) {
     await page.setViewportSize({ width, height });
-    const alternate = width < 1100 || height < 760;
+    const alternate = width < 1100 || height < 900; // pantallas menores a 1080: secciones con el botón
     if (alternate) await page.getByRole('button', { name: 'Mostrar secciones', exact: true }).click();
     const surface = await page.locator('[data-live-director-section-surface]').boundingBox();
     assert.ok(surface.height > 100 && surface.y + surface.height <= height + 1, 'Section pane fits viewport');

@@ -12,6 +12,7 @@ window.advanceLog=log;window.testClock=1000;performance.now=()=>window.testClock
 function Harness(){
  const [options,setOptions]=useState({enabled:true,identity:'event:a',songId:'a',nextSong:{id:'b',title:'B'},playing:false,ready:true,busy:false,hasArrangement:false,duration:10,startReady:false,request:null,startError:''});
  const advance=useLiveDirectorEventAdvance({...options,manualNavigation:window.manualNavigation??=( {current:false}),
+ getTime:()=>window.playbackPosition??NaN,
  scheduleEnd:()=>{let resolve;const job={cancelled:false,completion:new Promise(r=>resolve=r),cancel(){job.cancelled=true;resolve(false)},resolve};log.jobs.push(job);return job;},
  selectSong:(id,options)=>log.selections.push({id,...options}),
  start:()=>{log.starts++;return new Promise((resolve,reject)=>{window.finishStart=resolve;window.failStart=reject;})},
@@ -36,6 +37,8 @@ try{
  await page.evaluate(()=>window.advanceHarness.update({nextSong:{id:'c',title:'C'}}));await tick();
  await page.evaluate(()=>window.testClock+=6000);await tick();
  assert.equal(await page.evaluate(()=>window.advanceLog.selections.length),0);
+ // A new pass may count down again after a changed destination cancelled the old one.
+ await page.evaluate(()=>window.advanceHarness.update({identity:'event:a:replay'}));await tick();
  // Pending transport preparation can be cancelled before an async selection commits.
  await page.evaluate(()=>window.advanceHarness.complete());await tick();
  await page.evaluate(()=>window.testClock+=5000);await tick();
@@ -72,5 +75,25 @@ try{
  await page.evaluate(()=>window.finishStart());await tick();
  assert.ok(await page.evaluate(()=>window.advanceLog.pauses)>pausesBefore);
  assert.deepEqual(await page.evaluate(()=>window.advanceLog.handled),[2,3,4]);
- console.log(JSON.stringify({pass:true,lateLoadFailureCancelsStart:true,unconfirmedEndpointIgnored:true,queueChangeCancels:true,asyncSelectionCancellable:true,waitsForCurrentSession:true,latePlayCancellation:true,failedStemDoesNotStart:true,requestConsumedOnce:true}));
+ // Explicit Final starts at the last struck note, not at the end of the tail.
+ await page.evaluate(()=>{window.playbackPosition=24;window.advanceHarness.update({identity:'event:final',songId:'final',request:null,startError:'',playing:true,duration:40,finalStart:25,nextSong:{id:'next',title:'Next'}})});await tick();
+ assert.equal(await page.evaluate(()=>window.advanceHarness.countdown),null);
+ await page.evaluate(()=>window.playbackPosition=25);await tick();
+ assert.equal(await page.evaluate(()=>window.advanceHarness.countdown),5);
+ // Space/Play cancellation is latched for the rest of this pass, including EOF.
+ await page.evaluate(()=>window.advanceHarness.cancel());await tick();
+ await page.evaluate(()=>{window.playbackPosition=40;window.advanceHarness.complete()});await tick();
+ assert.equal(await page.evaluate(()=>window.advanceHarness.countdown),null);
+ const selections=await page.evaluate(()=>window.advanceLog.selections.length);
+ await page.evaluate(()=>window.testClock+=6000);await tick();
+ assert.equal(await page.evaluate(()=>window.advanceLog.selections.length),selections);
+ // Rewinding before Final starts a new pass; audio may continue during countdown.
+ await page.evaluate(()=>window.playbackPosition=24);await tick();
+ await page.evaluate(()=>window.playbackPosition=25);await tick();
+ assert.equal(await page.evaluate(()=>window.advanceHarness.countdown),5);
+ await page.evaluate(()=>{window.playbackPosition=29;window.testClock+=4000});await tick();
+ assert.equal(await page.evaluate(()=>window.advanceHarness.countdown),1);
+ await page.evaluate(()=>window.testClock+=1000);await tick();
+ assert.deepEqual(await page.evaluate(()=>window.advanceLog.selections.at(-1)),{id:'next',autoPlay:true});
+ console.log(JSON.stringify({pass:true,finalStartsDuringAudioTail:true,cancelFinalStaysCancelled:true,rewindRearmsFinal:true,lateLoadFailureCancelsStart:true,unconfirmedEndpointIgnored:true,queueChangeCancels:true,asyncSelectionCancellable:true,waitsForCurrentSession:true,latePlayCancellation:true,failedStemDoesNotStart:true,requestConsumedOnce:true}));
 }finally{await browser.close()}

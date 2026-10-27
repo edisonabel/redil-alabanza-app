@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 const require = createRequire(import.meta.url);
 const { chromium } = require('/Users/edisonaular/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const LAB = process.env.LD_LAB_URL || 'http://127.0.0.1:4322'; // laboratorio Providencia (configurable)
 const browser = await chromium.launch({ headless: true, executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'] });
 const page = await browser.newPage({ viewport: { width: 1728, height: 1000 } });
 const errors = [], writes = [], cases = [];
@@ -10,7 +11,7 @@ page.on('pageerror', error => errors.push(error.message));
 page.on('request', request => { if (!['GET', 'HEAD'].includes(request.method())) writes.push(request.url()); });
 try {
   await mkdir('.lab/results', { recursive: true });
-  await page.goto('http://127.0.0.1:4322/');
+  await page.goto(`${LAB}/`);
   await page.waitForFunction(() => !document.querySelector('[data-live-director-control="play-pause"]')?.disabled && window.__streamingEngineDumpOwner?.setGeneratedClick, null, { timeout: 90000 });
   await page.evaluate(() => {
     window.__clickMessages = [];

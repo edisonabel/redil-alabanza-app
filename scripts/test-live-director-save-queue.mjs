@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {createLiveDirectorSaveQueue} from '../src/utils/liveDirectorSaveQueue.js';
+const tick=()=>new Promise(r=>setTimeout(r,20));
+const calls=[],jobs=[];
+const queue=createLiveDirectorSaveQueue({delayMs:10,signature:JSON.stringify,save:(song,mix)=>{calls.push({song,mix});return new Promise((resolve,reject)=>jobs.push({resolve,reject}));}});
+const a=queue.enqueue('a',1),b=queue.enqueue('a',2),c=queue.enqueue('a',3);
+await tick();assert.deepEqual(calls,[{song:'a',mix:3}]);
+const same=queue.enqueue('a',3,true);await tick();assert.equal(calls.length,1,'Recovery must share the in-flight request');
+const d=queue.enqueue('a',4),e=queue.enqueue('a',5);await tick();assert.equal(calls.length,1);
+jobs[0].resolve(3);assert.deepEqual(await Promise.all([a,b,c,same]),[3,3,3,3]);await tick();assert.deepEqual(calls.at(-1),{song:'a',mix:5});jobs[1].resolve(5);assert.deepEqual(await Promise.all([d,e]),[5,5]);
+await queue.enqueue('a',5);assert.equal(calls.length,2,'Identical confirmed snapshots are not written again');
+const f=queue.enqueue('b',1);queue.flush('b');assert.equal(calls.length,3);jobs[2].reject(new Error('offline'));await assert.rejects(f,/offline/);assert.equal(queue.isPending('b'),false);
+const g=queue.enqueue('b',1,true);await tick();jobs[3].resolve(1);await g;
+assert.equal(queue.isPending('a'),false);assert.equal(queue.isPending('b'),false);
+console.log('Autosave coalesces edits, serializes per song, shares recovery, deduplicates and retries errors: ok');

@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import { mkdir, writeFile } from 'node:fs/promises';
 const require = createRequire(import.meta.url);
 const { chromium } = require('/Users/edisonaular/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const LAB = process.env.LD_LAB_URL || 'http://127.0.0.1:4322'; // laboratorio Providencia (configurable)
 const browser = await chromium.launch({ headless: true, executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', args: ['--mute-audio', '--autoplay-policy=no-user-gesture-required'] });
 const page = await browser.newPage({ viewport: { width: 1728, height: 1000 } });
 const errors = [], writes = [];
@@ -15,13 +16,13 @@ const hold = page.getByRole('button', { name: 'Mantener sección en repetición'
 const gains = () => page.evaluate(() => Object.fromEntries(window.__streamingEngineDumpOwner.groupGains));
 try {
   await mkdir('.lab/results', { recursive: true });
-  await page.goto('http://127.0.0.1:4322/'); await ready(15);
+  await page.goto(`${LAB}/`); await ready(15);
   assert.equal(await once.isDisabled(), true); assert.equal(await hold.isDisabled(), true);
   assert.equal(await page.locator('[data-live-director-section-controls] button[aria-label="Repetir sección una vez"]').count(), 0);
   const tracksBefore = await page.evaluate(() => window.__streamingEngineDumpOwner.getTracks().map(t => ({ id: t.id, volume: t.volume })));
   const master = await page.getByRole('slider', { name: 'Master volume', exact: true }).getAttribute('aria-valuenow');
-  await level.click(); const slider = page.getByRole('slider', { name: 'Atenuación de canción en decibelios' });
-  await slider.focus(); await page.keyboard.press('End'); for (let i = 0; i < 60; i++) await page.keyboard.press('ArrowLeft');
+  await level.click(); const slider = page.getByRole('slider', { name: 'Nivel de canción en decibelios' });
+  await slider.focus(); await page.keyboard.press('End'); for (let i = 0; i < 180; i++) await page.keyboard.press('ArrowLeft');
   assert.equal(await slider.inputValue(), '-6');
   await page.waitForFunction(() => Math.abs(window.__streamingEngineDumpOwner.groupGains.get('drums') - 10 ** (-6 / 20)) < 1e-8);
   const adjusted = await gains(); assert.equal(adjusted.click, 1); assert.equal(adjusted.guide, 1);
@@ -41,11 +42,15 @@ try {
   await chooser.selectOption(ids[0]); await ready(15); assert.match(await level.getAttribute('title'), /-6.0 dB/);
   await page.reload(); await ready(15); assert.match(await level.getAttribute('title'), /-6.0 dB/);
   await page.route('**/api/live-director-event-arrangement*', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ arrangement: null, sourceSignature: 'test', revision: '', canEdit: true }) }));
-  await page.goto('http://127.0.0.1:4322/?labEvent=11111111-1111-4111-8111-111111111111'); await ready(15); assert.match(await level.getAttribute('title'), /0.0 dB/, 'Event scope does not reuse independent listening level');
-  await page.goto('http://127.0.0.1:4322/'); await ready(15);
+  await page.goto(`${LAB}/?labEvent=11111111-1111-4111-8111-111111111111`); await ready(15); assert.match(await level.getAttribute('title'), /0.0 dB/, 'Event scope does not reuse independent listening level');
+  await page.goto(`${LAB}/`); await ready(15);
   await level.click(); await page.getByRole('button', { name: 'Restaurar 0 dB', exact: true }).click();
   assert.equal(await slider.inputValue(), '0'); await page.getByRole('button', { name: 'Cerrar nivel de canción', exact: true }).click();
   assert.equal((await gains()).drums, 1);
+  await level.click();await page.getByRole('button',{name:'Subir +3 dB',exact:true}).click();await page.getByRole('button',{name:'Subir +3 dB',exact:true}).click();
+  assert.equal(await slider.inputValue(),'6');await page.waitForFunction(()=>Math.abs(window.__streamingEngineDumpOwner.groupGains.get('drums')-10**(6/20))<1e-8);
+  assert.equal((await gains()).click,1);assert.equal((await gains()).guide,1);
+  await page.getByRole('button',{name:'Restaurar 0 dB',exact:true}).click();await page.getByRole('button',{name:'Cerrar nivel de canción',exact:true}).click();
   for (const [width, height] of [[1728, 1000], [1280, 720], [844, 390]]) {
     await page.setViewportSize({ width, height }); await page.waitForTimeout(150);
     const groupBox = await page.locator('[data-live-director-control="groups"]').boundingBox();
@@ -58,7 +63,7 @@ try {
   }
   await page.setViewportSize({ width: 1728, height: 1000 });
   await page.locator('[data-live-section-index="0"]').click();
-  await page.waitForFunction(() => window.__streamingEngineDumpOwner.getCurrentTime() === 12.5);
+  await page.waitForFunction(() => window.__streamingEngineDumpOwner.getCurrentTime() === 12); // Intro 1 en el mapa REAPER
   await page.locator('[data-live-director-control="play-pause"]').click();
   await page.waitForFunction(() => window.__streamingEngineDumpOwner.getIsPlaying());
   await once.click(); assert.equal(await once.getAttribute('aria-pressed'), 'true');

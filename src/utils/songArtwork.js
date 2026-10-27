@@ -69,3 +69,18 @@ export const getSongArtworkCandidates = (song = {}) => {
 
   return [...new Set(candidates)];
 };
+
+// CORS images must use a different cache key from the catalog's no-cors img
+// requests. Otherwise a browser may reuse a cached response without ACAO.
+export const getLiveDirectorSongArtworkUrl = (song = {}) => {
+  const source = getDirectSongArtworkUrl(song) || buildStoredSongArtworkUrl(song);
+  if (!source) return '';
+  try {
+    const url = new URL(source);
+    if (url.origin === SONG_ARTWORK_PUBLIC_BASE_URL) {
+      url.searchParams.set('cors', '1');
+      return url.href;
+    }
+  } catch { /* Relative artwork keeps its existing same-origin path. */ }
+  return source;
+};

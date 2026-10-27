@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 const require = createRequire(import.meta.url);
 const { chromium } = require('/Users/edisonaular/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const LAB = process.env.LD_LAB_URL || 'http://127.0.0.1:4322'; // laboratorio Providencia (configurable)
 const browser = await chromium.launch({ headless: true, executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'] });
 const page = await browser.newPage({ viewport: { width: 1728, height: 1000 } });
 const errors = [], writes = [];
@@ -17,7 +18,7 @@ const showGroups = async () => {
   if (await button.getAttribute('aria-pressed') !== 'true') await button.click();
 };
 try {
-  await page.goto('http://127.0.0.1:4322/', { waitUntil: 'domcontentloaded' }); await ready();
+  await page.goto(`${LAB}/`, { waitUntil: 'domcontentloaded' }); await ready();
   await mkdir('.lab/results', { recursive: true });
   await openTools();
   await page.getByRole('heading', { name: 'Inicio de canción preparado' }).waitFor();

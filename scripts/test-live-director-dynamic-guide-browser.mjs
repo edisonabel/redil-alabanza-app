@@ -4,14 +4,15 @@ import assert from 'node:assert/strict';
 const require = createRequire(import.meta.url);
 const { build } = require('esbuild');
 const { chromium } = require('/Users/edisonaular/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const LAB = process.env.LD_LAB_URL || 'http://127.0.0.1:4322'; // laboratorio Providencia (configurable)
 const bundle = await build({ entryPoints: ['src/services/DynamicGuidePlayer.ts', 'src/utils/liveDirectorGuideCues.ts'], bundle: true, write: false, outdir: '.lab/guide-test', format: 'iife', globalName: 'GuideTest' });
 const playerBundle = bundle.outputFiles.find(file => file.path.endsWith('DynamicGuidePlayer.js')).text;
 const resolverBundle = bundle.outputFiles.find(file => file.path.endsWith('liveDirectorGuideCues.js')).text.replaceAll('GuideTest', 'GuideResolver');
 const browser = await chromium.launch({ headless: true, executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'] });
 try {
   const page = await browser.newPage();
-  await page.route('http://127.0.0.1:4322/guide-test', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Guide test</title>' }));
-  await page.goto('http://127.0.0.1:4322/guide-test');
+  await page.route(`${LAB}/guide-test`, route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Guide test</title>' }));
+  await page.goto(`${LAB}/guide-test`);
   await page.addScriptTag({ content: playerBundle }); await page.addScriptTag({ content: resolverBundle });
   const result = await page.evaluate(async () => {
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -61,7 +62,7 @@ try {
     player.dispose(); await context.close();
     return { count, left, right, muted, cancelled, late, events, resolved, ducks, overrideAfterDispose: override, silentBeforeConfirmation, confirmedVoice, delayedVoice, cancelPendingVoice, rejectedVoice };
   });
-  assert.equal(result.count, 44);
+  assert.equal(result.count, 59, "Section, instruction and count voices from the manifest");
   assert.ok(result.left.left > .1 && result.left.left < .5); assert.equal(result.left.right, 0);
   assert.ok(result.right.right > .1 && result.right.right < .4); assert.equal(result.right.left, 0);
   assert.ok(result.muted.left < .001 && result.muted.right < .001);

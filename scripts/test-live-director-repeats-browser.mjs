@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 const require = createRequire(import.meta.url);
 const { chromium } = require('/Users/edisonaular/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const LAB = process.env.LD_LAB_URL || 'http://127.0.0.1:4322'; // laboratorio Providencia (configurable)
 const browser = await chromium.launch({ headless: true, executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'] });
 const page = await browser.newPage({ viewport: { width: 1728, height: 1000 } });
 const errors = [], writes = [];
@@ -17,7 +18,7 @@ const toggle = async () => {
 const guideOverride = () => page.evaluate(() => window.__streamingEngineDumpOwner.dynamicGuideOverrides.has('guide'));
 try {
   await page.route('**/audio/guide-es/manifest.json', route => route.fulfill({ status: 503, body: 'Controlled sample-library failure' }));
-  await page.goto('http://127.0.0.1:4322/', { waitUntil: 'domcontentloaded' });
+  await page.goto(`${LAB}/`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => document.querySelector('[data-live-director-control="play-pause"]') && !document.querySelector('[data-live-director-control="play-pause"]').disabled, null, { timeout: 90000 });
   if (await page.getByRole('button', { name: 'Mostrar secciones', exact: true }).count()) await page.getByRole('button', { name: 'Mostrar secciones', exact: true }).click();
   const markers = await page.locator('[data-live-section-index]').evaluateAll(elements => elements.map(element => ({ start: Number(element.dataset.liveSectionStart), end: Number(element.dataset.liveSectionEnd) })));

@@ -1,5 +1,7 @@
-import { resolveGuideCue, type GuideCuePlan } from '../utils/liveDirectorGuideCues';
+import {entryCountPlan} from '../utils/liveDirectorEntryCount';
+import { guideVoiceLead, resolveGuideCue, type GuideCuePlan, type GuideInstructionCue } from '../utils/liveDirectorGuideCues';
 import type { TrackOutputRoute } from '../utils/liveDirectorTrackRouting';
+import { loadCueBuffer } from '../utils/cueAudioLibrary';
 export type GuideAudioGraph = {
   context: AudioContext; destination: AudioNode;
   readState: () => { gain: number; route: TrackOutputRoute };
@@ -14,7 +16,7 @@ export class DynamicGuidePlayer {
   private left: GainNode;
   private right: GainNode;
   private merger: ChannelMergerNode;
-  private source: AudioBufferSourceNode | null = null;
+  private sources = new Set<AudioBufferSourceNode>();
   private duckScheduled = false;
   private cueGeneration = 0;
   private planKey = '';
@@ -25,6 +27,11 @@ export class DynamicGuidePlayer {
   private previousGain = Number.NaN;
   private previousRoute = '';
   private available = new Set<string>();
+  // Instructions keep their own sources and memory: a section cue change never cancels them.
+  private cueSources = new Set<AudioBufferSourceNode>();
+  private spoken = new Set<string>();
+  private cueTime: number | null = null;
+  private cueWall = 0;
   public events: Array<{ key: string; status: 'scheduled' | 'late' | 'missing' | 'cancelled'; audioTime: number; boundary?: number }> = [];
   constructor(private graph: GuideAudioGraph) {
     const context = graph.context;
@@ -48,9 +55,9 @@ export class DynamicGuidePlayer {
     await Promise.all(Array.from({ length: 4 }, async () => {
       while (index < assets.length) {
         const asset = assets[index++];
-        const response = await fetch(asset.url, { signal });
-        if (!response.ok) throw new Error(`No se pudo preparar la voz ${asset.label}.`);
-        const buffer = await this.graph.context.decodeAudioData(await response.arrayBuffer());
+        let buffer: AudioBuffer;
+        try { buffer = await loadCueBuffer(this.graph.context, asset.url); }
+        catch { throw new Error(`No se pudo preparar la voz ${asset.label}.`); }
         if (signal.aborted || this.disposed) throw new DOMException('Cancelado', 'AbortError');
         this.buffers.set(asset.key, buffer); this.available.add(asset.key);
       }
@@ -76,20 +83,59 @@ export class DynamicGuidePlayer {
   }
   private stopSource() {
     this.cueGeneration++;
-    if (this.source) {
-      try { this.source.stop(); } catch { /* already ended */ }
-      this.source.disconnect(); this.source = null;
-      this.record(this.planKey, 'cancelled');
+    if (this.sources.size) {
+      for(const source of this.sources){try{source.stop();}catch{}source.disconnect();}
+      this.sources.clear();this.record(this.planKey,'cancelled');
     }
     if (this.duckScheduled) {
       this.graph.clearRecordedGuideDuck();
       this.duckScheduled = false;
     }
   }
+  private stopInstructions() {
+    for (const source of this.cueSources) { try { source.stop(); } catch {} source.disconnect(); }
+    this.cueSources.clear();
+  }
+  private startVoice(key: string, when: number, boundary?: number) {
+    const source = this.graph.context.createBufferSource(); source.buffer = this.buffers.get(key)!;
+    source.connect(this.gain); this.cueSources.add(source);
+    source.onended = () => { source.disconnect(); this.cueSources.delete(source); };
+    source.start(when); this.record(key, 'scheduled', boundary);
+  }
   pause() {
     this.stopSource(); this.planKey = ''; this.lastTime = null; this.played.clear();
+    this.stopInstructions(); this.spoken.clear(); this.cueTime = null;
   }
-  update(plan: GuideCuePlan | null, songTime: number, bpm: number) {
+  /** Speaks each instruction before its point with the section-name lead, gain and route. */
+  updateInstructions(cues: ReadonlyArray<GuideInstructionCue>, songTime: number, bpm: number) {
+    if (this.disposed) return;
+    const wall = performance.now();
+    if (this.cueTime !== null && (songTime < this.cueTime - .1 || songTime - this.cueTime > (wall - this.cueWall) / 1000 + .4)) {
+      this.stopInstructions(); this.spoken.clear();
+    }
+    this.cueTime = songTime; this.cueWall = wall;
+    const context = this.graph.context;
+    for (const cue of cues) {
+      const id = `${cue.id}:${cue.startSec}`;
+      if (cue.startSec < songTime || this.spoken.has(id)) continue;
+      const key = resolveGuideCue(cue.name, this.available);
+      if (!key) { this.spoken.add(id); this.record(cue.name, 'missing', cue.startSec); continue; }
+      const voice = this.buffers.get(key)!.duration;
+      const delay = cue.startSec - guideVoiceLead(voice, bpm) - songTime;
+      if (delay > 8) break;
+      this.spoken.add(id);
+      if (cue.startSec - songTime < voice + .3) { this.record(key, 'late', cue.startSec); continue; }
+      this.startVoice(key, context.currentTime + Math.max(.12, delay), cue.startSec);
+    }
+  }
+  /** Manual instruction from the live controls: speak it now. */
+  speakNow(name: string): boolean {
+    const key = this.disposed ? null : resolveGuideCue(name, this.available);
+    if (!key) return false;
+    this.syncMix(); this.startVoice(key, this.graph.context.currentTime + .05);
+    return true;
+  }
+  update(plan: GuideCuePlan | null, songTime: number, bpm: number,meter?:{numerator:number;denominator:number}|null) {
     if (this.disposed) return;
     this.syncMix();
     const wall = performance.now();
@@ -97,46 +143,60 @@ export class DynamicGuidePlayer {
       this.stopSource(); this.planKey = ''; this.played.clear();
     }
     this.lastTime = songTime; this.lastWall = wall;
-    const key = plan ? `${plan.id}:${plan.boundary}:${plan.name}` : '';
+    const key = plan ? `${plan.id}:${plan.boundary}:${plan.name}:${plan.countIn?`${bpm}:${meter?.numerator??4}/${meter?.denominator??4}`:'voice'}` : '';
     if (key !== this.planKey) { this.stopSource(); this.planKey = key; }
     if (!plan || this.played.has(key)) return;
-    const cueKey = resolveGuideCue(plan.name, this.available);
-    if (!cueKey) { this.played.add(key); this.record(key, 'missing', plan.boundary); return; }
-    const buffer = this.buffers.get(cueKey)!;
-    const lead = Math.max(buffer.duration + .15, 4 * 60 / (Number.isFinite(bpm) && bpm > 0 ? bpm : 120));
-    const delay = plan.boundary - lead - songTime;
-    if (delay > 8) return;
-    this.played.add(key);
-    if (plan.boundary - songTime < buffer.duration + .3) { this.record(cueKey, 'late', plan.boundary); return; }
-    const source = this.graph.context.createBufferSource(); source.buffer = buffer;
-    source.connect(this.gain); this.source = source;
-    source.onended = () => { source.disconnect(); if (this.source === source) this.source = null; };
-    const when = this.graph.context.currentTime + Math.max(.12, delay);
-    // Silence the recorded phrase early, not just its overlap with the new
-    // sample. The worklet must confirm the window before the voice can start.
-    const context = this.graph.context;
-    const boundaryAudioTime = context.currentTime + plan.boundary - songTime;
-    const preRoll = Math.max(.25, 2 * 60 / (Number.isFinite(bpm) && bpm > 0 ? bpm : 120));
-    const voiceEndAudioTime = when + buffer.duration + .12;
-    const generation = this.cueGeneration;
-    this.duckScheduled = true;
-    const prepared = this.graph.scheduleRecordedGuideDuck(
-      Math.max(context.currentTime, when - preRoll),
-      Math.max(boundaryAudioTime, voiceEndAudioTime), plan.boundary, voiceEndAudioTime,
-    );
-    void prepared.then(() => {
-      if (this.disposed || generation !== this.cueGeneration) return;
-      // A delayed confirmation must not launch the voice outside its silence
-      // window. Keep the original guide rather than speak over it.
-      if (when < context.currentTime + .02) {
-        this.stopSource(); this.record(cueKey, 'late', plan.boundary); return;
+    const cueKey=resolveGuideCue(plan.name,this.available),buffer=cueKey?this.buffers.get(cueKey):undefined;
+    const context=this.graph.context,boundaryAudioTime=context.currentTime+plan.boundary-songTime;
+    const count=plan.countIn?entryCountPlan(bpm,meter,null):null;
+    const canCount=count&&Array.from({length:count.beats},(_,i)=>this.buffers.has(String(i+1))).every(Boolean);
+    const voices:Array<{key:string;buffer:AudioBuffer;when:number;rate:number}>=[];
+    if(canCount&&count){
+      const start=boundaryAudioTime-count.beats*count.beatSeconds;
+      if(start>=context.currentTime+.12){
+        const nameStart=buffer?start-buffer.duration-.15:start;
+        if(nameStart-context.currentTime>8)return;
+        if(buffer&&cueKey&&nameStart>=context.currentTime+.12)voices.push({key:cueKey,buffer,when:nameStart,rate:1});
+        for(let i=0;i<count.beats;i++){
+          const number=this.buffers.get(String(i+1))!;
+          voices.push({key:String(i+1),buffer:number,when:start+i*count.beatSeconds,rate:Math.max(1,number.duration/(count.beatSeconds*.85))});
+        }
+      }else{
+        // Never start an incomplete count. The existing destination-name cue
+        // can still replace a misleading recorded phrase when there is time.
+        this.record('count-in','late',plan.boundary);
       }
-      source.start(when); this.record(cueKey, 'scheduled', plan.boundary);
-    }).catch(() => {
-      if (this.disposed || generation !== this.cueGeneration) return;
-      this.stopSource(); this.record(cueKey, 'late', plan.boundary);
+    }
+    if(!voices.length){
+      if(!buffer||!cueKey){this.played.add(key);this.record(key,'missing',plan.boundary);return;}
+      const lead=Math.max(buffer.duration+.15,4*60/(Number.isFinite(bpm)&&bpm>0?bpm:120));
+      const delay=plan.boundary-lead-songTime;if(delay>8)return;
+      if(plan.boundary-songTime<buffer.duration+.3){this.played.add(key);this.record(cueKey,'late',plan.boundary);return;}
+      voices.push({key:cueKey,buffer,when:context.currentTime+Math.max(.12,delay),rate:1});
+    }
+    this.played.add(key);
+    const first=voices[0],last=voices[voices.length-1];
+    const voiceEndAudioTime=last.when+last.buffer.duration/last.rate+.06;
+    const preRoll=Math.max(.25,2*60/(Number.isFinite(bpm)&&bpm>0?bpm:120));
+    const generation=this.cueGeneration;this.duckScheduled=true;
+    const prepared=this.graph.scheduleRecordedGuideDuck(
+      Math.max(context.currentTime,first.when-preRoll),Math.max(boundaryAudioTime,voiceEndAudioTime),plan.boundary,voiceEndAudioTime,
+    );
+    void prepared.then(()=>{
+      if(this.disposed||generation!==this.cueGeneration)return;
+      if(first.when<context.currentTime+.02){this.stopSource();this.record(plan.countIn?'count-in':cueKey!,'late',plan.boundary);return;}
+      for(const voice of voices){
+        const source=context.createBufferSource();source.buffer=voice.buffer;source.playbackRate.value=voice.rate;
+        source.connect(this.gain);this.sources.add(source);
+        source.onended=()=>{source.disconnect();this.sources.delete(source);};
+        source.start(voice.when);this.record(voice.key,'scheduled',plan.boundary);
+      }
+    }).catch(()=>{
+      if(this.disposed||generation!==this.cueGeneration)return;
+      this.stopSource();this.record(plan.countIn?'count-in':cueKey!,'late',plan.boundary);
     });
   }
+
   dispose() {
     if (this.disposed) return;
     this.disposed = true; this.pause(); this.graph.setOverride(false);

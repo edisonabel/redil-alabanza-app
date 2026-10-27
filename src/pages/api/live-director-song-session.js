@@ -294,6 +294,12 @@ export const POST = async ({ request, cookies }) => {
       ? rawSession.unmatchedFiles.map((value) => String(value || '').trim()).filter(Boolean)
       : [];
     const manifestUrl = `${r2Context.publicBaseUrl}/${folder}/manifest.json`;
+    // Mixer autosaves resend only tracks. The REAPER map (sections, instructions, timing)
+    // belongs to these same stems, so keep it unless the audio itself changed.
+    const currentSession = normalizePersistedLiveDirectorSession(songRow.multitrack_session, { songId, songTitle: String(songRow.titulo || '') });
+    const sameStems = Boolean(currentSession) && tracks.every((track) => currentSession.tracks.some((current) => current.url === track.url));
+    const reaperMap = sameStems ? Object.fromEntries(['sectionMarkers', 'instructionMarkers', 'reaperTiming']
+      .filter((key) => currentSession[key]).map((key) => [key, currentSession[key]])) : {};
 
     const persistedSession = {
       version: 1,
@@ -301,6 +307,7 @@ export const POST = async ({ request, cookies }) => {
       songTitle: String(songRow.titulo || ''),
       mode,
       sectionOffsetSeconds,
+      ...reaperMap,
       folder,
       manifestUrl,
       updatedAt: new Date().toISOString(),

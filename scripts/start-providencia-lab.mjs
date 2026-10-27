@@ -18,7 +18,11 @@ const songs=fixture.songs.map((originalSong,songIndex)=>{
   const importedMarkers=originalSong.id===reaperMap.songId ? new Map(reaperMap.sectionMarkers.map(marker=>[marker.id,marker])) : null;
   const song=importedMarkers ? {...originalSong,bpm:reaperMap.bpm,timeSignature:reaperMap.timeSignature,
     section_markers:originalSong.section_markers.map(marker=>({...marker,...importedMarkers.get(marker.id)})),
-    multitrack_session:{...originalSong.multitrack_session,sectionOffsetSeconds:0}} : originalSong;
+    multitrack_session:{...originalSong.multitrack_session,sectionOffsetSeconds:0,
+      // Igual que al aplicar el proyecto en Administración → REAPER: la canción queda marcada como de REAPER.
+      reaperTiming:{source:'reaper-rpp',projectName:reaperMap.sourceFile,tempo:reaperMap.bpm,
+        meter:`${reaperMap.timeSignature.numerator}/${reaperMap.timeSignature.denominator}`,
+        unoSeconds:reaperMap.confirmedDownbeatSeconds??null,finAudioSeconds:reaperMap.audioEndSeconds??null,appliedAt:'lab'}}} : originalSong;
   const artworkPath=`/lab-artwork/${songIndex}.webp`;
   media.set(artworkPath,`https://stems.alabanzaredilestadio.com/songs/${encodeURIComponent(song.id)}/artwork/cover-500.webp`);
   return {...song,artworkUrl:artworkPath,multitrack_session:{...song.multitrack_session,folder:undefined,manifestUrl:undefined,tracks:song.multitrack_session.tracks.map((track,index)=>{

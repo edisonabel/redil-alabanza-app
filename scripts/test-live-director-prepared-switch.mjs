@@ -119,3 +119,20 @@ for(const type of ['PAUSE','PAUSE_AND_FLUSH','PAUSE_AND_ADVANCE','FLUSH_BUFFERS'
   finally { Object.assign(sandbox,saved); }
 }
 console.log(JSON.stringify({passed:true,cases,transportCancellationCases:8,allStemAtomicity:true,exactBoundaryPcm:true,sharedCommitTiming:true,preservedMix:true}));
+// A different song replaces the entire track table at one sample boundary.
+// Its saved mix and routing must replace the source mix even when counts differ.
+for(const count of [2,18]){
+ const p=setup(5);p.soloCount=1;p.tracks[0].isSolo=true;
+ const configs=Array.from({length:count},(_,i)=>({...ring(i,.04,0),id:`destination-${i}`,usesSharedMemory:true,volume:.5,isMuted:i===0,outputRoute:'right',isCue:i===1}));
+ const controlBuffer=new SharedArrayBuffer(24);
+ p.handleMessage({type:'prepare-section-switch',serial:10,boundarySeconds:64/rate,targetSeconds:0,tracks:configs,minimumFrames,controlBuffer,replaceSong:true});
+ assert.equal(p.trackCount,5,'Preparation must leave the source alone');
+ render(p);assert.equal(new Int32Array(controlBuffer)[0],1);assert.equal(p.trackCount,count);assert.equal(p.soloCount,0);
+ for(let i=0;i<count;i++){assert.equal(p.tracks[i].id,`destination-${i}`);assert.equal(p.tracks[i].volume,.5);assert.equal(p.tracks[i].isMuted,i===0);assert.equal(p.tracks[i].outputRoute,'right');assert.equal(p.tracks[i].samples.buffer,configs[i].sampleBuffer);}
+}
+{
+ const p=setup(5),controlBuffer=new SharedArrayBuffer(24),configs=[{...ring(0,.1),usesSharedMemory:true,volume:1}];
+ p.handleMessage({type:'prepare-section-switch',serial:11,boundarySeconds:64/rate,targetSeconds:0,tracks:configs,minimumFrames,controlBuffer,replaceSong:true,pauseAtTarget:true});
+ const output=render(p);assert.equal(p.playing,false);assert.ok(output[0].slice(64).every(x=>x===0),'A synthetic entry must count before the destination starts');assert.equal(p.renderedFrames,64);
+}
+console.log('Prepared different-song switch: fewer/more stems, destination mix and paused entry: ok');

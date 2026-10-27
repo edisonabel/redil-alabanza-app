@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { GuideCuePlan } from '../utils/liveDirectorGuideCues';
+import {shouldCountGuideJump, type GuideCuePlan} from '../utils/liveDirectorGuideCues';
 export type JumpSection = { id: string; name: string; startTime: number; endTime: number };
-type ArmedJump = { section: JumpSection; sourceStart: number; boundary: number };
+type ArmedJump = { section: JumpSection; sourceStart: number; boundary: number; countIn:boolean };
 type RepeatState = { section: JumpSection; mode: 'once' | 'hold'; completed: number; exitRequested: boolean };
 type Options = {
   enabled: boolean; resetKey: string; sections: JumpSection[];
@@ -31,7 +31,7 @@ export function useLiveDirectorSectionJump(options: Options) {
     const section = current.sections.find(section => section.id === sectionId);
     if (!source || !section || source.endTime - now < .25) { setNotice('Arma el salto antes de que termine la sección actual.'); return false; }
     generation.current++; setRepeat(null);
-    setArmed({ section, sourceStart: source.startTime, boundary: source.endTime });
+    setArmed({ section, sourceStart: source.startTime, boundary: source.endTime, countIn:shouldCountGuideJump(current.sections,source.id,section.id) });
     setNotice(`Salto armado a ${section.name}, al terminar ${source.name}.`); return true;
   }, []);
   const startRepeat = useCallback((mode: 'once' | 'hold') => {
@@ -53,9 +53,11 @@ export function useLiveDirectorSectionJump(options: Options) {
     const current = latest.current, navigation = state.current;
     const destinationReady = !current.prepareJump || navigation.preparation === 'ready';
     if ((navigation.armed || (navigation.repeat && !navigation.repeat.exitRequested)) && !destinationReady) return null;
-    if (navigation.armed && destinationReady) return { id: `jump:${navigation.armed.section.id}`, boundary: navigation.armed.boundary, name: navigation.armed.section.name };
+    if (navigation.armed && destinationReady) return { id: `jump:${navigation.armed.section.id}`, boundary: navigation.armed.boundary, name: navigation.armed.section.name, countIn:navigation.armed.countIn && navigation.preparation==='ready' };
     if (navigation.repeat && !navigation.repeat.exitRequested && destinationReady) {
-      return { id: `repeat:${navigation.repeat.section.id}:${navigation.repeat.completed}`, boundary: navigation.repeat.section.endTime, name: 'Repetir' };
+      // Give the band a clear re-entry before a repeated pass. DynamicGuidePlayer
+      // sizes the spoken/audio count to the song's meter (e.g. 3 beats in 3/4).
+      return { id: `repeat:${navigation.repeat.section.id}:${navigation.repeat.completed}`, boundary: navigation.repeat.section.endTime, name: 'Repetir', countIn: true };
     }
     const next = current.sections.find(section => section.startTime > time + .02);
     return next ? { id: `normal:${next.id}`, boundary: next.startTime, name: next.name } : null;

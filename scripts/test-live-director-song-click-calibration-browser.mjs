@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 const require = createRequire(import.meta.url);
 const { chromium } = require('/Users/edisonaular/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const LAB = process.env.LD_LAB_URL || 'http://127.0.0.1:4322'; // laboratorio Providencia (configurable)
 const lateSeek = process.argv.includes('--late-seek');
 const browser = await chromium.launch({ headless: true, executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'] });
 try {
@@ -10,13 +11,13 @@ try {
   const errors = [], writes = [];
   page.on('pageerror', error => errors.push(error.message));
   page.on('request', request => { if (!['GET', 'HEAD'].includes(request.method())) writes.push(request.url()); });
-  await page.goto('http://127.0.0.1:4322/');
+  await page.goto(`${LAB}/`);
   const wait = count => page.waitForFunction(count => window.__streamingEngineDumpOwner?.getTracks().length === count && !document.querySelector('[data-live-director-control="play-pause"]')?.disabled, count, { timeout: 90000 });
   const open = () => page.getByRole('button', { name: 'Configurar metrónomo', exact: true }).click();
   const close = () => page.getByRole('button', { name: 'Cerrar metrónomo', exact: true }).click();
   await wait(15); await open();
   assert.equal(await page.getByRole('spinbutton', { name: 'BPM del click generado', exact: true }).inputValue(), '120');
-  assert.equal(await page.getByRole('spinbutton', { name: 'Pulso de referencia del click', exact: true }).inputValue(), '12.5');
+  assert.equal(await page.getByRole('spinbutton', { name: 'Pulso de referencia del click', exact: true }).inputValue(), '4'); // tiempo fuerte confirmado en REAPER (lab/click-grids.json)
   await close();
   await page.getByRole('combobox', { name: 'Canción de prueba', exact: true }).selectOption({ label: 'Tu palabra (JCA)' });
   await wait(14);

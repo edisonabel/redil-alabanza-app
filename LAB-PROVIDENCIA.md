@@ -291,3 +291,38 @@ La vista Grupos ofrece seis familias musicales fijas: Teclas / Pads (pianos, ór
 La clasificación usa el catálogo de instrumentos existente, admite nombres numerados/en español y distingue Electric Piano de guitarra eléctrica, Synth/Electric Bass de teclados/guitarras y Bass Drum de bajo. Se mantienen las reasignaciones manuales durante la prueba. Al vaciar un bus que estaba en solo, su solo deja de silenciar buses que sí tienen pistas.
 
 Validación: `npm run test:live-mix-groups` (70 nombres, fallbacks por ID/archivo y seis familias), `npm run test:live-buses-ui` (los 15 stems, ganancia de todas las pistas de cada familia, independencia de bajos/ritmo, mute/solo, reasignación, conservación de volúmenes individuales y visibilidad en 1728×1000, 1280×720 y 844×390), TypeScript. Sin errores de página ni escrituras HTTP; salida física silenciada. Evidencia en `.lab/results/buses-check.json` y `buses-*.png`. No se cambió el motor de audio ni se configuraron salidas físicas nuevas.
+
+## Preparación asistida de REAPER — 23 de octubre de 2026
+
+Administración → REAPER (`/admin?area=reaper`) ahora prepara un ZIP por canción:
+RPP con todos los stems referenciados por rutas relativas a Media, duraciones leídas
+desde los archivos y posición cero; marcadores actuales con `[BORRADOR]`, desfase
+aplicado una sola vez, final absoluto y metadatos de procedencia/duración sin URLs;
+asistente Lua e instrucciones descargables. Los niveles del RPP son conservadores
+para escuchar referencias; no representan la mezcla del evento. Límite de 512 MB,
+lectura acotada de red, timeout/reintento y rechazo de duraciones ilegibles.
+
+El asistente recorre/crea entradas, confirma el cursor exacto sin cuantizar, marca
+UNO/FIN AUDIO y calcula BPM desde una selección de compases completos confirmados
+por el usuario. Fija los ítems al tiempo antes de calibrar, conserva su posición y
+velocidad, protege mapas variables/anclajes en otras posiciones, exige transporte
+detenido y permanece asociado al proyecto preparado donde se abrió. No detecta
+automáticamente secciones o compás, ni accede a la red.
+
+La subida conserva el ámbito administrativo/beta; rechaza proyectos preparados para
+otra canción. El informe separa borradores, duplicados, límites, medias sin metadatos,
+recortes/desplazamientos/velocidad y mapas variables, con comparativa de tiempos y
+orden frente al mapa actual. Se pueden revisar proyectos ya guardados sin resubirlos.
+Ninguna de estas operaciones aplica mapas al playback ni escribe letras, catálogo o
+eventos. La aplicación general de un mapa RPP confirmado a otros multitracks sigue
+pendiente; Providencia conserva su integración anterior.
+
+Pasaron parser, preparación (desfase/cola/precisión/rutas), API con servicios simulados
+(autorización/origen/canción/storage beta sin escrituras de catálogo), lógica real Lua
+contra API simulada (compases simples/compuestos, posición exacta, no editar durante
+playback ni en otra pestaña) y navegador offline con componente real (ZIP completo,
+WAV/duraciones reales, informe, error recuperable, sin datos/sin admin y 390/768/1440).
+Inspección visual de claro/oscuro y build correctos. Las dos incidencias de tipos
+previas de AuthSessionBridge.astro persisten. No se pudo comprobar la ventana del
+asistente dentro de REAPER porque el Mac estaba bloqueado; las pruebas Lua no
+sustituyen esa validación nativa pendiente. No se publicó ni fusionó main.

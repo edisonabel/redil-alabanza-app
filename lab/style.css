@@ -4,10 +4,14 @@ html,body,#root{margin:0;min-height:100%;background:#17191b;color:#fff}
 .lab-banner label{margin-left:auto;display:flex;align-items:center;gap:8px}
 .lab-banner select{height:32px;max-width:220px;border:1px solid #47715b;border-radius:6px;background:#10281e;color:#fff;padding:0 8px;font:inherit}
 .lab-banner select:focus-visible{outline:2px solid #a3efc5;outline-offset:2px}
-.lab-director{top:42px!important;height:calc(100dvh - 42px)!important}
+.lab-director{top:0!important;height:100dvh!important}
 .lab-director>div.relative.flex{height:100%!important;min-height:100%!important;max-height:100%!important}
 .lab-message{padding:80px 24px;font:16px/1.5 system-ui,sans-serif}
 @media(max-width:720px){.lab-banner{gap:8px;padding:0 10px}.lab-banner>span{display:none}.lab-banner select{max-width:180px}}
 
 .lab-mode{color:#b4e8d3;font-size:11px;white-space:nowrap;text-underline-offset:3px}.lab-mode:focus-visible{outline:2px solid #a3efc5;outline-offset:3px}
 @media(max-width:720px){.lab-mode{display:none}}
+
+/* Sin barra visible: la canción se cambia con las tarjetas de la app («Canciones» en el teléfono).
+   El selector queda en el DOM, invisible, para las pruebas automáticas. */
+.lab-banner{width:1px!important;height:1px!important;padding:0!important;overflow:hidden;opacity:0;pointer-events:none}

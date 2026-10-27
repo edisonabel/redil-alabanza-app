@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, unlinkSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { StemSongLevelAnalyzer } from '../src/utils/stemSongLevel.ts';
+import { StemSongLevelAnalyzer, getSongGainDb, SONG_TARGET_LUFS, SONG_PEAK_DB } from '../src/utils/stemSongLevel.ts';
 const dir=mkdtempSync(join(tmpdir(),'song-level-'));
 const ffmpeg=process.env.FFMPEG_BIN || '/opt/homebrew/bin/ffmpeg';
 let logs=[];
@@ -31,6 +31,10 @@ async function gains(scale, withControl=true) {
   } finally {await analyzer.cleanup();}
 }
 try {
+  assert.equal(SONG_TARGET_LUFS,-14);assert.equal(SONG_PEAK_DB,-2);
+  assert.equal(getSongGainDb({integrated:-50,peak:-50}),24,'Quiet source gain remains bounded while allowing normalization');
+  assert.equal(getSongGainDb({integrated:-18,peak:-8}),4,'A mix at the old target gets 4 dB more level');
+  assert.equal(getSongGainDb({integrated:-18,peak:-2}),0,'Peak margin still controls the static gain');
   const quiet=await gains(0.5);
   const loud=await gains(2);
   assert.ok(Math.abs((quiet('piano')-loud('piano'))-12.0412)<0.15,'12 dB source difference should be compensated');

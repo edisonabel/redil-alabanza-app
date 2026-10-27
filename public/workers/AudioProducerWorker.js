@@ -8,6 +8,7 @@ const LOOP_CACHE_STATE_END_SAMPLE_SLOT = 3;
 const LOOP_CACHE_STRATEGY_PINNED = 'PINNED';
 const LOOP_CACHE_STRATEGY_PREDICTIVE_DOUBLE_BUFFER = 'PREDICTIVE_DOUBLE_BUFFER';
 const DEFAULT_FETCH_CHUNK_BYTES = 256 * 1024;
+const INITIAL_FETCH_CHUNK_BYTES = 64 * 1024;
 const EXACT_SEEK_FETCH_CHUNK_BYTES = 64 * 1024;
 const MP4_EXTRACTION_SAMPLE_BATCH_SIZE = 16;
 const DECODER_SPECIFIC_INFO_TAG = 0x05;
@@ -44,6 +45,27 @@ const MICRO_SYNC_DEADZONE_SECONDS = 0.025;
 const MICRO_SYNC_POST_COOLDOWN_MS = 2000;
 const RING_BACKPRESSURE_POST_INTERVAL_MS = 10000;
 const RING_WRITE_STATUS_POST_INTERVAL_MS = 1000;
+// Fetched stem bytes are kept in fixed 64 KB blocks shared by every producer
+// Worker of this origin. Section jumps start fresh Workers; with the blocks
+// already local they only demux and decode instead of waiting on the network.
+const STEM_BLOCK_CACHE_NAME = 'light2-stem-blocks-v1';
+const STEM_BLOCK_BYTES = 64 * 1024;
+const STEM_BLOCK_CACHE_MAX_BLOCKS = 6144;
+const STEM_BLOCK_CACHE_TRIM_TARGET_RATIO = 0.8;
+const STEM_BLOCK_CACHE_TRIM_EVERY_WRITES = 512;
+// A stem validated by any producer during this window is trusted by the next
+// Workers (section jumps) without another network round trip. Stem URLs carry
+// a version parameter, so a replaced file arrives under a new URL anyway.
+const STEM_NAMESPACE_TRUST_MS = 30 * 60 * 1000;
+const STEM_NAMESPACE_REFRESH_MS = 60 * 1000;
+// A downloaded rehearsal is the only content kept on purpose: its stems are
+// never trimmed, and saving another rehearsal removes everything else.
+const STEM_DOWNLOAD_RUN_BLOCKS = 16;
+const STEM_DOWNLOAD_PARALLEL_STEMS = 3;
+const STEM_DOWNLOAD_PROGRESS_INTERVAL_MS = 250;
+const STEM_DOWNLOAD_HOLD_POLL_MS = 300;
+const SECTION_PREFETCH_IDLE_POLL_MS = 250;
+const SECTION_PREFETCH_READY_WAIT_MS = 30000;
 
 let mp4BoxModulePromise = null;
 
@@ -490,6 +512,215 @@ const postProducerError = (code, error, extra) => {
   });
 };
 
+let stemBlockCachePromise = null;
+let stemBlockWritesSinceTrim = STEM_BLOCK_CACHE_TRIM_EVERY_WRITES;
+let stemBlockTrimInFlight = false;
+
+const openStemBlockCache = () => {
+  if (!stemBlockCachePromise) {
+    stemBlockCachePromise = (
+      typeof caches !== 'undefined' && caches && typeof caches.open === 'function'
+        ? caches.open(STEM_BLOCK_CACHE_NAME)
+        : Promise.resolve(null)
+    ).catch(() => null);
+  }
+  return stemBlockCachePromise;
+};
+
+// The namespace includes the server validator and size, so a replaced stem at
+// the same URL never reuses blocks from the previous file.
+const buildStemBlockNamespace = (url, response, totalBytes) => {
+  if (!(totalBytes > 0)) {
+    return null;
+  }
+  const validator = response.headers.get('ETag') || response.headers.get('Last-Modified') || '';
+  return `${url}|${validator}|${totalBytes}`;
+};
+
+const parseContentRangeStart = (contentRangeHeader) => {
+  const match = /bytes\s+(\d+)-/i.exec(contentRangeHeader || '');
+  return match ? Number(match[1]) : null;
+};
+
+const stemBlockKey = (namespace, blockIndex) => (
+  `${self.location.origin}/__stem-block-cache/${blockIndex}?ns=${encodeURIComponent(namespace)}`
+);
+
+const stemNamespaceKey = (url) => (
+  `${self.location.origin}/__stem-block-cache/meta?u=${encodeURIComponent(url)}`
+);
+const rememberedStemNamespaces = new Map();
+
+const rememberStemNamespace = (url, namespace, totalBytes) => {
+  const previous = rememberedStemNamespaces.get(url);
+  const now = Date.now();
+  if (!namespace || (previous && previous.namespace === namespace && now - previous.at < STEM_NAMESPACE_REFRESH_MS)) {
+    return;
+  }
+  rememberedStemNamespaces.set(url, { namespace, at: now });
+  void openStemBlockCache().then((cache) => cache && cache.put(
+    stemNamespaceKey(url),
+    new Response(JSON.stringify({ namespace, totalBytes, validatedAt: now }), {
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  )).catch(() => {});
+};
+
+// Without a network the last validation is used regardless of its age, so a
+// rehearsal saved on this device still plays offline.
+const readTrustedStemNamespace = async (url, maxAgeMs = STEM_NAMESPACE_TRUST_MS) => {
+  const cache = await openStemBlockCache();
+  const response = cache ? await cache.match(stemNamespaceKey(url)).catch(() => undefined) : undefined;
+  if (!response) {
+    return null;
+  }
+  try {
+    const entry = await response.json();
+    return entry && typeof entry.namespace === 'string' && entry.totalBytes > 0 &&
+      Date.now() - Number(entry.validatedAt) < maxAgeMs
+      ? entry
+      : null;
+  } catch (_error) {
+    return null;
+  }
+};
+
+const stemRehearsalKey = () => `${self.location.origin}/__stem-block-cache/rehearsal`;
+
+const readSavedStemRehearsal = async (cache) => {
+  const response = await cache.match(stemRehearsalKey()).catch(() => undefined);
+  if (!response) {
+    return null;
+  }
+  try {
+    return await response.json();
+  } catch (_error) {
+    return null;
+  }
+};
+
+const readKeyNamespace = (requestUrl) => {
+  try {
+    return new URL(requestUrl).searchParams.get('ns');
+  } catch (_error) {
+    return null;
+  }
+};
+
+const readStemBlocks = async (namespace, byteStart, byteLength, totalBytes) => {
+  const cache = await openStemBlockCache();
+  if (!cache || !namespace || byteLength <= 0) {
+    return null;
+  }
+
+  const requestedEnd = Math.min(byteStart + byteLength, totalBytes);
+  if (requestedEnd <= byteStart) {
+    return null;
+  }
+  const firstBlock = Math.floor(byteStart / STEM_BLOCK_BYTES);
+  const lastBlock = Math.floor((requestedEnd - 1) / STEM_BLOCK_BYTES);
+  const responses = await Promise.all(
+    Array.from({ length: lastBlock - firstBlock + 1 }, (_value, offset) => (
+      cache.match(stemBlockKey(namespace, firstBlock + offset)).catch(() => undefined)
+    )),
+  );
+
+  const blocks = [];
+  for (const response of responses) {
+    if (!response) {
+      break;
+    }
+    blocks.push(new Uint8Array(await response.arrayBuffer()));
+  }
+  if (blocks.length === 0) {
+    return null;
+  }
+
+  const coveredEnd = (firstBlock + blocks.length - 1) * STEM_BLOCK_BYTES + blocks[blocks.length - 1].byteLength;
+  const end = Math.min(requestedEnd, coveredEnd);
+  if (end <= byteStart) {
+    return null;
+  }
+
+  const bytes = new Uint8Array(end - byteStart);
+  let writeOffset = 0;
+  for (let index = 0; index < blocks.length && writeOffset < bytes.byteLength; index += 1) {
+    const blockStart = (firstBlock + index) * STEM_BLOCK_BYTES;
+    const from = Math.max(0, byteStart - blockStart);
+    const to = Math.min(blocks[index].byteLength, end - blockStart);
+    bytes.set(blocks[index].subarray(from, to), writeOffset);
+    writeOffset += to - from;
+  }
+  return bytes;
+};
+
+const trimStemBlockCache = async (cache) => {
+  if (stemBlockTrimInFlight) {
+    return;
+  }
+  stemBlockTrimInFlight = true;
+  try {
+    const keys = await cache.keys();
+    if (keys.length <= STEM_BLOCK_CACHE_MAX_BLOCKS) {
+      return;
+    }
+    // Cache Storage lists entries in insertion order: drop the oldest blocks,
+    // never those of the rehearsal saved on this device.
+    const saved = await readSavedStemRehearsal(cache);
+    const keep = new Set(saved && Array.isArray(saved.namespaces) ? saved.namespaces : []);
+    let removeCount = keys.length - Math.floor(STEM_BLOCK_CACHE_MAX_BLOCKS * STEM_BLOCK_CACHE_TRIM_TARGET_RATIO);
+    for (let index = 0; index < keys.length && removeCount > 0; index += 1) {
+      const namespace = readKeyNamespace(keys[index].url);
+      if (!namespace || keep.has(namespace)) {
+        continue;
+      }
+      await cache.delete(keys[index]);
+      removeCount -= 1;
+    }
+  } catch (_error) {
+    // Trimming is best effort; the browser can also evict the whole cache.
+  } finally {
+    stemBlockTrimInFlight = false;
+  }
+};
+
+// Stores complete blocks only. A shorter block is accepted solely at the end of
+// the file. Playback never awaits these writes; failures simply skip caching.
+const storeStemBlocks = (namespace, alignedStart, bytes, totalBytes) => {
+  if (!namespace || alignedStart % STEM_BLOCK_BYTES !== 0 || bytes.byteLength === 0) {
+    return Promise.resolve();
+  }
+
+  return openStemBlockCache().then(async (cache) => {
+    if (!cache) {
+      return;
+    }
+    let written = 0;
+    for (let offset = 0; offset < bytes.byteLength; offset += STEM_BLOCK_BYTES) {
+      const blockBytes = bytes.subarray(offset, Math.min(offset + STEM_BLOCK_BYTES, bytes.byteLength));
+      const blockStart = alignedStart + offset;
+      if (blockBytes.byteLength < STEM_BLOCK_BYTES && blockStart + blockBytes.byteLength !== totalBytes) {
+        break;
+      }
+      try {
+        await cache.put(
+          stemBlockKey(namespace, blockStart / STEM_BLOCK_BYTES),
+          new Response(blockBytes.slice(), { headers: { 'Content-Type': 'application/octet-stream' } }),
+        );
+        written += 1;
+      } catch (_error) {
+        stemBlockWritesSinceTrim = STEM_BLOCK_CACHE_TRIM_EVERY_WRITES;
+        break;
+      }
+    }
+    stemBlockWritesSinceTrim += written;
+    if (stemBlockWritesSinceTrim >= STEM_BLOCK_CACHE_TRIM_EVERY_WRITES) {
+      stemBlockWritesSinceTrim = 0;
+      await trimStemBlockCache(cache);
+    }
+  }).catch(() => {});
+};
+
 const loadMp4Box = async () => {
   if (self.MP4Box && typeof self.MP4Box.createFile === 'function') {
     return self.MP4Box;
@@ -742,6 +973,7 @@ class RangeFetcher {
         ? Math.floor(options.initialJitterMs)
         : 0;
     this.totalBytes = null;
+    this.cacheNamespace = null;
     this.abortController = null;
     this.fetchSerial = 0;
     this.aborted = false;
@@ -749,16 +981,156 @@ class RangeFetcher {
     this.unsupportedFormat = urlLooksLikeMp3(this.url);
   }
 
+  buildRequestInit(rangeStart, rangeEnd, signal) {
+    const requestUrl = new URL(this.url, self.location.href);
+    return {
+      mode: 'cors',
+      credentials: requestUrl.origin === self.location.origin &&
+        !requestUrl.pathname.startsWith('/stem-media/')
+        ? 'same-origin'
+        : 'omit',
+      headers: {
+        Range: `bytes=${rangeStart}-${rangeEnd}`,
+      },
+      signal,
+    };
+  }
+
+  async readSavedChunk(byteStart, byteLength) {
+    const saved = this.cacheNamespace && this.totalBytes !== null
+      ? { namespace: this.cacheNamespace, totalBytes: this.totalBytes }
+      : await readTrustedStemNamespace(this.url, Number.POSITIVE_INFINITY);
+    if (!saved) {
+      return null;
+    }
+    const bytes = await readStemBlocks(saved.namespace, byteStart, byteLength, saved.totalBytes);
+    if (!bytes) {
+      return null;
+    }
+    this.cacheNamespace = saved.namespace;
+    this.totalBytes = saved.totalBytes;
+    const nextByteStart = byteStart + bytes.byteLength;
+    return { bytes, byteStart, nextByteStart, endOfFile: nextByteStart >= saved.totalBytes };
+  }
+
+  // Background fill for section starts. It uses its own requests so it never
+  // supersedes or aborts the playback fetch of this track.
+  async prefetchBlocks(byteStart, byteEnd, isCancelled, options = null) {
+    const cache = await openStemBlockCache();
+    const namespace = this.cacheNamespace;
+    if (!cache || !namespace || this.totalBytes === null) {
+      return 0;
+    }
+
+    const maxRunBlocks = options && options.maxRunBlocks > 0 ? options.maxRunBlocks : 4;
+    const onBlocks = options && typeof options.onBlocks === 'function' ? options.onBlocks : () => {};
+    const beforeRequest = options && typeof options.beforeRequest === 'function' ? options.beforeRequest : null;
+    const lastBlock = Math.floor(Math.min(byteEnd, this.totalBytes - 1) / STEM_BLOCK_BYTES);
+    const hasBlock = async (blockIndex) => !!(await cache.match(stemBlockKey(namespace, blockIndex)).catch(() => undefined));
+    let block = Math.floor(Math.max(0, byteStart) / STEM_BLOCK_BYTES);
+    let fetchedBlocks = 0;
+
+    while (block <= lastBlock && !isCancelled()) {
+      if (await hasBlock(block)) {
+        onBlocks(1);
+        block += 1;
+        continue;
+      }
+      let runEnd = block;
+      while (runEnd < lastBlock && runEnd - block < maxRunBlocks - 1 && !(await hasBlock(runEnd + 1))) {
+        runEnd += 1;
+      }
+      if (beforeRequest) {
+        await beforeRequest();
+        if (isCancelled()) {
+          break;
+        }
+      }
+
+      const rangeStart = block * STEM_BLOCK_BYTES;
+      const rangeEnd = Math.min((runEnd + 1) * STEM_BLOCK_BYTES, this.totalBytes) - 1;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), RANGE_FETCH_BODY_STALL_TIMEOUT_MS);
+      try {
+        const response = await fetch(this.url, {
+          ...this.buildRequestInit(rangeStart, rangeEnd, controller.signal),
+          priority: 'low',
+        });
+        const totalBytes = this.parseTotalBytes(response.headers.get('Content-Range'), null);
+        if (
+          response.status !== 206 ||
+          parseContentRangeStart(response.headers.get('Content-Range')) !== rangeStart ||
+          buildStemBlockNamespace(this.url, response, totalBytes) !== namespace
+        ) {
+          return fetchedBlocks;
+        }
+        await storeStemBlocks(namespace, rangeStart, new Uint8Array(await response.arrayBuffer()), this.totalBytes);
+        fetchedBlocks += runEnd - block + 1;
+        onBlocks(runEnd - block + 1);
+      } catch (_error) {
+        return fetchedBlocks;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      block = runEnd + 1;
+    }
+
+    return fetchedBlocks;
+  }
+
   async fetchChunk(byteStart, chunkBytesOverride = null) {
     const safeByteStart = Math.max(0, Math.floor(Number(byteStart) || 0));
-    const requestChunkBytes =
+    const configuredChunkBytes =
       typeof chunkBytesOverride === 'number' && chunkBytesOverride > 0
         ? Math.floor(chunkBytesOverride)
         : this.chunkBytes;
+    // Fast-start M4A headers and initial AAC frames usually fit here. Do not
+    // wait for an entire lookahead chunk before allowing the first PCM output.
+    const requestChunkBytes = safeByteStart === 0
+      ? Math.min(configuredChunkBytes, INITIAL_FETCH_CHUNK_BYTES)
+      : configuredChunkBytes;
     const byteEnd = safeByteStart + requestChunkBytes - 1;
     const fetchSerial = this.fetchSerial + 1;
     this.fetchSerial = fetchSerial;
     this.aborted = false;
+
+    // The namespace comes from this fetcher's own network response or from a
+    // recent validation by another producer Worker of this origin.
+    if (!this.cacheNamespace) {
+      const offline = !!self.navigator && self.navigator.onLine === false;
+      const trusted = await readTrustedStemNamespace(
+        this.url,
+        offline ? Number.POSITIVE_INFINITY : STEM_NAMESPACE_TRUST_MS,
+      );
+      this.assertFetchActive(fetchSerial);
+      if (trusted) {
+        this.cacheNamespace = trusted.namespace;
+        this.totalBytes = trusted.totalBytes;
+      }
+    }
+    if (this.cacheNamespace && this.totalBytes !== null) {
+      const cachedBytes = await readStemBlocks(this.cacheNamespace, safeByteStart, requestChunkBytes, this.totalBytes);
+      this.assertFetchActive(fetchSerial);
+      if (cachedBytes) {
+        const nextByteStart = safeByteStart + cachedBytes.byteLength;
+        return {
+          bytes: cachedBytes,
+          byteStart: safeByteStart,
+          nextByteStart,
+          endOfFile: nextByteStart >= this.totalBytes,
+        };
+      }
+    }
+
+    // Network requests follow the block grid so every response can be cached.
+    const blockCache = await openStemBlockCache();
+    this.assertFetchActive(fetchSerial);
+    const networkStart = blockCache
+      ? Math.floor(safeByteStart / STEM_BLOCK_BYTES) * STEM_BLOCK_BYTES
+      : safeByteStart;
+    const networkEnd = blockCache
+      ? Math.ceil((byteEnd + 1) / STEM_BLOCK_BYTES) * STEM_BLOCK_BYTES - 1
+      : byteEnd;
 
     if (!this.hasAppliedInitialJitter && this.initialJitterMs > 0) {
       this.hasAppliedInitialJitter = true;
@@ -805,16 +1177,11 @@ class RangeFetcher {
             }
           }
         };
-        const response = await withTimeout(fetch(this.url, {
-          mode: 'cors',
-          credentials: new URL(this.url, self.location.href).origin === self.location.origin
-            ? 'same-origin'
-            : 'omit',
-          headers: {
-            Range: `bytes=${safeByteStart}-${byteEnd}`,
-          },
-          signal: requestController.signal,
-        }), RANGE_FETCH_TIMEOUT_MS, 'headers');
+        const response = await withTimeout(
+          fetch(this.url, this.buildRequestInit(networkStart, networkEnd, requestController.signal)),
+          RANGE_FETCH_TIMEOUT_MS,
+          'headers',
+        );
         this.assertFetchActive(fetchSerial);
 
         if (response.status !== 200 && response.status !== 206) {
@@ -875,8 +1242,21 @@ class RangeFetcher {
           return combined.buffer;
         };
         const responseBuffer = await readResponseBuffer();
-        const bytes = new Uint8Array(responseBuffer);
+        let bytes = new Uint8Array(responseBuffer);
         this.assertFetchActive(fetchSerial);
+        if (response.status === 206) {
+          const responseStart = parseContentRangeStart(response.headers.get('Content-Range'));
+          const bytesStart = responseStart === null ? networkStart : responseStart;
+          if (bytesStart > safeByteStart) {
+            throw new Error(`Range response starts at byte ${bytesStart}; expected ${safeByteStart} for ${this.url}`);
+          }
+          const namespace = buildStemBlockNamespace(this.url, response, this.totalBytes);
+          this.cacheNamespace = namespace;
+          rememberStemNamespace(this.url, namespace, this.totalBytes);
+          storeStemBlocks(namespace, bytesStart, bytes, this.totalBytes);
+          const sliceStart = Math.min(bytes.byteLength, Math.max(0, safeByteStart - bytesStart));
+          bytes = bytes.subarray(sliceStart, Math.min(bytes.byteLength, sliceStart + requestChunkBytes));
+        }
         const nextByteStart = safeByteStart + bytes.byteLength;
         this.abortController = null;
 
@@ -904,6 +1284,16 @@ class RangeFetcher {
             byteEnd,
           });
           throw error;
+        }
+
+        // A network failure falls back to bytes saved on this device before
+        // waiting through the retries.
+        if (this.isRetryableFetchError(error)) {
+          const savedChunk = await this.readSavedChunk(safeByteStart, requestChunkBytes);
+          this.assertFetchActive(fetchSerial);
+          if (savedChunk) {
+            return savedChunk;
+          }
         }
 
         if (!this.isRetryableFetchError(error) || attempt >= this.maxRetries) {
@@ -1853,6 +2243,68 @@ class ProducerTrackPipeline {
         });
       }
     }
+  }
+
+  resolveByteRangeForSeconds(startSeconds, endSeconds) {
+    const file = this.demuxer && this.demuxer.trackReady ? this.demuxer.file : null;
+    const trak = file && typeof file.getTrackById === 'function'
+      ? file.getTrackById(this.demuxer.extractionTrackId)
+      : null;
+    const samples = trak && Array.isArray(trak.samples) ? trak.samples : null;
+    if (!samples || samples.length === 0) {
+      return null;
+    }
+
+    const timeOf = (sample) => sample.cts / sample.timescale;
+    let low = 0;
+    let high = samples.length - 1;
+    while (low < high) {
+      const middle = (low + high) >> 1;
+      if (timeOf(samples[middle]) < startSeconds) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+
+    let byteStart = Number.POSITIVE_INFINITY;
+    let byteEnd = -1;
+    for (let index = Math.max(0, low - 1); index < samples.length; index += 1) {
+      const sample = samples[index];
+      if (index > low && timeOf(sample) > endSeconds) {
+        break;
+      }
+      byteStart = Math.min(byteStart, sample.offset);
+      byteEnd = Math.max(byteEnd, sample.offset + sample.size - 1);
+    }
+    return Number.isFinite(byteStart) && byteEnd >= byteStart ? { byteStart, byteEnd } : null;
+  }
+
+  async prefetchRegions(regions, isCancelled) {
+    const stopped = () => this.isDestroyed || isCancelled();
+    const readyDeadline = performance.now() + SECTION_PREFETCH_READY_WAIT_MS;
+    while (!stopped() && !(this.ready && this.fetcher.cacheNamespace)) {
+      if (performance.now() > readyDeadline) {
+        return 0;
+      }
+      await sleep(SECTION_PREFETCH_IDLE_POLL_MS);
+    }
+
+    let fetchedBlocks = 0;
+    for (const region of regions) {
+      // Playback keeps priority: wait until this stem's look-ahead is full.
+      while (!stopped() && !this.endOfFileReached && this.ringWriter.shouldFetchMore()) {
+        await sleep(SECTION_PREFETCH_IDLE_POLL_MS);
+      }
+      if (stopped()) {
+        break;
+      }
+      const range = this.resolveByteRangeForSeconds(region.startSeconds, region.endSeconds);
+      if (range) {
+        fetchedBlocks += await this.fetcher.prefetchBlocks(range.byteStart, range.byteEnd, stopped);
+      }
+    }
+    return fetchedBlocks;
   }
 
   async prewarmHeader(sessionId) {
@@ -3331,6 +3783,12 @@ class ProducerTrackPipeline {
         };
       }
 
+      // At the file head the decoder drops its AAC priming frame, so the first PCM
+      // arrives at e.g. sample 1024. That leading silence was just written at the
+      // target: report the write as starting at 0 so a prepared restart is aligned.
+      if (this.firstNormalWriteStartSample === null && pcmStartSample - gapFrames === 0 && gapFrames <= 4096) {
+        this.firstNormalWriteStartSample = 0;
+      }
       this.lastNormalWriteEndSample = pcmStartSample;
     }
 
@@ -4035,6 +4493,167 @@ const seekAllPipelines = async (
   });
 };
 
+let stemDownloadSerial = 0;
+let stemDownloadHeld = false;
+
+// Saves complete stems of one rehearsal on this device. The download waits
+// while the transport plays, skips blocks already stored, and finally removes
+// every stem that does not belong to this rehearsal so the device stays light.
+const downloadStemsToDevice = async (message) => {
+  const serial = stemDownloadSerial + 1;
+  stemDownloadSerial = serial;
+  const isCancelled = () => serial !== stemDownloadSerial;
+  const urls = Array.from(new Set((Array.isArray(message.urls) ? message.urls : []).filter((url) => typeof url === 'string' && url)));
+  const cache = await openStemBlockCache();
+  if (!cache) {
+    self.postMessage({ type: 'stem-download-complete', serial: message.serial, ok: false, error: 'Este navegador no permite guardar audio en el equipo.' });
+    return;
+  }
+
+  const waitWhileHeld = async () => {
+    while (stemDownloadHeld && !isCancelled()) {
+      await sleep(STEM_DOWNLOAD_HOLD_POLL_MS);
+    }
+  };
+  const fetchers = [];
+  const failed = [];
+  let totalBlocks = 0;
+  let doneBlocks = 0;
+  let lastProgressAt = 0;
+  const postProgress = (force = false) => {
+    const now = performance.now();
+    if (!force && now - lastProgressAt < STEM_DOWNLOAD_PROGRESS_INTERVAL_MS) {
+      return;
+    }
+    lastProgressAt = now;
+    self.postMessage({
+      type: 'stem-download-progress',
+      serial: message.serial,
+      doneBlocks,
+      totalBlocks,
+      held: stemDownloadHeld,
+    });
+  };
+
+  // A few stems at a time keep the download quick without flooding the link.
+  const runPool = async (items, task) => {
+    let next = 0;
+    await Promise.all(Array.from({ length: Math.min(STEM_DOWNLOAD_PARALLEL_STEMS, items.length) }, async () => {
+      while (next < items.length && !isCancelled()) {
+        await task(items[next++]);
+      }
+    }));
+  };
+
+  // The first request of each stem validates it and reveals its size.
+  await runPool(urls, async (url) => {
+    await waitWhileHeld();
+    const fetcher = new RangeFetcher(url, { trackName: url });
+    try {
+      await fetcher.fetchChunk(0);
+      if (fetcher.cacheNamespace && fetcher.totalBytes > 0) {
+        fetchers.push(fetcher);
+        totalBlocks += Math.ceil(fetcher.totalBytes / STEM_BLOCK_BYTES);
+      } else {
+        failed.push(url);
+      }
+    } catch (_error) {
+      failed.push(url);
+    }
+  });
+  if (isCancelled()) return;
+  postProgress(true);
+
+  await runPool(fetchers.slice(), async (fetcher) => {
+    let stored = 0;
+    await fetcher.prefetchBlocks(0, fetcher.totalBytes - 1, isCancelled, {
+      maxRunBlocks: STEM_DOWNLOAD_RUN_BLOCKS,
+      beforeRequest: waitWhileHeld,
+      onBlocks: (count) => {
+        stored += count;
+        doneBlocks += count;
+        postProgress();
+      },
+    });
+    if (stored < Math.ceil(fetcher.totalBytes / STEM_BLOCK_BYTES) && !isCancelled()) {
+      failed.push(fetcher.url);
+    }
+  });
+  if (isCancelled()) return;
+  postProgress(true);
+
+  const namespaces = fetchers.filter((fetcher) => !failed.includes(fetcher.url)).map((fetcher) => fetcher.cacheNamespace);
+  const totalBytes = fetchers.reduce((sum, fetcher) => sum + (failed.includes(fetcher.url) ? 0 : fetcher.totalBytes), 0);
+  if (failed.length === 0) {
+    const keep = new Set(namespaces);
+    const keepUrls = new Set(urls);
+    for (const request of await cache.keys()) {
+      const namespace = readKeyNamespace(request.url);
+      const metaUrl = namespace ? null : new URL(request.url).searchParams.get('u');
+      if ((namespace && !keep.has(namespace)) || (metaUrl && !keepUrls.has(metaUrl))) {
+        await cache.delete(request);
+      }
+    }
+    await cache.put(stemRehearsalKey(), new Response(JSON.stringify({
+      rehearsalId: message.rehearsalId || null,
+      songIds: Array.isArray(message.songIds) ? message.songIds : [],
+      urls,
+      namespaces,
+      totalBytes,
+      completedAt: Date.now(),
+    }), { headers: { 'Content-Type': 'application/json' } }));
+  }
+
+  self.postMessage({
+    type: 'stem-download-complete',
+    serial: message.serial,
+    ok: failed.length === 0,
+    totalBytes,
+    failedCount: failed.length,
+    error: failed.length ? `No se pudieron guardar ${failed.length} stems. Revisa la conexión e inténtalo de nuevo.` : null,
+  });
+};
+
+let sectionPrefetchSerial = 0;
+
+const prefetchSectionRegions = async (message) => {
+  const serial = sectionPrefetchSerial + 1;
+  sectionPrefetchSerial = serial;
+  const sessionId = Math.max(0, Math.floor(Number(message.sessionId) || 0));
+  const regions = (Array.isArray(message.regions) ? message.regions : [])
+    .map((region) => ({
+      startSeconds: Math.max(0, Number(region && region.startSeconds)),
+      endSeconds: Number(region && region.endSeconds),
+    }))
+    .filter((region) => Number.isFinite(region.startSeconds) && region.endSeconds > region.startSeconds);
+  const isCancelled = () => serial !== sectionPrefetchSerial || sessionId !== activeSessionId;
+  if (regions.length === 0 || isCancelled()) {
+    return;
+  }
+
+  // One stem at a time keeps background traffic to a single low-priority request.
+  const startedAt = performance.now();
+  let fetchedBlocks = 0;
+  for (const pipeline of Array.from(trackPipelines.values())) {
+    if (isCancelled()) {
+      break;
+    }
+    fetchedBlocks += await pipeline.prefetchRegions(regions, isCancelled);
+  }
+
+  if (producerDiagnosticsEnabled) {
+    self.postMessage({
+      type: 'producer-section-prefetch',
+      sessionId,
+      regionCount: regions.length,
+      trackCount: trackPipelines.size,
+      fetchedBlocks,
+      cancelled: isCancelled(),
+      elapsedMs: Math.round(performance.now() - startedAt),
+    });
+  }
+};
+
 const auditSync = (message) => {
   const requestedSessionId =
     typeof message.sessionId === 'number' && Number.isFinite(message.sessionId)
@@ -4162,6 +4781,31 @@ self.onmessage = (event) => {
 	
   if (message.type === 'audit-sync') {
     auditSync(message);
+    return;
+  }
+
+  if (message.type === 'download-stems') {
+    stemDownloadHeld = message.held === true;
+    downloadStemsToDevice(message).catch((error) => {
+      self.postMessage({
+        type: 'stem-download-complete',
+        serial: message.serial,
+        ok: false,
+        error: error instanceof Error ? error.message : 'No se pudo guardar el ensayo.',
+      });
+    });
+    return;
+  }
+
+  if (message.type === 'download-hold') {
+    stemDownloadHeld = message.held === true;
+    return;
+  }
+
+  if (message.type === 'prefetch-regions') {
+    prefetchSectionRegions(message).catch((error) => {
+      debugError('[AudioProducerWorker] Section prefetch failed.', error);
+    });
     return;
   }
 

@@ -33,6 +33,14 @@ function Lab() {
     const localMix=mixes.current[song.id];
     return session && localMix ? {...session,tracks:session.tracks.map(track=>({...track,...localMix.tracks?.find((t:any)=>t.id===track.id)}))}:session;
   },[song]);
+  // Como ModoEnsayoDirector: la siguiente canción se carga sonando para el cambio preparado sin silencio.
+  const prepareQueueSong=async(id:string)=>{
+    const next=songs.find(s=>s.id===id);
+    const session=next?normalizePersistedLiveDirectorSession(next.multitrack_session,{songId:next.id,songTitle:next.titulo}):null;
+    if(!session)throw new Error('Esta canción todavía no tiene stems preparados.');
+    const localMix=mixes.current[id];
+    return localMix?{...session,tracks:session.tracks.map(track=>({...track,...localMix.tracks?.find((t:any)=>t.id===track.id)}))}:session;
+  };
   const sections=useMemo(()=>song?buildLiveDirectorSectionsFromMarkers(song.section_markers):[],[song]);
   const queue=useMemo(()=>songs.map(s=>({id:s.id,title:s.titulo,subtitle:s.cantante,artworkUrl:s.artworkUrl})),[songs]);
   return <>
@@ -41,7 +49,7 @@ function Lab() {
       experimentalTools eventId={labEventId} eventTitle={labEventId ? 'Evento de prueba local' : ''} key={new URLSearchParams(location.search).has('labRetainView') ? 'queue' : song.id} mode="ensayo" songId={song.id} songTitle={song.titulo} songKey={song.tonalidad} songArtworkUrl={song.artworkUrl}
       title="LiveDirector · Experimental" subtitle={song.titulo} bpm={clickGrid?.bpm ?? song.bpm} timeSignature={song.timeSignature} generatedClickGrid={clickGrid}
       initialSession={resolvedSession} sections={sections} requiresSongContext
-      queueSongs={queue} activeQueueSongId={song.id} onSelectQueueSong={selectSong}
+      queueSongs={queue} activeQueueSongId={song.id} onSelectQueueSong={selectSong} onPrepareQueueSong={prepareQueueSong}
       autoPlayRequest={autoPlayRequest} onCancelAutoPlay={cancelAutoPlay} onAutoPlayHandled={token=>setAutoPlayRequest(previous=>previous?.token===token?null:previous)}
       autoStartPadWithTransport={false} onEventMixChange={mix=>{mixes.current[song.id]=mix;}}
       onBack={()=>{location.reload();}} backLabel="Reiniciar prueba" className="lab-director"

@@ -3,11 +3,12 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 const require = createRequire(import.meta.url);
 const { chromium } = require('/Users/edisonaular/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const LAB = process.env.LD_LAB_URL || 'http://127.0.0.1:4322'; // laboratorio Providencia (configurable)
 const browser = await chromium.launch({ headless: true, executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'] });
 try {
   const page = await browser.newPage();
-  await page.route('http://127.0.0.1:4322/click-audio-test', route => route.fulfill({ contentType: 'text/html', headers: { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' }, body: '<!doctype html><title>Click audio test</title>' }));
-  await page.goto('http://127.0.0.1:4322/click-audio-test');
+  await page.route(`${LAB}/click-audio-test`, route => route.fulfill({ contentType: 'text/html', headers: { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' }, body: '<!doctype html><title>Click audio test</title>' }));
+  await page.goto(`${LAB}/click-audio-test`);
   const result = await page.evaluate(async () => {
     const rate = 48000, base = 60.5, origin = 12.5, length = rate * 5;
     const context = new AudioContext({ sampleRate: rate });

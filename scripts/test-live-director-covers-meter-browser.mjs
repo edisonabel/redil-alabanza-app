@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 const require = createRequire(import.meta.url);
 const { chromium } = require('/Users/edisonaular/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const LAB = process.env.LD_LAB_URL || 'http://127.0.0.1:4322'; // laboratorio Providencia (configurable)
 const browser = await chromium.launch({ headless: true, executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', args: ['--mute-audio', '--autoplay-policy=no-user-gesture-required'] });
 const page = await browser.newPage({ viewport: { width: 1728, height: 1000 } });
 const errors = [], writes = [];
@@ -10,7 +11,7 @@ page.on('pageerror', error => errors.push(error.message)); page.on('request', re
 const headerMeter = page.locator('[data-live-director-time-signature]');
 try {
   await mkdir('.lab/results', { recursive: true });
-  await page.goto('http://127.0.0.1:4322/');
+  await page.goto(`${LAB}/`);
   await page.waitForFunction(() => window.__streamingEngineDumpOwner?.getTracks().length === 15 && !document.querySelector('[data-live-director-control="play-pause"]')?.disabled, null, { timeout: 90000 });
   const importedMap = JSON.parse(await readFile('lab/providencia-reaper-map.json', 'utf8'));
   const sectionTimes = await page.locator('[data-live-section-index]').evaluateAll(elements => elements.map(el => ({ start: +el.dataset.liveSectionStart, end: +el.dataset.liveSectionEnd })));

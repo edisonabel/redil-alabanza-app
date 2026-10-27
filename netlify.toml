@@ -75,6 +75,15 @@
   [headers.values]
     Cross-Origin-Resource-Policy = "same-origin"
 
+# This filename includes a content hash; app and producer versions stay paired
+# while all producer workers can reuse one cached self-contained download.
+[[headers]]
+  for = "/audio-runtime/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+    Cross-Origin-Resource-Policy = "same-origin"
+    Cross-Origin-Embedder-Policy = "require-corp"
+
 [[headers]]
   for = "/*.webp"
   [headers.values]

@@ -4,6 +4,8 @@ export type EventPlaybackRequest = { songId: string; token: number };
 export type QueueSelectionOptions = { autoPlay?: boolean };
 type Options = {
   enabled: boolean;
+  /** «Encadenar» activo para esta canción: al terminar pasa a la siguiente. Apagado, termina y se detiene. */
+  autoAdvance?: boolean;
   identity: string;
   songId: string;
   nextSong?: { id: string; title: string };
@@ -12,6 +14,8 @@ type Options = {
   busy: boolean;
   hasArrangement: boolean;
   duration: number;
+  finalStart?: number | null;
+  getTime?: () => number;
   manualNavigation: MutableRefObject<boolean>;
   scheduleEnd?: (boundary: number) => { completion: Promise<boolean>; cancel: () => void };
   selectSong?: (id: string, options?: QueueSelectionOptions) => void;
@@ -26,7 +30,7 @@ type Options = {
 
 const COUNTDOWN_SECONDS = 5;
 
-/** Only sample-confirmed completion starts the countdown; pauses never do. */
+/** Final starts a cancellable countdown while the audio tail keeps playing. */
 export function useLiveDirectorEventAdvance(options: Options) {
   const latest = useRef(options); latest.current = options;
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -38,6 +42,7 @@ export function useLiveDirectorEventAdvance(options: Options) {
   const generation = useRef(0);
   const starting = useRef<number | null>(null);
   const handled = useRef<number | null>(null);
+  const completedPass = useRef(false);
   const cancelEnd = useCallback(() => {
     const job = ending.current;
     ending.current = null;
@@ -59,7 +64,8 @@ export function useLiveDirectorEventAdvance(options: Options) {
   }, []);
   const complete = useCallback(() => {
     const o = latest.current;
-    if (!o.enabled || o.busy || o.manualNavigation.current || !o.nextSong || waiting.current || selectingRef.current) return;
+    if (!o.enabled || o.autoAdvance === false || o.busy || o.manualNavigation.current || !o.nextSong || completedPass.current || waiting.current || selectingRef.current) return;
+    completedPass.current = true;
     cancelEnd();
     waiting.current = { deadline: performance.now() + COUNTDOWN_SECONDS * 1000, nextId: o.nextSong.id };
     setNotice(''); setCountdown(COUNTDOWN_SECONDS);
@@ -68,6 +74,7 @@ export function useLiveDirectorEventAdvance(options: Options) {
   useEffect(() => {
     generation.current++;
     cancelEnd(); waiting.current = null; selectingRef.current = false;
+    completedPass.current = false;
     starting.current = null; setCountdown(null); setSelecting(false); setNotice('');
   }, [options.identity, cancelEnd]);
 
@@ -76,8 +83,15 @@ export function useLiveDirectorEventAdvance(options: Options) {
       const o = latest.current;
       const request = o.request?.songId === o.songId && handled.current !== o.request.token ? o.request : null;
       if (!o.enabled) { cancel(); cancelEnd(); return; }
+      const finalStart = typeof o.finalStart === 'number' && Number.isFinite(o.finalStart) ? o.finalStart : null;
+      const position = o.getTime?.();
+      const boundary = finalStart ?? o.duration;
+      if (Number.isFinite(position) && position! < boundary - .1) {
+        completedPass.current = false;
+        if (waiting.current) cancel();
+      }
       if (waiting.current) {
-        if (!o.ready || o.busy || o.playing || o.manualNavigation.current || o.nextSong?.id !== waiting.current.nextId) { cancel(); return; }
+        if (!o.ready || o.busy || o.manualNavigation.current || o.nextSong?.id !== waiting.current.nextId) { cancel(); return; }
         const remaining = Math.max(0, Math.ceil((waiting.current.deadline - performance.now()) / 1000));
         setCountdown(previous => previous === remaining ? previous : remaining);
         if (remaining === 0) {
@@ -118,16 +132,21 @@ export function useLiveDirectorEventAdvance(options: Options) {
         });
         return;
       }
+      if (finalStart !== null && o.playing && o.ready && !o.busy && !o.manualNavigation.current &&
+          Number.isFinite(position) && position! >= finalStart) {
+        complete();
+      }
       // Edited arrangements own their end job. A repeat/jump owns the same
       // worklet scheduler, so relinquish it before any manual navigation.
       if (!o.playing || !o.ready || o.busy || o.hasArrangement || o.manualNavigation.current || !(o.duration > 0)) {
         cancelEnd(); return;
       }
-      if (ending.current || selectingRef.current) return;
+      if (completedPass.current || ending.current || selectingRef.current) return;
       try {
         const end = o.scheduleEnd?.(o.duration);
         if (!end) return;
         ending.current = end;
+        // Sin encadenar, el final igual se agenda para detener el transporte limpio; complete() no avanza.
         void end.completion.then(done => {
           if (ending.current !== end) return;
           ending.current = null;

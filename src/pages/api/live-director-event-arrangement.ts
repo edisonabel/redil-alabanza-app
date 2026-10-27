@@ -34,7 +34,10 @@ async function context(cookies: Parameters<typeof requireAuthenticatedUser>[0], 
   if (song.error) throw song.error;
   if (!song.data) throw new ApiSecurityError('Canción no disponible.', 404);
   const calibrated = applyBetaSongCalibration({ id: songId, sectionMarkers: song.data.section_markers });
-  const markers = Array.isArray(calibrated.sectionMarkers) ? calibrated.sectionMarkers : [];
+  const multitrackMarkers = song.data.multitrack_session?.sectionMarkers;
+  const markers = Array.isArray(multitrackMarkers) && multitrackMarkers.length
+    ? multitrackMarkers
+    : Array.isArray(calibrated.sectionMarkers) ? calibrated.sectionMarkers : [];
   const sectionIds = new Set((buildLiveDirectorSectionsFromMarkers(markers) || []).map(section => section.id));
   if (write && !sectionIds.size) throw new ApiSecurityError('La canción no tiene secciones disponibles.', 409);
   const sourceSignature = createHash('sha256').update(JSON.stringify({ markers, offset: song.data.multitrack_session?.sectionOffsetSeconds ?? 0 })).digest('hex');

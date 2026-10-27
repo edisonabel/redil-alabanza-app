@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {writeFile} from 'node:fs/promises';
+const LAB = process.env.LD_LAB_URL || 'http://127.0.0.1:4322'; // laboratorio Providencia (configurable)
 const {chromium}=createRequire(import.meta.url)('/Users/edisonaular/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
 const browser=await chromium.launch({headless:true,executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',args:['--mute-audio','--autoplay-policy=no-user-gesture-required']});
 const page=await browser.newPage({viewport:{width:1728,height:1000}}),errors=[],writes=[];
 page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{if(!['GET','HEAD'].includes(r.method()))writes.push(r.url());});
 try {
- await page.goto('http://127.0.0.1:4322/');
+ await page.goto(`${LAB}/`);
  await page.waitForFunction(()=>window.__streamingEngineDumpOwner?.getTracks().length===15&&!document.querySelector('[data-live-director-control="edit-song"]')?.disabled,null,{timeout:90000});
  const map=page.getByRole('slider',{name:'Mini-mapa de la canción'});
  await map.waitFor();assert.equal(await map.locator('[data-minimap-section]').count(),14);
@@ -20,6 +21,18 @@ try {
  await map.press('Home');await page.waitForFunction(()=>window.__streamingEngineDumpOwner.getCurrentTime()===0);
  await page.waitForFunction(()=>document.querySelector('[data-live-section-minimap]')?.getAttribute('aria-disabled')==='false');
  await map.press('ArrowRight');await page.waitForFunction(()=>window.__streamingEngineDumpOwner.getCurrentTime()===1);
+ await map.click({position:{x:(await map.boundingBox()).width/2,y:14}});
+ await page.waitForFunction(()=>Math.abs(window.__streamingEngineDumpOwner.getCurrentTime()-170)<1);
+ await page.waitForFunction(()=>!document.querySelector('[data-live-director-control="play-pause"]')?.disabled);
+ await page.locator('[data-live-director-control="play-pause"]').click();
+ await page.waitForFunction(()=>window.__streamingEngineDumpOwner.getCurrentTime()>170.5);
+ await page.locator('[data-live-director-control="play-pause"]').click();
+ await page.waitForFunction(()=>!document.querySelector('[data-live-director-control="play-pause"]')?.disabled);
+ const markerPosition=await page.locator('[data-live-minimap-playhead]').evaluate(node=>{
+   const map=node.parentElement,r=node.getBoundingClientRect(),b=map.getBoundingClientRect();
+   return {actual:(r.left+r.width/2-b.left)/b.width,expected:window.__streamingEngineDumpOwner.getCurrentTime()/Number(map.getAttribute('aria-valuemax'))};
+ });
+ assert.ok(Math.abs(markerPosition.actual-markerPosition.expected)<.004,'Paused minimap playhead must match the audio time');
  await page.getByRole('button',{name:'Editar canción',exact:true}).click();
  const editor=page.getByRole('region',{name:'Editar secciones de la canción'});
  assert.equal(await editor.locator('[data-arrangement-wave] path').count(),14);

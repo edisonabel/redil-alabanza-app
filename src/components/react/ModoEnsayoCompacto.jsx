@@ -1919,11 +1919,18 @@ export default function ModoEnsayoCompacto({
   const playbackSectionOffsetSeconds = activePlaybackSource && activePlaybackSource.kind !== 'original'
     ? liveDirectorSectionOffsetSeconds
     : 0;
+  const multitrackSectionMarkers = useMemo(() => {
+    const markers = getPersistedLiveDirectorSession(currentSong)?.sectionMarkers;
+    return Array.isArray(markers) && markers.length ? markers : null;
+  }, [currentSong]);
+  const activeSongSectionMarkers = activePlaybackSource?.kind !== 'original' && multitrackSectionMarkers
+    ? multitrackSectionMarkers
+    : currentSong?.sectionMarkers;
   const currentSongMarkers = useMemo(() => (
-    Array.isArray(currentSong?.sectionMarkers)
+    Array.isArray(activeSongSectionMarkers)
       ? (() => {
         let nextSectionSearchIndex = 0;
-        const mappedMarkers = currentSong.sectionMarkers
+        const mappedMarkers = activeSongSectionMarkers
           .filter((marker) => Number.isFinite(Number(marker?.startSec)))
           .map((marker, index) => ({
             id: marker?.id || `${currentSongKey}-marker-${index}`,
@@ -1972,7 +1979,7 @@ export default function ModoEnsayoCompacto({
         return repairMarkerTimeline(mappedMarkers, Math.max(0, currentSong?.duration || 0));
       })()
       : []
-  ), [currentSections, currentSong?.duration, currentSong?.sectionMarkers, currentSongKey, playbackSectionOffsetSeconds]);
+  ), [activePlaybackSource?.kind, activeSongSectionMarkers, currentSections, currentSong?.duration, currentSongKey, playbackSectionOffsetSeconds]);
   const hasAudio = typeof processedActivePlaybackUrl === 'string' && processedActivePlaybackUrl.trim() !== '';
   const shouldUseRehearsalMixCandidate = Boolean(
     hasAudio &&

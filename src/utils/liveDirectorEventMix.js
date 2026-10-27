@@ -3,6 +3,7 @@ import { fetchWithSessionRetry } from './authenticatedFetch.js';
 const MAX_EVENT_MIX_TRACKS = 64;
 const MAX_TRACK_ID_LENGTH = 160;
 const PENDING_EVENT_MIX_STORAGE_PREFIX = 'redil:live-director:event-mix:pending:v1:';
+const pendingMixReads = new Map();
 
 const clampVolume = (value, fallback = 1) => {
   const numeric = Number(value);
@@ -152,7 +153,7 @@ export const stagePendingLiveDirectorEventMix = ({ eventId = '', songId = '', mi
   }
 };
 
-const clearPendingLiveDirectorEventMixIfMatching = ({ eventId, songId, signature }) => {
+export const clearPendingLiveDirectorEventMixIfMatching = ({ eventId, songId, signature }) => {
   const storage = getLocalStorage();
   if (!storage) return false;
 
@@ -177,14 +178,23 @@ const parseJsonResponse = async (response) => {
 
 export async function fetchLiveDirectorEventMix({ eventId = '', songId = '' } = {}) {
   const params = new URLSearchParams({ evento_id: eventId, cancion_id: songId });
-  const response = await fetchWithSessionRetry(`/api/live-director-event-mix?${params.toString()}`, {
-    method: 'GET',
-    headers: { accept: 'application/json' },
-    credentials: 'same-origin',
-    cache: 'no-store',
-  });
-  const payload = await parseJsonResponse(response);
-  return normalizeLiveDirectorEventMix(payload?.mix);
+  const key = params.toString();
+  // Permission resolution can rerun the caller while its first read is still
+  // pending. Share that read instead of starting another cold SSR/R2 request.
+  if (pendingMixReads.has(key)) return pendingMixReads.get(key);
+  const read = (async () => {
+    const response = await fetchWithSessionRetry(`/api/live-director-event-mix?${key}`, {
+      method: 'GET',
+      headers: { accept: 'application/json' },
+      credentials: 'same-origin',
+      cache: 'no-store',
+    });
+    const payload = await parseJsonResponse(response);
+    return normalizeLiveDirectorEventMix(payload?.mix);
+  })();
+  pendingMixReads.set(key, read);
+  try { return await read; }
+  finally { if (pendingMixReads.get(key) === read) pendingMixReads.delete(key); }
 }
 
 export async function saveLiveDirectorEventMix({ eventId = '', songId = '', mix = null } = {}) {

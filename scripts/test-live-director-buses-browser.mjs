@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { mkdir, writeFile } from 'node:fs/promises';
+const LAB = process.env.LD_LAB_URL || 'http://127.0.0.1:4322'; // laboratorio Providencia (configurable)
 const { chromium } = createRequire(import.meta.url)('/Users/edisonaular/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
 const browser = await chromium.launch({ headless: true, executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', args: ['--mute-audio', '--autoplay-policy=no-user-gesture-required'] });
 const page = await browser.newPage({ viewport: { width: 1728, height: 1000 } });
@@ -19,7 +20,7 @@ async function expected(values) {
   await page.waitForFunction(values => Object.entries(values).every(([id, gain]) => Math.abs(window.__streamingEngineDumpOwner.groupGains.get(id) - gain) < 1e-7), values);
 }
 try {
-  await mkdir('.lab/results', { recursive: true }); await page.goto('http://127.0.0.1:4322/');
+  await mkdir('.lab/results', { recursive: true }); await page.goto(`${LAB}/`);
   await page.waitForFunction(() => window.__streamingEngineDumpOwner?.getTracks().length === 15 && !document.querySelector('[data-live-director-control="play-pause"]')?.disabled, null, { timeout: 90000 });
   const original = await volumes();
   await page.locator('[data-live-director-control="groups"]').click(); await panel.waitFor();

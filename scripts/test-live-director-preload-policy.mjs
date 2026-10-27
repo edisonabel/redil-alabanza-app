@@ -13,8 +13,8 @@ const desktopChrome = {
 
 assert.equal(
   shouldRunLiveDirectorFullFileWebPrewarm(desktopChrome),
-  true,
-  'Chrome desktop conserva el prewarm web existente.',
+  false,
+  'Chrome desktop no compite con el arranque descargando la siguiente canción completa.',
 );
 assert.equal(
   shouldRunLiveDirectorFullFileWebPrewarm({

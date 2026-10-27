@@ -1,4 +1,17 @@
-const VERSION = 'redil-sw-v4';
+const VERSION = 'redil-sw-v5';
+// Files Light 2 needs to keep playing a rehearsal saved on the device when the
+// connection drops: hashed bundles and the audio runtime are immutable (cache
+// first); workers and cue voices are versioned by query (network first).
+const RUNTIME_CACHE = `light2-runtime-${VERSION}`;
+const isImmutableRuntimePath = (pathname = '') => (
+  pathname.startsWith('/_astro/') || pathname.startsWith('/audio-runtime/')
+);
+const isRevalidatedRuntimePath = (pathname = '') => (
+  pathname.startsWith('/workers/')
+  || pathname.startsWith('/audio/guide-es/')
+  || pathname.startsWith('/audio/click-classic/')
+  || pathname.startsWith('/vendor/')
+);
 const ISOLATED_DOCUMENT_PATHS = new Set([
   '/herramientas/live-director-preview',
   '/ensayo',
@@ -20,7 +33,10 @@ self.addEventListener('activate', (event) => {
     const cacheNames = await caches.keys();
     await Promise.all(
       cacheNames
-        .filter((cacheName) => cacheName.startsWith('redil-sw-'))
+        .filter((cacheName) => (
+          cacheName.startsWith('redil-sw-')
+          || (cacheName.startsWith('light2-runtime-') && cacheName !== RUNTIME_CACHE)
+        ))
         .map((cacheName) => caches.delete(cacheName)),
     );
     await self.clients.claim();
@@ -56,12 +72,45 @@ const fetchIsolatedDocument = async (request) => {
   });
 };
 
+const isCacheableResponse = (response) => (
+  !!response && response.ok && response.status === 200 && response.type === 'basic'
+);
+
+const fetchRuntimeAsset = async (request, immutable) => {
+  const cache = await caches.open(RUNTIME_CACHE);
+  if (immutable) {
+    const cached = await cache.match(request);
+    if (cached) return cached;
+  }
+  try {
+    const response = await fetch(request);
+    if (isCacheableResponse(response)) {
+      await cache.put(request, response.clone()).catch(() => {});
+    }
+    return response;
+  } catch (error) {
+    const cached = await cache.match(request);
+    if (cached) return cached;
+    throw error;
+  }
+};
+
 self.addEventListener('fetch', (event) => {
   const { request } = event;
-  if (request.method !== 'GET' || request.mode !== 'navigate') return;
+  if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
-  if (url.origin !== self.location.origin || !isIsolatedDocumentPath(url.pathname)) return;
+  if (url.origin !== self.location.origin) return;
 
-  event.respondWith(fetchIsolatedDocument(request));
+  if (request.mode === 'navigate') {
+    if (!isIsolatedDocumentPath(url.pathname)) return;
+    event.respondWith(fetchIsolatedDocument(request));
+    return;
+  }
+
+  // Partial responses are never cached; audio stems use their own block cache.
+  if (request.headers.has('range')) return;
+  const immutable = isImmutableRuntimePath(url.pathname);
+  if (!immutable && !isRevalidatedRuntimePath(url.pathname)) return;
+  event.respondWith(fetchRuntimeAsset(request, immutable));
 });

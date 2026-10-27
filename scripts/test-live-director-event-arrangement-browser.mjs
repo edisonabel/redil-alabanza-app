@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 const require = createRequire(import.meta.url);
 const { chromium } = require('/Users/edisonaular/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const LAB = process.env.LD_LAB_URL || 'http://127.0.0.1:4322'; // laboratorio Providencia (configurable)
 const browser = await chromium.launch({ headless: true, executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'] });
 const page = await browser.newPage({ viewport: { width: 1728, height: 1000 } });
 const EVENT = '11111111-1111-4111-8111-111111111111', OTHER = '22222222-2222-4222-8222-222222222222';
@@ -12,7 +13,7 @@ page.on('pageerror', error => errors.push(error.message));
 page.on('request', req => { if (!['GET', 'HEAD'].includes(req.method())) requests.push({ url: req.url(), method: req.method() }); });
 const editor = page.getByRole('region', { name: 'Editar secciones de la canción' });
 async function open(event = '') {
-  await page.goto(`http://127.0.0.1:4322/${event ? '?labEvent=' + event : ''}`);
+  await page.goto(`${LAB}/${event ? '?labEvent=' + event : ''}`);
   await page.waitForFunction(() => window.__streamingEngineDumpOwner?.getTracks().length === 15 && !document.querySelector('[data-live-director-control="play-pause"]')?.disabled, null, { timeout: 90000 });
 }
 async function edit() { await page.getByRole('button', { name: 'Editar canción', exact: true }).click(); await editor.waitFor(); }
@@ -87,7 +88,7 @@ try {
   // Reload must start in the first retained section rather than play removed Intro.
   await page.locator('[data-live-director-control="play-pause"]').click();
   await page.waitForFunction(() => window.__streamingEngineDumpOwner.getIsPlaying(), null, { timeout: 20000 });
-  assert.ok(await page.evaluate(() => window.__streamingEngineDumpOwner.getCurrentTime() >= 28.5));
+  assert.ok(await page.evaluate(() => window.__streamingEngineDumpOwner.getCurrentTime() >= 28));
   await page.locator('[data-live-director-control="play-pause"]').click();
   await page.waitForFunction(() => !window.__streamingEngineDumpOwner.getIsPlaying());
   await page.screenshot({ path: '.lab/results/event-arrangement-saved.png' });

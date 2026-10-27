@@ -4,12 +4,13 @@ import assert from 'node:assert/strict';
 const require = createRequire(import.meta.url);
 const { build } = require('esbuild');
 const { chromium } = require('/Users/edisonaular/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const LAB = process.env.LD_LAB_URL || 'http://127.0.0.1:4322'; // laboratorio Providencia (configurable)
 const bundle = await build({ entryPoints: ['src/services/AudioGainRamp.ts'], bundle: true, write: false, format: 'iife', globalName: 'GainTools' });
 const browser = await chromium.launch({ headless: true, executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'] });
 try {
   const page = await browser.newPage();
-  await page.route('http://127.0.0.1:4322/fade-test', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Audio fade verification</title>' }));
-  await page.goto('http://127.0.0.1:4322/fade-test');
+  await page.route(`${LAB}/fade-test`, route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Audio fade verification</title>' }));
+  await page.goto(`${LAB}/fade-test`);
   await page.addScriptTag({ content: bundle.outputFiles[0].text });
   const result = await page.evaluate(async () => {
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));

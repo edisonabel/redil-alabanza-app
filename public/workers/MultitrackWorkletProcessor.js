@@ -14,6 +14,10 @@ const SYNC_FINE_DRIFT_MS = 15;
 const SYNC_HARD_DRIFT_MS = 40;
 const SYNC_HARD_REALIGN_INTERVAL_FRAMES = 4800;
 const GUIDE_DUCK_RAMP_SECONDS = 0.005;
+// AudioWorkletGlobalScope does not expose performance.now() in every browser.
+// Date.now() is coarse per quantum but its sum over one second stays unbiased.
+const RENDER_CLOCK_IS_PRECISE = typeof performance !== 'undefined' && !!performance && typeof performance.now === 'function';
+const readRenderClockMs = RENDER_CLOCK_IS_PRECISE ? () => performance.now() : () => Date.now();
 
 class MultitrackWorkletProcessor extends AudioWorkletProcessor {
   constructor() {
@@ -35,6 +39,9 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     this.debugPublishCountdownFrames = this.debugPublishIntervalFrames;
     this.publishMeterMessages = true;
     this.publishDebugMessages = false;
+    this.renderBusyMs = 0;
+    this.renderBudgetMs = 0;
+    this.renderPeakRatio = 0;
     this.telemetry = null;
     this.telemetryBaseSeconds = 0;
     this.telemetryBaseRenderedFrames = 0;
@@ -260,7 +267,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
 
     if (type === 'track-group-gain') {
       const track = this.tracks[message.trackIndex];
-      if (track) track.groupGain = Math.max(0, Math.min(1, Number.isFinite(message.gain) ? message.gain : 1));
+      if (track) track.groupGain = Math.max(0, Math.min(4, Number.isFinite(message.gain) ? message.gain : 1));
       return;
     }
 
@@ -483,6 +490,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
   }
 
   resetTracks() {
+    this.songSwitchFadeBoundaryFrame = null;
     this.cancelSectionSwitch();
     this.tracks = [];
     this.trackCount = 0;
@@ -583,8 +591,8 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     }
   }
 
-  configureTrack(config) {
-    this.cancelSectionSwitch();
+  configureTrack(config, detached = false) {
+    if (!detached) this.cancelSectionSwitch();
     const trackIndex = typeof config.trackIndex === 'number' ? config.trackIndex : -1;
 
     if (trackIndex < 0) {
@@ -600,7 +608,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       return;
     }
 
-    let track = this.tracks[trackIndex];
+    let track = detached ? null : this.tracks[trackIndex];
     const usesSharedMemory = !!config.usesSharedMemory;
 
     if (!track) {
@@ -666,7 +674,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         driftHoldFrames: 0,
         consumedFramesSinceReport: 0,
       };
-      this.tracks[trackIndex] = track;
+      if (!detached) this.tracks[trackIndex] = track;
     } else {
       track.id = config.id || track.id;
       track.volume = this.clampVolume(
@@ -735,6 +743,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       track.indices = null;
     }
 
+    if (detached) return track;
     if (trackIndex >= this.trackCount) {
       this.trackCount = trackIndex + 1;
     }
@@ -1080,7 +1089,28 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     track.loopJumpFadeTotalFrames = totalFrames;
   }
 
+  // Diagnostics compare render time with the real-time budget of each quantum,
+  // so an overloaded mix shows up before it becomes an audible dropout.
   process(inputs, outputs) {
+    if (!this.publishDebugMessages) {
+      return this.renderQuantum(inputs, outputs);
+    }
+
+    const startedAt = readRenderClockMs();
+    const keepAlive = this.renderQuantum(inputs, outputs);
+    const busyMs = readRenderClockMs() - startedAt;
+    const output = outputs[0];
+    const frameCount = output && output[0] ? output[0].length : BASE_RENDER_FRAME_COUNT;
+    const budgetMs = (frameCount / (sampleRate || 48000)) * 1000;
+    this.renderBusyMs += busyMs;
+    this.renderBudgetMs += budgetMs;
+    if (RENDER_CLOCK_IS_PRECISE && busyMs / budgetMs > this.renderPeakRatio) {
+      this.renderPeakRatio = busyMs / budgetMs;
+    }
+    return keepAlive;
+  }
+
+  renderQuantum(inputs, outputs) {
     const output = outputs[0];
 
     if (!output || output.length === 0) {
@@ -1141,7 +1171,8 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
           if (offset > 0) this.mixTracks(output, outputChannelCount, offset, renderStartFrame, 0);
           this.commitSectionSwitch(plan, renderStartFrame + offset);
           const remaining = frameCount - offset;
-          if (remaining > 0) this.mixTracks(output, outputChannelCount, remaining, renderStartFrame + offset, offset);
+          if (remaining > 0 && !plan.pauseAtTarget) this.mixTracks(output, outputChannelCount, remaining, renderStartFrame + offset, offset);
+          if (plan.pauseAtTarget) this.renderedFrames -= remaining;
           plan.completeMessage.contextTime = plan.contextTime;
           plan.completeMessage.positionSeconds = this.getTelemetryPositionSeconds();
           this.port.postMessage(plan.completeMessage);
@@ -1177,6 +1208,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       return true;
     }
 
+    this.applySongSwitchFade(output,outputChannelCount,frameCount,renderStartFrame);
     this.publishMusicMeter(frameCount);
     this.applySeekResumeFade(output, outputChannelCount, frameCount);
     this.writeTelemetrySnapshot(this.getTelemetryPositionSeconds());
@@ -1233,11 +1265,11 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     const seen = new Set();
     for (let index = 0; index < message.tracks.length; index += 1) {
       const config = message.tracks[index];
-      if (!config || !Number.isInteger(config.trackIndex) || config.trackIndex < 0) {
+      if (!config || !Number.isInteger(config.trackIndex) || config.trackIndex < 0 || (message.replaceSong && config.trackIndex !== index)) {
         reject('invalid-tracks');
         return;
       }
-      const active = this.tracks[config.trackIndex];
+      const active = message.replaceSong ? this.configureTrack(config, true) : this.tracks[config.trackIndex];
       const capacity = config.capacity;
       if (!active || seen.has(config.trackIndex) || !Number.isInteger(capacity) || capacity < minimumFrames ||
           config.sampleRate !== rate || config.channelCount !== 1 ||
@@ -1254,12 +1286,15 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     for (let index = 0; index < this.trackCount; index += 1) {
       if (this.tracks[index]) activeCount += 1;
     }
-    if (activeCount === 0 || tracks.length !== activeCount) {
+    if (activeCount === 0 || (!message.replaceSong && tracks.length !== activeCount) || tracks.length === 0) {
       reject('incomplete-tracks');
       return;
     }
+    if (message.replaceSong) this.ensureMeterCapacity(tracks.length);
     this.pendingSectionSwitch = {
-      serial, control, tracks, boundaryFrame, targetFrame, targetSeconds: targetFrame / rate, minimumFrames,
+      serial, control, tracks, replaceSong: message.replaceSong === true, pauseAtTarget: message.pauseAtTarget === true,
+      nextTracks: message.replaceSong ? tracks.map(entry => entry.active) : null,
+      boundaryFrame, targetFrame, targetSeconds: targetFrame / rate, minimumFrames,
       timing: message.controlBuffer.byteLength >= 24 ? new Float64Array(message.controlBuffer, 8, 2) : null,
       contextTime: 0,
       completeMessage: { type: 'section-switch-complete', serial, targetSeconds: targetFrame / rate, contextTime: 0, positionSeconds: 0 },
@@ -1288,7 +1323,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       const entry = plan.tracks[index];
       const read = Atomics.load(entry.indices, READ_INDEX_SLOT);
       const write = Atomics.load(entry.indices, WRITE_INDEX_SLOT);
-      if (this.tracks[entry.active.trackIndex] !== entry.active || read !== entry.targetIndex ||
+      if ((!plan.replaceSong && this.tracks[entry.active.trackIndex] !== entry.active) || read !== entry.targetIndex ||
           write < 0 || write >= entry.indexCapacity ||
           this.computeAvailableRead(read, write, entry.indexCapacity) < plan.minimumFrames ||
           this.computeAvailableRead(read, write, entry.indexCapacity) > entry.capacity) return false;
@@ -1298,6 +1333,8 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
 
   commitSectionSwitch(plan, boundaryFrame) {
     this.activeSeekSerial = plan.serial;
+    if (plan.replaceSong) { this.tracks = plan.nextTracks; this.trackCount = plan.tracks.length; this.soloCount = 0; this.songSwitchFadeBoundaryFrame = boundaryFrame; }
+    if (plan.pauseAtTarget) this.playing = false;
     for (let index = 0; index < plan.tracks.length; index += 1) {
       const entry = plan.tracks[index];
       const track = entry.active;
@@ -1324,6 +1361,17 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     this.telemetryBaseRenderedFrames = boundaryFrame;
     // Keep the existing gain: a ready section switch is not a seek restart.
     this.fadeInFramesRemaining = 0;
+  }
+
+  applySongSwitchFade(output,channels,frames,startFrame) {
+    const boundary=this.pendingSectionSwitch?.replaceSong?this.pendingSectionSwitch.boundaryFrame:this.songSwitchFadeBoundaryFrame;
+    if(!Number.isFinite(boundary))return;
+    const ramp=Math.max(1,Math.round((sampleRate||48000)*.003));
+    if(startFrame>boundary+ramp){this.songSwitchFadeBoundaryFrame=null;return;}
+    for(let i=0;i<frames;i++){
+      const gain=Math.min(1,Math.abs(startFrame+i-boundary)/ramp);
+      if(gain<1)for(let channel=0;channel<channels;channel++)output[channel][i]*=gain;
+    }
   }
 
   publishMusicMeter(frameCount) {
@@ -2000,8 +2048,17 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       audibleZeroTracks,
       minAvailableRead:
         minAvailableRead === Number.POSITIVE_INFINITY ? 0 : minAvailableRead,
+      renderLoadPct: this.renderBudgetMs > 0
+        ? Math.round((this.renderBusyMs / this.renderBudgetMs) * 1000) / 10
+        : null,
+      renderPeakPct: RENDER_CLOCK_IS_PRECISE
+        ? Math.round(this.renderPeakRatio * 1000) / 10
+        : null,
       tracks,
     });
+    this.renderBusyMs = 0;
+    this.renderBudgetMs = 0;
+    this.renderPeakRatio = 0;
   }
 
   applySeekResumeFade(output, outputChannelCount, frameCount) {

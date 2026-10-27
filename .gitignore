@@ -1,5 +1,6 @@
 # build output
 dist/
+/public/audio-runtime/
 # generated types
 .astro/
 
@@ -36,3 +37,6 @@ pnpm-debug.log*
 
 # Local Netlify folder
 .netlify
+
+# salidas generadas localmente (guía PDF, pruebas del importador)
+/output/

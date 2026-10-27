@@ -8,10 +8,13 @@ import {
   StreamingMultitrackEngine,
   type SharedStreamingTelemetry,
   type LiveDirectorLevelMeter,
+  type DeviceDownloadProgress,
+  type DeviceDownloadResult,
 } from '../services/StreamingMultitrackEngine';
 import type { TrackOutputRoute } from '../utils/liveDirectorTrackRouting';
 import type { TrackActivityEnvelope } from '../utils/audioActivityEnvelope';
 import { primeLiveDirectorStemConnection } from '../utils/liveDirectorStemTransport';
+import { resolveFetchableAudioUrl } from '../lib/audio-playback.js';
 import {
   errorLiveDiagnostic,
   readLiveBrowserCapabilities,
@@ -34,11 +37,6 @@ const UI_UPDATE_INTERVAL_MS = 1000 / 24;
 const DIAGNOSTICS_UPDATE_INTERVAL_MS = 1000;
 const TRACK_LEVEL_UPDATE_THRESHOLD = 0.006;
 const MAX_TRACK_VOLUME = 2;
-const STREAMING_STEMS_HOST = 'stems.alabanzaredilestadio.com';
-const STREAMING_DIRECT_CORS_HOSTS = new Set([
-  'alabanzaredilestadio.com',
-  'www.alabanzaredilestadio.com',
-]);
 type EngineKind = 'buffer' | 'streaming';
 type EngineInstance = MultitrackEngine | StreamingMultitrackEngine;
 export type SeekToOptions = {
@@ -71,8 +69,17 @@ type UseMultitrackEngineOptions = {
 export type UseMultitrackEngineReturn = {
   getLevelMeterSnapshot?: () => LiveDirectorLevelMeter | null;
   resetLevelMeter?: () => void;
+  refreshTransport?:()=>void;
+  prepareRestart?: (pauseAtTarget?: boolean, targetSeconds?: number) => Promise<{serial:number;completion:Promise<boolean>}>;
+  prepareSongChange?: (tracks: TrackData[], pauseAtTarget?: boolean, targetSeconds?: number) => Promise<{ serial: number; completion: Promise<boolean> }>;
+  schedulePreparedSongChange?: (serial: number, boundary: number) => void;
   prepareSectionJump?: (targetSeconds: number, boundarySeconds: number) => Promise<{ serial: number; completion: Promise<boolean> }>;
   cancelSectionJump?: (serial?: number) => void;
+  prefetchSectionStarts?: (startSeconds: number[]) => void;
+  downloadTracksToDevice?: (
+    tracks: TrackData[],
+    options: { rehearsalId: string; songIds: string[]; onProgress?: (progress: DeviceDownloadProgress) => void },
+  ) => { completion: Promise<DeviceDownloadResult>; cancel: () => void };
   scheduleSectionEnd?: (endSeconds: number) => { completion: Promise<boolean>; cancel: () => void };
   runtimeError?: string | null;
   getGuideAudioGraph?: (trackId: string) => GuideAudioGraph | null;
@@ -146,35 +153,15 @@ const unwrapAudioProxyUrl = (rawUrl: string | undefined): string => {
         ? window.location.origin
         : 'https://alabanzaredilestadio.com';
     const parsed = new URL(candidate, baseOrigin);
-    const baseHost = new URL(baseOrigin).hostname.toLowerCase();
-
     if (parsed.pathname === '/api/mp3-proxy') {
       const source = parsed.searchParams.get('src');
       if (source) {
-        return STREAMING_DIRECT_CORS_HOSTS.has(baseHost)
-          ? rewriteStreamingStemUrl(source)
-          : parsed.href;
+        return resolveFetchableAudioUrl(source, { origin: baseOrigin });
       }
     }
-
-    return rewriteStreamingStemUrl(parsed.href);
+    return resolveFetchableAudioUrl(parsed.href, { origin: baseOrigin });
   } catch {
-    return rewriteStreamingStemUrl(candidate);
-  }
-};
-
-const rewriteStreamingStemUrl = (rawUrl: string): string => {
-  try {
-    const parsed = new URL(rawUrl);
-    if (parsed.hostname.toLowerCase().endsWith('.r2.dev')) {
-      parsed.protocol = 'https:';
-      parsed.hostname = STREAMING_STEMS_HOST;
-      parsed.port = '';
-      return parsed.href;
-    }
-    return parsed.href;
-  } catch {
-    return rawUrl;
+    return candidate;
   }
 };
 
@@ -470,6 +457,15 @@ export function useMultitrackEngine(
   const initialize = useCallback(async (tracks: TrackData[]) => {
     const initializationToken = ++initializationTokenRef.current;
     const nextTracks = cloneTracks(tracks);
+    const preparedEngine = engineRef.current;
+    if (preparedEngine instanceof StreamingMultitrackEngine && preparedEngine.consumePreparedSong(buildStreamingWorkerTracks(nextTracks))) {
+      const loadedTracks = preparedEngine.getTracks();
+      setTrackVolumes(buildTrackVolumes(loadedTracks)); setTrackEnvelopes(buildTrackEnvelopes(loadedTracks));
+      setLoadWarnings(preparedEngine.getLoadWarnings()); setRuntimeError(null); commitLoadProgress(null);
+      commitDuration(preparedEngine.getDuration()); commitDiagnostics(preparedEngine.getDiagnostics());
+      currentTimeRef.current = preparedEngine.getCurrentTime(); setCurrentTime(currentTimeRef.current);
+      setIsPlaying(preparedEngine.getIsPlaying()); setIsReady(true); return;
+    }
 
     const targetKind = requestedEngineKind;
     let engine: EngineInstance | null = null;
@@ -536,7 +532,10 @@ export function useMultitrackEngine(
         return;
       }
 
-      if (targetKind === 'streaming' && !isMissingStemError(error)) {
+      // Fetch stalls and cancellations cannot be repaired by decoding every
+      // full song into RAM. Only a known codec/configuration incompatibility
+      // justifies the compatible-engine retry.
+      if (targetKind === 'streaming' && isUnsupportedStreamingConfigError(error) && !isMissingStemError(error)) {
         const fallbackCapabilities = readLiveBrowserCapabilities();
         const fallbackPolicy = resolveStreamingFallbackPolicy(
           fallbackCapabilities,
@@ -736,6 +735,9 @@ export function useMultitrackEngine(
 
   const stop = useCallback(() => {
     const engine = engineRef.current;
+    // React is adopting an already audible destination. Its source cleanup
+    // and identity effects must not stop that destination between renders.
+    if (engine instanceof StreamingMultitrackEngine && engine.isAwaitingSongAdoption()) return;
     if (!engine) {
       return;
     }
@@ -917,9 +919,38 @@ export function useMultitrackEngine(
     }
     return engine.prepareSectionJump(targetSeconds, boundarySeconds);
   }, []);
+  const prepareRestart = useCallback(async (pauseAtTarget = false, targetSeconds = 0) => {
+    const engine = engineRef.current;
+    if (!(engine instanceof StreamingMultitrackEngine)) throw new Error('Reinicio preparado no disponible.');
+    return engine.prepareRestart(pauseAtTarget,targetSeconds);
+  },[]);
+  const refreshTransport=useCallback(()=>{const engine=engineRef.current;if(engine){commitCurrentTime(engine.getCurrentTime());setIsPlaying(engine.getIsPlaying());}},[commitCurrentTime]);
+  const prepareSongChange = useCallback(async (tracks: TrackData[], pauseAtTarget = false, targetSeconds = 0) => {
+    const engine = engineRef.current;
+    if (!(engine instanceof StreamingMultitrackEngine)) throw new Error('Este motor no permite preparar otra canción.');
+    return engine.prepareSongChange(buildStreamingWorkerTracks(cloneTracks(tracks)), pauseAtTarget,targetSeconds);
+  }, []);
+  const schedulePreparedSongChange = useCallback((serial: number, boundary: number) => {
+    const engine = engineRef.current;
+    if (!(engine instanceof StreamingMultitrackEngine)) throw new Error('Cambio preparado no disponible.');
+    engine.schedulePreparedSongChange(serial,boundary);
+  }, []);
   const cancelSectionJump = useCallback((serial?: number) => {
     const engine = engineRef.current;
     if (engine instanceof StreamingMultitrackEngine) engine.cancelSectionJump(serial);
+  }, []);
+  const prefetchSectionStarts = useCallback((startSeconds: number[]) => {
+    const engine = engineRef.current;
+    if (engine instanceof StreamingMultitrackEngine) engine.prefetchSectionStarts(startSeconds);
+  }, []);
+  const downloadTracksToDevice = useCallback((
+    tracks: TrackData[],
+    options: { rehearsalId: string; songIds: string[]; onProgress?: (progress: DeviceDownloadProgress) => void },
+  ) => {
+    const engine = engineRef.current;
+    if (!(engine instanceof StreamingMultitrackEngine)) throw new Error('Este motor no permite guardar el ensayo en el equipo.');
+    // Same URL resolution as playback, so the saved blocks are the ones it reads.
+    return engine.downloadTracksToDevice(buildStreamingWorkerTracks(cloneTracks(tracks)), options);
   }, []);
 
   const scheduleSectionEnd = useCallback((endSeconds: number) => {
@@ -1092,8 +1123,11 @@ export function useMultitrackEngine(
       setTrackGroupGain,
       getLevelMeterSnapshot,
       resetLevelMeter,
+      refreshTransport, prepareRestart, prepareSongChange, schedulePreparedSongChange,
       prepareSectionJump,
       cancelSectionJump,
+      prefetchSectionStarts,
+      downloadTracksToDevice,
       scheduleSectionEnd,
       isPlaying,
       currentTime,
@@ -1135,8 +1169,11 @@ export function useMultitrackEngine(
       setTrackGroupGain,
       getLevelMeterSnapshot,
       resetLevelMeter,
+      refreshTransport, prepareRestart, prepareSongChange, schedulePreparedSongChange,
       prepareSectionJump,
       cancelSectionJump,
+      prefetchSectionStarts,
+      downloadTracksToDevice,
       scheduleSectionEnd,
       currentTime,
       duration,

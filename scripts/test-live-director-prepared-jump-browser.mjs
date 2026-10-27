@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 const require = createRequire(import.meta.url);
 const { chromium } = require('/Users/edisonaular/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const LAB = process.env.LD_LAB_URL || 'http://127.0.0.1:4322'; // laboratorio Providencia (configurable)
 const browser = await chromium.launch({ headless: true, executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'] });
 const page = await browser.newPage({ viewport: { width: 1728, height: 1000 } });
 const errors = [], writes = [], results = [];
@@ -47,7 +48,7 @@ async function snapshot() {
 }
 try {
   await mkdir('.lab/results', { recursive: true });
-  await page.goto('http://127.0.0.1:4322/', { waitUntil: 'domcontentloaded' });
+  await page.goto(`${LAB}/`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => {
     const control = document.querySelector('[data-live-director-control="play-pause"]');
     return control && !control.disabled && typeof window.__streamingEngineDumpOwner?.prepareSectionJump === 'function';
@@ -102,7 +103,7 @@ try {
       await page.waitForFunction(boundary => {
         const e = window.__streamingEngineDumpOwner;
         return boundary - e.getSharedTelemetry().currentTime[0] < .22;
-      }, source.end, { timeout: 12000 });
+      }, source.end, { timeout: 20000 }); // se posiciona 14 s antes del final: 12 s no alcanzaban
       await page.evaluate(() => { const started = performance.now(); while (performance.now() - started < 750) {} });
     }
     await page.waitForFunction(serial => window.__preparedEvents.some(event => event.name === 'handleWorkletMessage:section-switch-complete' && event.serial === serial), plan.serial, { timeout: 15000 });

@@ -7,9 +7,11 @@ const DRIVE_HOSTS = new Set([
 const R2_AUDIO_HOST = 'stems.alabanzaredilestadio.com';
 const AUDIO_API_PATHS = new Set(['/api/audio', '/api/mp3-proxy']);
 const AUDIO_PROXY_VERSION = '3';
+const BETA_DIRECT_AUDIO_HOST = 'light2-edison-beta--alabanzaredilestadio.netlify.app';
 const R2_DIRECT_CORS_HOSTS = new Set([
   'alabanzaredilestadio.com',
   'www.alabanzaredilestadio.com',
+  BETA_DIRECT_AUDIO_HOST,
 ]);
 
 const resolveBaseOrigin = (origin = '') => {
@@ -217,6 +219,12 @@ export const resolveFetchableAudioUrl = (rawUrl, { origin = '', preferSameOrigin
   if (!normalized) return '';
 
   if (isAudioApiUrl(normalized, { origin })) {
+    const source = new URL(normalized).searchParams.get('src');
+    if (source && isR2AudioUrl(source, { origin })) {
+      if (new URL(resolveBaseOrigin(origin)).hostname === BETA_DIRECT_AUDIO_HOST) {
+        return normalizeR2PublicUrl(source);
+      }
+    }
     return toAudioApiUrl(normalized, { origin });
   }
 
@@ -239,6 +247,10 @@ export const resolveFetchableAudioUrl = (rawUrl, { origin = '', preferSameOrigin
   }
 
   if (parsed.protocol === 'https:' && isR2AudioUrl(normalized, { origin })) {
+    // The private beta has its own verified GET/HEAD CORS rule in R2.
+    if (base.protocol === 'https:' && base.hostname === BETA_DIRECT_AUDIO_HOST) {
+      return normalized;
+    }
     if (!preferSameOrigin && canUseDirectR2AudioUrl(baseOrigin)) {
       return normalized;
     }

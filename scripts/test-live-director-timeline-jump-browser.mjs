@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 const require = createRequire(import.meta.url);
 const { chromium } = require('/Users/edisonaular/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const LAB = process.env.LD_LAB_URL || 'http://127.0.0.1:4322'; // laboratorio Providencia (configurable)
 const browser = await chromium.launch({ headless: true, executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'] });
 const page = await browser.newPage({ viewport: { width: 1728, height: 1000 } });
 const errors = [], writes = [];
@@ -25,12 +26,13 @@ async function exposeSection(index) {
   await button.scrollIntoViewIfNeeded(); return button;
 }
 try {
-  await page.goto('http://127.0.0.1:4322/', { waitUntil: 'domcontentloaded' });
+  await page.goto(`${LAB}/`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => document.querySelector('[data-live-director-control="play-pause"]') && !document.querySelector('[data-live-director-control="play-pause"]').disabled, null, { timeout: 90000 });
   await mkdir('.lab/results', { recursive: true });
   await page.locator('[data-live-director-control="groups"]').click();
   const groups = page.getByRole('region', { name: 'Grupos de mezcla', exact: true });
-  assert.equal(await groups.locator('.live-director-track-strip').count(), 5, 'Groups must use the actual ChannelStrip');
+  // Providencia tiene stems en los 8 grupos (6 buses musicales + Otros + Click y guía, commit 8506623).
+  assert.equal(await groups.locator('.live-director-track-strip').count(), 8, 'Groups must use the actual ChannelStrip');
   assert.equal(await groups.locator('input[type="range"]').count(), 0, 'No horizontal replacement faders');
   await page.screenshot({ path: '.lab/results/group-faders-desktop.png' });
   if (await page.getByRole('button', { name: 'Mostrar faders de mezcla', exact: true }).count()) await page.getByRole('button', { name: 'Mostrar faders de mezcla', exact: true }).click();
@@ -63,8 +65,17 @@ try {
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => !document.querySelector('[aria-label="Cancelar salto de sección"]'));
   assert.ok(await clock() < markers[0].end);
+  for (const label of ['Ir a la sección siguiente', 'Ir a la sección anterior']) {
+    await page.getByRole('button', {name: label, exact: true}).click();
+    await page.getByRole('button', {name: 'Cancelar salto de sección', exact: true}).waitFor();
+    assert.ok(await clock() < markers[0].end, 'Live section buttons arm a prepared transition without a foreground seek');
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !window.__streamingEngineDumpOwner.pendingSectionJump);
+  }
   await playPause();
-  await page.locator('[data-live-director-control="groups"]').click();
+  // «Grupos» es un interruptor y su estado se conserva: abrir solo si está cerrado.
+  const groupsToggle = page.locator('[data-live-director-control="groups"]');
+  if (await groupsToggle.getAttribute('aria-pressed') !== 'true') await groupsToggle.click();
   await page.setViewportSize({ width: 844, height: 390 });
   await page.screenshot({ path: '.lab/results/group-faders-landscape.png' });
   assert.equal(await groups.getByRole('slider', { name: 'Volume for Ritmo', exact: true }).isVisible(), true);

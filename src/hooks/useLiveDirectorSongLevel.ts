@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 // Session-scoped listening adjustment. Never writes the song or event mix.
-const normalize = (value: unknown) => Number.isFinite(Number(value)) ? Math.round(Math.max(-24, Math.min(0, Number(value))) * 10) / 10 : 0;
+const normalize = (value: unknown) => Number.isFinite(Number(value)) ? Math.round(Math.max(-24, Math.min(12, Number(value))) * 10) / 10 : 0;
 export function useLiveDirectorSongLevel(scope: string) {
   const key = `redil:live-director:song-level:v1:${scope}`;
   const stored = useMemo(() => {

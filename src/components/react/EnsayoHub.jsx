@@ -17,6 +17,8 @@ import {
   sanitizeVoiceTrackAnchors,
 } from '../../utils/voiceTrackSync.js';
 import { buildLiveDirectorSyncChannelName } from '../../utils/liveDirectorSync';
+import { fetchEventArrangement } from '../../utils/liveDirectorEventArrangement';
+import { applyChordProEventArrangement } from '../../utils/applyChordProEventArrangement';
 import {
   PRO_PLAYER_REPEAT_MODES,
   resolveProPlayerQueueIndex,
@@ -1391,6 +1393,20 @@ export default function EnsayoHub({
     };
 
     try {
+      const eventArrangements = new Map();
+      if (rehearsalEventId) {
+        await Promise.all(printableSongs.map(async (song) => {
+          const songId = String(song?.id || '');
+          if (!songId) return;
+          const result = await fetchEventArrangement(rehearsalEventId, songId);
+          const arrangement = result.arrangement;
+          if (arrangement?.entries && arrangement.sourceSignature !== result.sourceSignature) {
+            throw new Error(`El arreglo de “${song?.title || 'esta canción'}” quedó desactualizado. Abre el Director, revísalo y vuelve a exportar.`);
+          }
+          eventArrangements.set(songId, arrangement?.entries || null);
+        }));
+      }
+
       const subtitle = [serviceDate, serviceHour].filter(Boolean).join(' · ');
       const fileName = `${buildSafePdfFileName(displayContextTitle)} - setlist V2.pdf`;
       payload = {
@@ -1421,7 +1437,14 @@ export default function EnsayoHub({
             order: index + 1,
             title: song?.title || `Cancion ${index + 1}`,
             artist: song?.artist || '',
-            chordProText: transposeChordProText(song?.chordpro || '', transpositionSteps),
+            chordProText: transposeChordProText(
+              applyChordProEventArrangement(
+                song?.chordpro || '',
+                song?.sectionMarkers || [],
+                eventArrangements.get(songId),
+              ),
+              transpositionSteps,
+            ),
             metadata: {
               tone: metadataTone === '-' ? '' : metadataTone,
               capo: capo > 0 ? `${capo}${shapeTone ? ` (${shapeTone})` : ''}` : '0',
@@ -1482,7 +1505,7 @@ export default function EnsayoHub({
     } finally {
       setIsGeneratingSetlistPdf(false);
     }
-  }, [displayContextTitle, isGeneratingSetlistPdf, printableSongs, serviceDate, serviceHour, setlistCapos, setlistRenderMode, setlistTones]);
+  }, [displayContextTitle, isGeneratingSetlistPdf, printableSongs, rehearsalEventId, serviceDate, serviceHour, setlistCapos, setlistRenderMode, setlistTones]);
 
   const openCompactSong = useCallback((song) => {
     if (!song) return;

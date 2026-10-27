@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 const require = createRequire(import.meta.url);
 const { chromium } = require('/Users/edisonaular/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const LAB = process.env.LD_LAB_URL || 'http://127.0.0.1:4322'; // laboratorio Providencia (configurable)
 const browser = await chromium.launch({ headless: true, executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'] });
 const page = await browser.newPage({ viewport: { width: 1728, height: 1000 } });
 const errors = [], writes = [], results = [];
@@ -23,7 +24,7 @@ try {
       return start.call(this, when, ...args);
     };
   });
-  await page.goto('http://127.0.0.1:4322/');
+  await page.goto(`${LAB}/`);
   await page.waitForFunction(() => window.__streamingEngineDumpOwner?.getTracks().length === 15 && !document.querySelector('[data-live-director-control="play-pause"]')?.disabled, null, { timeout: 90000 });
   await page.waitForFunction(() => document.querySelector('[data-live-director-control="guide-status"]')?.dataset.guideState === 'ready');
   await page.evaluate(async () => {
@@ -86,16 +87,20 @@ try {
       switches: window.__guideSwitches,
       rows: await new Promise(resolve => { window.__guideProbe.port.onmessage = event => resolve(event.data); window.__guideProbe.port.postMessage('read'); }),
     }));
-    assert.equal(data.voices.length, 1);
-    const voice = data.voices[0], windowMessage = data.messages.find(message => message.type === 'track-guide-duck');
+    // Salto a una sección no contigua o repetición: el nombre y luego el conteo 1-2-3-4 (4/4).
+    assert.equal(data.voices.length, 5, 'Nombre del destino + conteo de 4');
+    const voice = data.voices[0], lastVoice = data.voices.at(-1), windowMessage = data.messages.find(message => message.type === 'track-guide-duck');
     assert.ok(data.acknowledgements.some(ack => ack.requestId === windowMessage.requestId && ack.at <= voice.scheduledAt));
     assert.ok(voice.when - windowMessage.startAudioTime >= .99, 'Suppress the old announcement two beats before the new voice at 120 BPM');
-    const protectedRows = data.rows.filter(row => row.time >= windowMessage.startAudioTime + .01 && row.time < voice.when + voice.duration);
+    // La guía grabada calla desde antes del nombre hasta el tiempo fuerte del destino (fin del conteo);
+    // desde ahí suena la guía propia de la sección destino (rampa de entrada de ~10 ms).
+    assert.ok(windowMessage.endAudioTime >= lastVoice.when, 'La ventana cubre todo el conteo');
+    const protectedRows = data.rows.filter(row => row.time >= windowMessage.startAudioTime + .01 && row.time < windowMessage.endAudioTime - .01);
     assert.ok(protectedRows.length > 200);
     assert.equal(Math.max(...protectedRows.map(row => row.original)), 0, 'Recorded Guide must be fully silent before and during the new voice');
     assert.ok(Math.max(...protectedRows.map(row => row.voice)) > .05, 'The replacement voice must actually render');
     assert.equal(data.rows.reduce((sum, row) => sum + row.overlap, 0), 0);
-    assert.equal(data.switches[0].targetSeconds, repeat ? 285.5 : 317.5);
+    assert.equal(data.switches[0].targetSeconds, repeat ? 284 : 316); // mapa REAPER (e640744)
     results.push({ name, readyTracks: preparation.readyTracks, confirmedBeforeVoice: true, silenceLeadSeconds: voice.when - windowMessage.startAudioTime, recordedPeakDuringProtectedWindow: 0, overlappingSamples: 0, replacementVoicePeak: Math.max(...protectedRows.map(row => row.voice)), uiStallMs: repeat ? 750 : 0 });
   }
   await playing(false);

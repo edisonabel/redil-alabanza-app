@@ -581,7 +581,7 @@ export class MultitrackEngine {
   }
 
   setTrackGroupGain(trackId: string, gain: number): void {
-    this.groupGains.set(trackId, Number.isFinite(gain) ? Math.max(0, Math.min(1, gain)) : 1);
+    this.groupGains.set(trackId, Number.isFinite(gain) ? Math.max(0, Math.min(4, gain)) : 1);
     const track = this.findTrack(trackId);
     if (track) this.syncTrackGain(track);
   }

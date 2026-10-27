@@ -953,7 +953,7 @@ const themeColors = brandingData;
       window.location.hostname === '127.0.0.1';
     if (isLocalHost) return;
     window.__REDIL_MAIN_SW_SYNC__ = true;
-    const mainServiceWorkerUrl = '/sw.js?v=redil-sw-v4';
+    const mainServiceWorkerUrl = '/sw.js?v=redil-sw-v5';
 
     // Defer SW registration to after page is interactive
     const doRegister = () => {
