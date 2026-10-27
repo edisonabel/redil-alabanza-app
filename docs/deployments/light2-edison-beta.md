@@ -489,3 +489,12 @@ REAPER»). Cambiar la rejilla vuelve a pedir confirmación.
 Checks: atajos (Esc, fila completa, Shift), click (UI, audio, calibración,
 generado), conteo, instrucciones, saltos, repeticiones, build e higiene (1398),
 acceso beta, sesión y recuperación de fetch. Remoto: `/` 302 y API 401 sin sesión.
+
+## Click generado +3 dB · 27 de octubre de 2026
+
+Beta `6ae0f1c0edc920bab88a4ec7`, commit `b6b3d67` (alias privado, sin `--prod`).
+Las muestras del click generado se multiplican por 1,41 (+3 dB) al cargarse, en
+todas las capas; faders, mezclas guardadas y balance entre capas no cambian.
+Medido en salida: solo acento 0,161 → 0,228 (+3,0 dB). Checks: click (UI, audio,
+calibración, generado), conteo, guía dinámica, build e higiene, acceso beta,
+sesión y recuperación de fetch. Remoto: `/` 302 y API 401 sin sesión.
