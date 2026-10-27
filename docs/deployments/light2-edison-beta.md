@@ -450,3 +450,23 @@ octubre desde el editor SQL de Supabase (texto idéntico al archivo, verificado 
 hash antes de ejecutar). Comprobado por API: la tabla
 `cancion_chart_preferencias_usuario` existe con sus columnas y la escritura sin
 sesión es rechazada por RLS. Solo crea objetos nuevos; no modifica datos existentes.
+
+## Atajos, buses guardados y fin sin cuenta · 27 de octubre de 2026
+
+Beta `6ae0dd696f35c5332e0b7237` (alias privado, sin `--prod`), commit `4e58f61`
+reescrito sin script temporal. Instrucciones «se dicen ahora» en la fila
+inferior del teclado por posición física: Z Sube intensidad, X Suave, C Pausa,
+N Toda la banda, M Entra batería, «,» Última vez, «.» Sostener, «-» A capella;
+con Shift: Z Hits, X Swell, C Final grande, V Sube tono, B Baja tono, N Teclado,
+M Bajo, «,» Batería, «.» Guitarra. Nuevas teclas G grupos, H hasta salir,
+L encadenar, I menú de instrucciones, A nivel de canción, T metrónomo, Shift+E
+editar; las existentes no cambian y Cmd/Ctrl no disparan nada. Los niveles,
+silencios y asignaciones de los buses se guardan en la mezcla del evento
+(`groups`, validado en el servidor) y vuelven al abrir la canción. Al terminar
+una canción ya no hay cuenta 5-4-3-2-1: solo «Encadenar» inicia la siguiente.
+«Configurar grupos» pasa a una columna al lado de los buses.
+
+Checks: suite 84/85 (la restante requiere astro dev en 4322), pruebas nuevas
+`test:live-shortcuts-ui` y `test:live-groups-save-ui`, build e higiene (1398
+archivos), acceso beta, sesión y recuperación de fetch. Remoto: `/` redirige a
+login, API de mezcla 401 sin sesión, worklet 200. Producción principal sin cambios.
