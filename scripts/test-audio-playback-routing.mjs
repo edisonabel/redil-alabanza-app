@@ -50,12 +50,9 @@ for (const origin of [productionOrigin, 'https://www.alabanzaredilestadio.com', 
 const localR2Url = resolveFetchableAudioUrl(r2Url, { origin: 'http://localhost:4321' });
 assert.match(localR2Url, /^http:\/\/localhost:4321\/api\/mp3-proxy\?/);
 
-const beta = 'https://light2-edison-beta--alabanzaredilestadio.netlify.app';
-assert.equal(resolveFetchableAudioUrl(r2Url, { origin: beta }), r2Url);
-assert.equal(resolveFetchableAudioUrl(r2Url, { origin: beta, preferSameOrigin: true }), r2Url);
-assert.equal(resolveFetchableAudioUrl(`${beta}/api/mp3-proxy?src=${encodeURIComponent(r2Url)}`, { origin: beta }), r2Url);
-assert.equal(resolveFetchableAudioUrl(`${beta}/api/mp3-proxy?src=${encodeURIComponent(r2Url)}`, { origin: beta, preferSameOrigin: true }), r2Url);
-assert.match(resolveFetchableAudioUrl(driveUrl, { origin: beta }), /\/api\/audio\?/);
-assert.equal(resolveFetchableAudioUrl('https://unrelated.example/voices/guide.m4a', { origin: beta }), 'https://unrelated.example/voices/guide.m4a');
+// El Live Director descarga los stems de R2 directo en producción; un proxy guardado se respeta.
+const storedProxy = `${productionOrigin}/api/mp3-proxy?src=${encodeURIComponent(r2Url)}&v=3`;
+assert.equal(new URL(resolveFetchableAudioUrl(storedProxy, { origin: productionOrigin })).pathname, '/api/mp3-proxy');
+assert.equal(resolveFetchableAudioUrl('https://unrelated.example/voices/guide.m4a', { origin: productionOrigin }), 'https://unrelated.example/voices/guide.m4a');
 
 console.log('audio playback routing tests passed');

@@ -41,7 +41,7 @@ async function context(cookies: Parameters<typeof requireAuthenticatedUser>[0], 
   const sectionIds = new Set((buildLiveDirectorSectionsFromMarkers(markers) || []).map(section => section.id));
   if (write && !sectionIds.size) throw new ApiSecurityError('La canción no tiene secciones disponibles.', 409);
   const sourceSignature = createHash('sha256').update(JSON.stringify({ markers, offset: song.data.multitrack_session?.sectionOffsetSeconds ?? 0 })).digest('hex');
-  return { ...access, canWrite: access.canWrite && sectionIds.size > 0, userId: user.id, sourceSignature, sectionIds, key: `live-director/light2-beta/event-arrangements/${eventId}/${songId}.json` };
+  return { ...access, canWrite: access.canWrite && sectionIds.size > 0, userId: user.id, sourceSignature, sectionIds, key: `live-director/event-arrangements/${eventId}/${songId}.json` };
 }
 async function read(client: S3Client, bucket: string, key: string) {
   try {

@@ -4,7 +4,7 @@ import type { DeviceDownloadProgress, DeviceDownloadResult } from '../services/S
 import { pruneRehearsalDataExcept } from '../utils/rehearsalDeviceData';
 
 // Must match STEM_BLOCK_CACHE_NAME and stemRehearsalKey() in AudioProducerWorker.js.
-const STEM_BLOCK_CACHE_NAME = 'light2-stem-blocks-v1';
+const STEM_BLOCK_CACHE_NAME = 'live-director-stem-blocks-v1';
 const savedRehearsalKey = () => `${window.location.origin}/__stem-block-cache/rehearsal`;
 
 type SavedRehearsal = { rehearsalId: string | null; songIds: string[]; totalBytes: number; completedAt: number };

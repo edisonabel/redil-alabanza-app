@@ -1,4 +1,3 @@
-import { canAccessLight2Beta, LIGHT2_PUBLIC_AUTH_PATHS, light2AccessDenied } from './lib/light2-beta-access.js';
 import { defineMiddleware } from 'astro:middleware';
 import { createClient } from '@supabase/supabase-js';
 import { getSupabaseServerEnv } from './lib/server/supabase-env.js';
@@ -175,7 +174,6 @@ export const onRequest = defineMiddleware(async (context, next) => {
   const protectedPath = isProtectedRoute(path);
   const apiPath = isApiRoute(path);
   const shouldResolveAuth = protectedPath
-    || !LIGHT2_PUBLIC_AUTH_PATHS.has(path)
     || path === '/login'
     || (apiPath && !authLifecycleApiRoutes.has(path));
   const tokensBeforeResolution = shouldResolveAuth ? getServerAuthTokens(cookies) : null;
@@ -188,23 +186,6 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
   if (apiPath && shouldResolveAuth && hadServerAuthTokens && !authState?.accessToken) {
     clearServerAuthCookies(cookies, isSecure);
-  }
-
-  if (authState?.user && !canAccessLight2Beta(authState.user.id)) {
-    return withRouteHeaders(light2AccessDenied(apiPath), path);
-  }
-  if (!authState?.user && !LIGHT2_PUBLIC_AUTH_PATHS.has(path)) {
-    return apiPath ? withRouteHeaders(light2AccessDenied(true, 401), path) : redirectTo('/login');
-  }
-
-  // The beta can read the library and save its own event mix/arrangement, but
-  // cannot replace the original stems, song timing or persisted song session.
-  if (authState?.user && path === '/api/live-director-upload-permission') {
-    return withRouteHeaders(new Response(JSON.stringify({ allowed: false }), { headers: { 'content-type': 'application/json', 'cache-control': 'private, no-store' } }), path);
-  }
-  if (authState?.user && !['GET', 'HEAD'].includes(context.request.method) &&
-      ['/api/live-director-song-session', '/api/live-director-upload-url'].includes(path)) {
-    return withRouteHeaders(new Response(JSON.stringify({ error: 'En Modo Light 2 los stems y la canción original se mantienen intactos.' }), { status: 403, headers: { 'content-type': 'application/json', 'cache-control': 'private, no-store' } }), path);
   }
 
   if (path === '/login') {

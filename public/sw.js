@@ -1,8 +1,8 @@
 const VERSION = 'redil-sw-v5';
-// Files Light 2 needs to keep playing a rehearsal saved on the device when the
+// Files the Live Director needs to keep playing a rehearsal saved on the device when the
 // connection drops: hashed bundles and the audio runtime are immutable (cache
 // first); workers and cue voices are versioned by query (network first).
-const RUNTIME_CACHE = `light2-runtime-${VERSION}`;
+const RUNTIME_CACHE = `live-director-runtime-${VERSION}`;
 const isImmutableRuntimePath = (pathname = '') => (
   pathname.startsWith('/_astro/') || pathname.startsWith('/audio-runtime/')
 );
@@ -35,7 +35,7 @@ self.addEventListener('activate', (event) => {
       cacheNames
         .filter((cacheName) => (
           cacheName.startsWith('redil-sw-')
-          || (cacheName.startsWith('light2-runtime-') && cacheName !== RUNTIME_CACHE)
+          || (cacheName.startsWith('live-director-runtime-') && cacheName !== RUNTIME_CACHE)
         ))
         .map((cacheName) => caches.delete(cacheName)),
     );

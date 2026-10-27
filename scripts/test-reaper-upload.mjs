@@ -34,19 +34,19 @@ export class S3Client{constructor(config){globalThis.__reaperFixture.clientConfi
   assert.equal(result.analysis.review.appliedToPlayback,false);
   assert.equal(globalThis.__reaperFixture.puts.length,1);
   assert.equal(globalThis.__reaperFixture.clientConfigs.at(-1).requestChecksumCalculation,'WHEN_REQUIRED','R2 client avoids unsupported automatic SDK checksum headers');
-  assert.ok(globalThis.__reaperFixture.puts[0].Key.startsWith('live-director/light2-beta/reaper-projects/song-1/'));
+  assert.ok(globalThis.__reaperFixture.puts[0].Key.startsWith('live-director/reaper-projects/song-1/'));
   assert.match(globalThis.__reaperFixture.puts[0].Key,/Mi proyecto de prueba\.RPP$/,'S3 receives the raw key so it can encode it exactly once when signing');
   assert.equal(globalThis.__reaperFixture.puts[0].Metadata,undefined,'Unicode song titles are not sent as unsigned/non-ASCII S3 metadata headers');
   assert.equal((await upload('Not a REAPER file')).status,422);
   // Apply: instructions travel apart from the chosen sections and only inside UNO–FIN AUDIO.
   globalThis.__reaperFixture.stored=prepared.replaceAll('[BORRADOR] ','').replace('  MARKER 1 ',`  MARKER 50 1 "UNO" 0 0 1\n  MARKER 60 5 "[INSTRUCCIÓN] Hits" 0 0 1\n  MARKER 61 12 "[INSTRUCCION] Pausa" 0 0 1\n  MARKER 1 `);
   globalThis.__reaperFixture.allowSessionUpdate=true;
-  const apply=await PUT({request:new Request('https://fixture.invalid/api/admin-reaper-project',{method:'PUT',headers:{origin:'https://fixture.invalid','content-type':'application/json'},body:JSON.stringify({songId:'song-1',key:'live-director/light2-beta/reaper-projects/song-1/Mapa.RPP',markerIds:[1]})}),cookies:{get:()=>({value:'fixture-token'})}});
+  const apply=await PUT({request:new Request('https://fixture.invalid/api/admin-reaper-project',{method:'PUT',headers:{origin:'https://fixture.invalid','content-type':'application/json'},body:JSON.stringify({songId:'song-1',key:'live-director/reaper-projects/song-1/Mapa.RPP',markerIds:[1]})}),cookies:{get:()=>({value:'fixture-token'})}});
   const applied=await apply.json();assert.equal(apply.status,200,JSON.stringify(applied));
   const saved=globalThis.__reaperFixture.sessionUpdates.at(-1);
   assert.deepEqual(saved.sectionMarkers.map(marker=>marker.sectionName),['Intro 1'],'Instructions are never applied as sections');
   assert.deepEqual(saved.instructionMarkers,[{id:'reaper-cue-60',name:'Hits',startSec:5}],'Only instructions inside UNO–FIN AUDIO are applied');
   assert.deepEqual(applied.instructionMarkers,saved.instructionMarkers);
  }finally{console.error=oldError}
- console.log('REAPER upload: authentication, admin role, origin, song binding, draft review, beta-only RPP storage, no catalog writes and apply with separate instructions passed.');
+ console.log('REAPER upload: authentication, admin role, origin, song binding, draft review, RPP storage, no catalog writes and apply with separate instructions passed.');
 }finally{delete globalThis.__reaperFixture;await rm(dir,{recursive:true,force:true})}

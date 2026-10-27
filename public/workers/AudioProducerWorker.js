@@ -48,7 +48,7 @@ const RING_WRITE_STATUS_POST_INTERVAL_MS = 1000;
 // Fetched stem bytes are kept in fixed 64 KB blocks shared by every producer
 // Worker of this origin. Section jumps start fresh Workers; with the blocks
 // already local they only demux and decode instead of waiting on the network.
-const STEM_BLOCK_CACHE_NAME = 'light2-stem-blocks-v1';
+const STEM_BLOCK_CACHE_NAME = 'live-director-stem-blocks-v1';
 const STEM_BLOCK_BYTES = 64 * 1024;
 const STEM_BLOCK_CACHE_MAX_BLOCKS = 6144;
 const STEM_BLOCK_CACHE_TRIM_TARGET_RATIO = 0.8;

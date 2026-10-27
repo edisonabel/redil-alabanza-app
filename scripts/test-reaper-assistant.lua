@@ -98,7 +98,7 @@ assert(assistant.status():find('Ahora: Coro 2',1,true),'Selection moves to the n
 assert(assistant.primary()=='Secciones listas · seguir a FIN AUDIO →','A complete step leads on; adding becomes secondary')
 local _,advance=assistant.primary();advance();assert(assistant.step()==3)
 assistant.step(4);assert(assistant.primary()=='Guardar RPP y abrir Alabanza')
-assistant.save(true);assert(saves==1 and commands[1]=='/usr/bin/open "https://light2-edison-beta--alabanzaredilestadio.netlify.app/admin?area=reaper&paso=subir&song=test"','Save, then open the beta upload page')
+assistant.save(true);assert(saves==1 and commands[1]=='/usr/bin/open "https://alabanzaredilestadio.com/admin?area=reaper&paso=subir&song=test"','Save, then open the beta upload page')
 assert(assistant.status():find('/Users/coro/Prueba/Prueba - revisar.RPP',1,true) and assistant.status():find('Antes de aplicar',1,true),'Says where the file is and what still blocks')
 os_name='Win64';assistant.save(false);assert(saves==2 and #commands==1,'Solo guardar does not open the browser')
 assistant.save(true);assert(commands[2]:find('^cmd%.exe /C start "" "https://'),'Windows opens the default browser')

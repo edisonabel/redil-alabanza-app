@@ -3,11 +3,11 @@ import type { LiveDirectorPersistedSession } from './liveDirectorSongSession';
 import { fetchLiveDirectorEventMix } from './liveDirectorEventMix';
 import { fetchEventArrangement } from './liveDirectorEventArrangement';
 
-// Light 2 keeps the last answer for each song's session, event mix and event
+// The Live Director keeps the last answer for each song's session, event mix and event
 // arrangement on this device. When the server is slow or unreachable the saved
-// answer is used, so a rehearsal keeps loading. Only Light 2 call sites use
+// answer is used, so a rehearsal keeps loading. Only Live Director call sites use
 // these readers; admin screens always read the server. Cleared on sign-out.
-export const REHEARSAL_DATA_CACHE_NAME = 'light2-rehearsal-data-v1';
+export const REHEARSAL_DATA_CACHE_NAME = 'live-director-rehearsal-data-v1';
 // The server answer wins when it arrives within this window; otherwise the
 // device copy is used and the late answer only refreshes that copy.
 const SERVER_GRACE_MS = 2500;

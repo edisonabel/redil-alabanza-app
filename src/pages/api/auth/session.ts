@@ -1,4 +1,3 @@
-import { canAccessLight2Beta } from '../../../lib/light2-beta-access.js';
 import type { APIRoute } from 'astro';
 import { createClient } from '@supabase/supabase-js';
 import { setServerAuthCookies } from '../../../lib/server/auth-cookies.js';
@@ -40,8 +39,6 @@ export const POST: APIRoute = async ({ request, cookies, url }) => {
   if (error || !data?.user) {
     return json({ error: 'Sesion invalida.' }, 401);
   }
-
-  if (!canAccessLight2Beta(data.user.id)) return json({ error: 'Esta beta está habilitada únicamente para Edison Aular.' }, 403);
 
   setServerAuthCookies(cookies, {
     access_token: accessToken,

@@ -19,7 +19,7 @@ const authClient = createClient(supabaseUrl, supabaseAnonKey, {
 const serviceRoleClient = serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 }) : null;
-const PROJECT_PREFIX = 'live-director/light2-beta/reaper-projects/';
+const PROJECT_PREFIX = 'live-director/reaper-projects/';
 const MAX_PROJECT_BYTES = 5 * 1024 * 1024;
 
 const jsonResponse = (body, status = 200) => new Response(JSON.stringify(body), {

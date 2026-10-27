@@ -17,7 +17,7 @@ export const prerender = false;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_EVENT_MIX_TRACKS = 64;
 const MAX_TRACK_ID_LENGTH = 160;
-const EVENT_MIX_OBJECT_PREFIX = 'live-director/light2-beta/event-mixes';
+const EVENT_MIX_OBJECT_PREFIX = 'live-director/event-mixes';
 const MIX_GROUP_IDS = new Set(['keys', 'acoustic', 'electric', 'bass', 'vocals', 'rhythm', 'other', 'cues']);
 
 let cachedR2Context: { bucket: string; client: S3Client } | null = null;
@@ -159,13 +159,13 @@ const requireEventPlaylistSong = async (
   }
 };
 
-const readMix = async (eventId: string, songId: string, original = false): Promise<Record<string, unknown> | null> => {
+const readMix = async (eventId: string, songId: string): Promise<Record<string, unknown> | null> => {
   const { bucket, client } = getR2Context();
 
   try {
     const response = await client.send(new GetObjectCommand({
       Bucket: bucket,
-      Key: original ? `live-director/event-mixes/${eventId}/${songId}.json` : buildMixObjectKey(eventId, songId),
+      Key: buildMixObjectKey(eventId, songId),
     }));
     const rawBody = await response.Body?.transformToString();
     if (!rawBody) return null;
@@ -178,7 +178,7 @@ const readMix = async (eventId: string, songId: string, original = false): Promi
   } catch (error) {
     const code = String((error as { name?: string; Code?: string })?.name || (error as { Code?: string })?.Code || '');
     const status = Number((error as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode || 0);
-    if (code === 'NoSuchKey' || code === 'NotFound' || status === 404) return original ? null : readMix(eventId, songId, true);
+    if (code === 'NoSuchKey' || code === 'NotFound' || status === 404) return null;
     throw error;
   }
 };

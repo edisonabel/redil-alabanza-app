@@ -6,8 +6,8 @@ if not notes:find('ALABANZA_MAPA_V1:', 1, true) then
   reaper.ShowMessageBox('Este asistente trabaja sobre el RPP que descargas en Alabanza (Administración → REAPER → Descargar proyecto + stems). Ábrelo en REAPER y vuelve a ejecutar la acción.', 'Alabanza', 0)
   return
 end
--- The only network step: opening the beta's REAPER page in the browser after saving.
-local ALABANZA_URL = 'https://light2-edison-beta--alabanzaredilestadio.netlify.app'
+-- The only network step: opening Alabanza's REAPER page in the browser after saving.
+local ALABANZA_URL = 'https://alabanzaredilestadio.com'
 local song_id = (notes:match('ALABANZA_MAPA_V1:([^\n]+)') or ''):match('^%s*(.-)%s*$')
 local selected_id, selected_cue, status = nil, nil, ''
 local draft = '[BORRADOR] '

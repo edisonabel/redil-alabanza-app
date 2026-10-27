@@ -3592,9 +3592,9 @@ const userId = Astro.locals.user?.id ?? null;
  console.error('Logout Error (supabase):', logoutError);
  } finally {
  clearClientAuthState();
- // Light 2 keeps rehearsal song data on the device; it leaves with the session.
+ // The Live Director keeps rehearsal song data on the device; it leaves with the session.
  try {
- if (typeof caches !== 'undefined') await caches.delete('light2-rehearsal-data-v1');
+ if (typeof caches !== 'undefined') await caches.delete('live-director-rehearsal-data-v1');
  } catch (cacheError) {
  console.error('Logout Error (rehearsal data):', cacheError);
  }
