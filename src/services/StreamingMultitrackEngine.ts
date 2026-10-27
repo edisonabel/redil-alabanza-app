@@ -1036,6 +1036,7 @@ type SectionJumpPreparation = {
 };
 
 const AUDIO_WORKER_ASSET_VERSION = '20261026-rehearsal-download-1';
+const GENERATED_CLICK_SAMPLE_GAIN = 1.41; // +3 dB
 declare const __LIVE_AUDIO_PRODUCER_URL__: string;
 const DEFAULT_WORKLET_MODULE_URL = `/workers/MultitrackWorkletProcessor.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_PRODUCER_WORKER_URL = typeof __LIVE_AUDIO_PRODUCER_URL__ !== 'undefined'
@@ -3436,7 +3437,9 @@ export class StreamingMultitrackEngine {
           const gain = Math.min(4, quarterPeak / accentPeak);
           samples[0] = samples[0].map(value => Math.max(-1, Math.min(1, value * gain)));
         }
-        return samples;
+        // Click generado +3 dB en todas las capas (los archivos tienen pico ~0,6): se oye mejor sobre la
+        // banda sin mover faders ni mezclas guardadas, y conserva el balance entre capas.
+        return samples.map(pcm => pcm.map(value => Math.max(-1, Math.min(1, value * GENERATED_CLICK_SAMPLE_GAIN))));
       }).catch(error => { this.clickSamplesPromise = null; throw error; });
     }
     const samples = await this.clickSamplesPromise;
