@@ -470,3 +470,22 @@ Checks: suite 84/85 (la restante requiere astro dev en 4322), pruebas nuevas
 `test:live-shortcuts-ui` y `test:live-groups-save-ui`, build e higiene (1398
 archivos), acceso beta, sesión y recuperación de fetch. Remoto: `/` redirige a
 login, API de mezcla 401 sin sesión, worklet 200. Producción principal sin cambios.
+
+## Esc para salir, fila inferior de instrucciones y acento del click · 27 de octubre de 2026
+
+Beta `6ae0e4493df96c0d57d764b9`, commit `f81ee5e` (alias privado, sin `--prod`).
+Esc sale solo si no hay nada pendiente ni un menú o panel abierto (sonando pide
+confirmación); B deja de salir y Secciones pasa de V a Shift+S. Toda la fila de
+encima del espacio dice instrucciones: Z Suave, X Sube intensidad, C A capella,
+V Última vez, B Entra batería, N Toda la banda, M Sostener, «,» Pausa, «.» Hits,
+«-» Final grande; Shift+Z Baja tono, Shift+X Sube tono, Shift+C Swell,
+Shift+B Batería, Shift+N Bajo, Shift+M Teclado, Shift+«,» Guitarra.
+
+Click generado: el sonido del acento se iguala al pico de la negra al cargarse
+(antes 0,36 frente a 0,60; medido en salida 0,10 → 0,16) y las canciones con
+REAPER abren el metrónomo con su compás y su «uno» ya confirmados («tomado de
+REAPER»). Cambiar la rejilla vuelve a pedir confirmación.
+
+Checks: atajos (Esc, fila completa, Shift), click (UI, audio, calibración,
+generado), conteo, instrucciones, saltos, repeticiones, build e higiene (1398),
+acceso beta, sesión y recuperación de fetch. Remoto: `/` 302 y API 401 sin sesión.
