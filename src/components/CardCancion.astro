@@ -169,6 +169,17 @@ const showEnsayarAsPrimary = !hasMp3 && hasChordpro;
    </button>
    )}
 
+   {/* Sin MP3 ni ChordPro, el acceso rápido abre el PDF de acordes. */}
+   {!hasMp3 && !hasChordpro && hasAcordes && (
+   <a href={linkAcordes}
+     target="_blank" rel="noopener noreferrer"
+     class="list-play-btn list-chords-btn hidden absolute top-4 right-16 h-10 w-10 items-center justify-center rounded-2xl border border-emerald-300/40 bg-emerald-500/10 text-emerald-700 shadow-sm hover:bg-emerald-500/15 transition-all dark:border-emerald-300/20 dark:bg-emerald-400/10 dark:text-emerald-200"
+     title="Abrir acordes (PDF)"
+     aria-label={`Abrir acordes en PDF de ${titulo}`}>
+     <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path><path d="M8 7h6"></path><path d="M8 11h8"></path></svg>
+   </a>
+   )}
+
    {/* Botón setlist: queda después de reproducción también en el orden de teclado. */}
    <button type="button" class="btn-add-setlist absolute top-4 right-4 h-10 w-10 flex items-center justify-center rounded-2xl border border-zinc-200 bg-white text-zinc-400 shadow-sm hover:bg-zinc-50 hover:text-zinc-700 transition-all dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200" title="A&ntilde;adir a Setlist" aria-label={`Agregar ${titulo} al setlist`} aria-pressed="false" data-id={String(cancionId || '')} data-cancion={titulo}>
      <svg class="setlist-icon-plus" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
