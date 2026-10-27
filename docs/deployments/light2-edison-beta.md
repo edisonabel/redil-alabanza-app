@@ -421,3 +421,26 @@ cargó su sesión y mezcla del equipo y los stems de Workers ya iniciados
 sonaron desde el equipo; los Workers nuevos dependían del script de desarrollo,
 que ahora cubre el service worker en la beta. En localhost el layout borra todas
 las cachés al abrir login o inicio (comportamiento previo de desarrollo).
+
+## Navegación musical, encadenado e integración · 27 de octubre de 2026
+
+Beta `6ae0ce903e59a91ab24672f8` (alias privado, sin `--prod`), desde la rama
+`codex/livedirector-providencia-lab` en `bcf7321`. Integra el trabajo de las dos
+sesiones en cuatro commits: impresión V2 paginada con notas y preferencias
+personales (migración 056), asistente REAPER con lista de secciones y guía
+visual, importador de ChordPro desde capturas (solo en el laboratorio de la Mac)
+y Light 2.
+
+Light 2: volver al inicio espera el final de la sección mientras suena y
+rebobina al instante detenido; el conteo de entrada solo se añade en canciones
+con `reaperTiming`; «Encadenar» (solo PC) pasa a la siguiente canción del
+evento sin silencio, por transición y recordado en el equipo; las pantallas de
+menos de 1080 abren las secciones con «Secciones» y los teléfonos la tira con
+«Canciones»; «Editar» explica por qué no está disponible. El productor cuenta
+el silencio de priming AAC en la cabeza del archivo para que el reinicio
+preparado a 0 no falle.
+
+Checks: suite completa 82/83 (la restante requiere astro dev en 4322), build e
+higiene (1397 archivos), acceso beta, puente de sesión y recuperación de fetch.
+Remoto: `/` y `/admin` redirigen a login sin sesión, la API privada responde 401,
+worker y asistente REAPER 200. El despliegue principal no cambió.
