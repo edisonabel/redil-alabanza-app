@@ -453,8 +453,8 @@ sesión es rechazada por RLS. Solo crea objetos nuevos; no modifica datos existe
 
 ## Atajos, buses guardados y fin sin cuenta · 27 de octubre de 2026
 
-Beta `6ae0dd696f35c5332e0b7237` (alias privado, sin `--prod`), commit `4e58f61`
-reescrito sin script temporal. Instrucciones «se dicen ahora» en la fila
+Beta `6ae0dd696f35c5332e0b7237` (alias privado, sin `--prod`), commit `050ab85`.
+Instrucciones «se dicen ahora» en la fila
 inferior del teclado por posición física: Z Sube intensidad, X Suave, C Pausa,
 N Toda la banda, M Entra batería, «,» Última vez, «.» Sostener, «-» A capella;
 con Shift: Z Hits, X Swell, C Final grande, V Sube tono, B Baja tono, N Teclado,
