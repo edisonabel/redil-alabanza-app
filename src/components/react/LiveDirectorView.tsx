@@ -39,7 +39,7 @@ import {
   Map as MapIcon,
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import {
   canUseAdvancedStreamingEngine,
@@ -4207,6 +4207,20 @@ export function LiveDirectorView({
     singleStemInputRef.current?.click();
   }, [busyMessage, canAddSingleStem, deletingTrackId]);
 
+  const offsetButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [offsetAnchor, setOffsetAnchor] = useState<{ top: number; right: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!showOffsetModal) { setOffsetAnchor(null); return undefined; }
+    const place = () => {
+      const rect = offsetButtonRef.current?.getBoundingClientRect();
+      setOffsetAnchor(rect && rect.width > 0
+        ? { top: Math.min(rect.bottom + 8, window.innerHeight - 120), right: Math.max(8, window.innerWidth - rect.right) }
+        : { top: 72, right: 16 });
+    };
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [showOffsetModal]);
   const handleOpenOffsetModal = useCallback(() => {
     setSectionOffsetSaveError(null);
     offsetModalInitialValueRef.current = Number.isFinite(Number(manualSession?.sectionOffsetSeconds))
@@ -5531,7 +5545,7 @@ export function LiveDirectorView({
                 </>}
                 {eventAdvance.notice && <span role="status" title={eventAdvance.notice} className="min-w-0 truncate text-[10px] text-cyan-100/60">{eventAdvance.notice}</span>}
                 {arrangementEntries && <span data-live-director-control="arrangement-status" title={arrangement.notice || 'Arreglo de prueba'} className="min-w-0 truncate text-[10px] text-cyan-100/60">Arreglo {arrangement.index + 1}/{resolvedSections.length}{arrangement.notice.startsWith('Arreglo pausado') ? ' · Pausado' : ''}</span>}
-                <button type="button" aria-label="Abrir ajuste de desfase" title="Ajustar marcadores con precisión" onClick={() => showOffsetModal ? void handleCloseOffsetModal() : handleOpenOffsetModal()} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white/35 hover:bg-white/5 hover:text-white/80">±</button>
+                <button ref={offsetButtonRef} type="button" aria-label="Abrir ajuste de desfase" title="Ajustar marcadores con precisión" onClick={() => showOffsetModal ? void handleCloseOffsetModal() : handleOpenOffsetModal()} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white/35 hover:bg-white/5 hover:text-white/80">±</button>
                 {sectionLaneMinimapSegments.length > 0 && <button type="button" data-live-director-control="section-map" aria-pressed={showSectionMap}
                   aria-label={showSectionMap ? 'Ocultar mapa de secciones' : 'Mostrar mapa de secciones'} title={showSectionMap ? 'Ocultar mapa de secciones' : 'Mostrar mapa de secciones'}
                   onClick={toggleSectionMap}
@@ -5584,8 +5598,9 @@ export function LiveDirectorView({
                   )}
                 </div>
               )}
-              {showOffsetModal && (
-                <div className="absolute right-4 top-16 z-40 w-[16rem] rounded-[1.25rem] border border-white/10 bg-[linear-gradient(180deg,rgba(18,20,22,0.98),rgba(13,15,17,0.98))] p-3 shadow-[0_24px_48px_rgba(0,0,0,0.34)]">
+              {/* En una capa propia, anclada bajo el botón ±: dentro del panel de secciones quedaba recortado. */}
+              {showOffsetModal && offsetAnchor && createPortal(
+                <div data-live-director-offset-panel="true" style={{ position: 'fixed', top: offsetAnchor.top, right: offsetAnchor.right }} className="z-[80] w-[16rem] max-w-[calc(100vw-1rem)] rounded-[1.25rem] border border-white/10 bg-[linear-gradient(180deg,rgba(18,20,22,0.98),rgba(13,15,17,0.98))] p-3 shadow-[0_24px_48px_rgba(0,0,0,0.5)]">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="text-[0.62rem] font-black uppercase tracking-[0.22em] text-white/42">Desfase</p>
@@ -5646,7 +5661,7 @@ export function LiveDirectorView({
                     </p>
                   )}
                 </div>
-              )}
+              , document.body)}
               <div className="relative min-h-0 flex-1 overflow-hidden bg-black/12">
                 <div className="pointer-events-none absolute inset-y-0 left-0 z-20 w-16 bg-[linear-gradient(90deg,rgba(23,24,26,0.96),rgba(23,24,26,0))]" />
                 <div className="pointer-events-none absolute inset-y-0 right-0 z-20 w-16 bg-[linear-gradient(270deg,rgba(23,24,26,0.96),rgba(23,24,26,0))]" />
