@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 import AdminVocalWarmups from './AdminVocalWarmups';
 import AdminReaperWorkspace from './AdminReaperWorkspace';
+import AdminChordProImport from './AdminChordProImport';
 import { audioSessionService } from '../services/AudioSessionService';
 import { getAudioCrossOrigin, resolveFetchableAudioUrl } from '../lib/audio-playback.js';
 import {
@@ -20,6 +21,7 @@ import {
   Mic2,
   Music2,
   PackageOpen,
+  ScanText,
   Pause,
   PencilLine,
   Play,
@@ -545,6 +547,12 @@ const normalizeSectionMarkers = (sections = [], rawMarkers = []) => {
     const startSec = shouldClearLegacyZeroMarkers
       ? null
       : normalizeOptionalChordProMarkerTime(existingMarker?.startSec);
+    const vocalStartSec = shouldClearLegacyZeroMarkers
+      ? null
+      : normalizeOptionalChordProMarkerTime(existingMarker?.vocalStartSec);
+    const safeVocalStartSec = vocalStartSec != null && (startSec == null || vocalStartSec >= startSec)
+      ? vocalStartSec
+      : null;
     const sectionOccurrence = nextOccurrence + 1;
     const slugBase = normalizedSectionName
       .normalize('NFD')
@@ -559,8 +567,9 @@ const normalizeSectionMarkers = (sections = [], rawMarkers = []) => {
       sectionOccurrence,
       sectionKey: `${slugBase}__${sectionOccurrence}`,
       startSec,
+      vocalStartSec: safeVocalStartSec,
       note: String(existingMarker?.note || section?.note || '').trim(),
-      cueMarkers: normalizeCueMarkerTimes(existingMarker?.cueMarkers, startSec),
+      cueMarkers: normalizeCueMarkerTimes(existingMarker?.cueMarkers, safeVocalStartSec ?? startSec),
       _autoDetected: Boolean(existingMarker?._autoDetected),
       _confidence: Number.isFinite(Number(existingMarker?._confidence)) ? Number(existingMarker._confidence) : 0,
       _method: String(existingMarker?._method || '').trim(),
@@ -1046,7 +1055,7 @@ const MarkerTimeInput = ({
   );
 };
 
-export default function AdminRepertorio({ libraryScope = 'general', isAdmin = false }) {
+export default function AdminRepertorio({ libraryScope = 'general', isAdmin = false, initialArea = 'songs' }) {
   const repertoireScope = libraryScope === 'sin_filtros' ? 'sin_filtros' : 'general';
   const [canciones, setCanciones] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1117,7 +1126,7 @@ export default function AdminRepertorio({ libraryScope = 'general', isAdmin = fa
   const [songWizardFeedback, setSongWizardFeedback] = useState('');
   const [songWizardDirty, setSongWizardDirty] = useState(false);
   const [songWizardMp3File, setSongWizardMp3File] = useState(null);
-  const [activeAdminArea, setActiveAdminArea] = useState('songs');
+  const [activeAdminArea, setActiveAdminArea] = useState(isAdmin && libraryScope === 'general' && ['reaper', 'chordpro'].includes(initialArea) ? initialArea : 'songs');
   const [warmupCreateSignal, setWarmupCreateSignal] = useState(0);
   const [warmupCount, setWarmupCount] = useState(0);
   const songWizardHeadingRef = useRef(null);
@@ -2809,11 +2818,40 @@ export default function AdminRepertorio({ libraryScope = 'general', isAdmin = fa
     }));
   };
 
+  const capturarEntradaVocalActual = (markerIndex) => {
+    const currentTime = toPreciseSeconds(editorAudioCurrentTimeRef.current);
+    setEditorSectionMarkers((prev) => prev.map((item, itemIndex) => (
+      itemIndex === markerIndex
+        ? (item?.startSec != null && currentTime < Number(item.startSec)
+          ? item
+          : { ...item, ...toManualMarkerPatch({ vocalStartSec: currentTime }) })
+        : item
+    )));
+  };
+
+  const capturarInicioMusicalActual = (markerIndex) => {
+    const currentTime = toPreciseSeconds(editorAudioCurrentTimeRef.current);
+    setEditorSectionMarkers((prev) => prev.map((item, itemIndex) => {
+      if (itemIndex !== markerIndex) return item;
+      const vocalStartSec = item?.vocalStartSec != null && Number(item.vocalStartSec) >= currentTime
+        ? Number(item.vocalStartSec)
+        : null;
+      return {
+        ...item,
+        ...toManualMarkerPatch({
+          startSec: currentTime,
+          vocalStartSec,
+          cueMarkers: normalizeCueMarkerTimes(item?.cueMarkers, vocalStartSec ?? currentTime),
+        }),
+      };
+    }));
+  };
+
   const actualizarCueMarkerIndividual = (markerIndex, cueMarkerIndex, nextValue) => {
     setEditorSectionMarkers((prev) => prev.map((item, itemIndex) => {
       if (itemIndex !== markerIndex) return item;
 
-      const sectionStartSec = item?.startSec == null ? null : Number(item.startSec);
+      const sectionStartSec = item?.vocalStartSec ?? (item?.startSec == null ? null : Number(item.startSec));
       const currentCueMarkers = normalizeCueMarkerTimes(item?.cueMarkers, sectionStartSec);
       if (nextValue == null) {
         return {
@@ -3169,7 +3207,7 @@ export default function AdminRepertorio({ libraryScope = 'general', isAdmin = fa
           </div>
         ))}
 
-      {repertoireScope === 'general' && <nav className={`mx-3 mb-2 grid shrink-0 ${isAdmin ? 'grid-cols-3 md:max-w-2xl' : 'grid-cols-2 md:max-w-md'} gap-1 rounded-xl border border-border bg-surface/90 p-1 md:mx-4`} aria-label="Áreas de administración">
+      {repertoireScope === 'general' && <nav className={`mx-3 mb-2 grid shrink-0 ${isAdmin ? 'grid-cols-2 sm:grid-cols-4 md:max-w-3xl' : 'grid-cols-2 md:max-w-md'} gap-1 rounded-xl border border-border bg-surface/90 p-1 md:mx-4`} aria-label="Áreas de administración">
         <button
           type="button"
           onClick={() => {
@@ -3205,6 +3243,18 @@ export default function AdminRepertorio({ libraryScope = 'general', isAdmin = fa
         >
           <PackageOpen className="h-4 w-4" />
           REAPER
+        </button>}
+        {isAdmin && <button
+          type="button"
+          onClick={() => {
+            setActiveAdminArea('chordpro');
+            setSongWizardOpen(false);
+          }}
+          aria-current={activeAdminArea === 'chordpro' ? 'page' : undefined}
+          className={`inline-flex min-h-[42px] items-center justify-center gap-2 rounded-lg px-3 text-sm font-bold transition-colors ${activeAdminArea === 'chordpro' ? 'bg-brand text-white shadow-sm' : 'text-content-muted hover:bg-background hover:text-content'}`}
+        >
+          <ScanText className="h-4 w-4" />
+          Importar ChordPro
         </button>}
       </nav>}
 
@@ -3297,6 +3347,9 @@ export default function AdminRepertorio({ libraryScope = 'general', isAdmin = fa
         />
       ) : activeAdminArea === 'reaper' ? (
         <AdminReaperWorkspace songs={canciones} isAdmin={isAdmin} />
+      ) : activeAdminArea === 'chordpro' ? (
+        <AdminChordProImport songs={canciones} isAdmin={isAdmin}
+          onSongUpdated={(updated) => setCanciones((previous) => previous.map((song) => (song.id === updated.id ? { ...song, chordpro: updated.chordpro } : song)))} />
       ) : loading && canciones.length === 0 ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 py-16">
           <Loader2 className="w-10 h-10 text-brand animate-spin" />
@@ -4703,25 +4756,19 @@ export default function AdminRepertorio({ libraryScope = 'general', isAdmin = fa
                     {editorSectionMarkers.length > 0 ? editorSectionMarkers.map((marker, index) => {
                       const cueDraft = cueDraftsEditor[index] || { cueCount: 1, sectionStartPreview: '', cueMarkerPreview: [] };
                       const cueTransitionCount = Math.max(0, cueDraft.cueCount - 1);
-                      const capturedCueMarkers = normalizeCueMarkerTimes(marker?.cueMarkers, marker?.startSec)
+                      const voiceAnchor = marker?.vocalStartSec ?? marker?.startSec;
+                      const capturedCueMarkers = normalizeCueMarkerTimes(marker?.cueMarkers, voiceAnchor)
                         .slice(0, cueTransitionCount);
-                      const hasSectionStart = marker?.startSec != null && Number.isFinite(Number(marker.startSec));
-                      const capturedCueCount = hasSectionStart ? 1 + capturedCueMarkers.length : 0;
+                      const hasVoiceAnchor = voiceAnchor != null && Number.isFinite(Number(voiceAnchor));
+                      const capturedCueCount = hasVoiceAnchor ? 1 + capturedCueMarkers.length : 0;
                       const nextCueNumber = Math.min(cueDraft.cueCount, capturedCueCount + 1);
                       const allCuesCaptured = cueDraft.cueCount > 1 && capturedCueCount >= cueDraft.cueCount;
                       const hasMultipleCues = cueDraft.cueCount > 1;
                       const groupedCuePreviews = hasMultipleCues
-                        ? [
-                            {
-                              label: 'Cue 1',
-                              text: cueDraft.sectionStartPreview,
-                              cueMarkerIndex: null,
-                            },
-                            ...cueDraft.cueMarkerPreview.map((preview, previewIndex) => ({
+                        ? cueDraft.cueMarkerPreview.map((preview, previewIndex) => ({
                               ...preview,
                               cueMarkerIndex: previewIndex,
-                            })),
-                          ]
+                            }))
                         : [];
 
                       return (
@@ -4791,7 +4838,7 @@ export default function AdminRepertorio({ libraryScope = 'general', isAdmin = fa
                                 onCommit={(nextValue) => {
                                   actualizarEditorSectionMarker(index, toManualMarkerPatch({
                                     startSec: nextValue,
-                                    cueMarkers: normalizeCueMarkerTimes(marker?.cueMarkers, nextValue),
+                                    cueMarkers: normalizeCueMarkerTimes(marker?.cueMarkers, marker?.vocalStartSec ?? nextValue),
                                   }));
                                 }}
                                 placeholder=""
@@ -4808,20 +4855,22 @@ export default function AdminRepertorio({ libraryScope = 'general', isAdmin = fa
                             />
                             <button
                               type="button"
-                              onClick={() => capturarSiguienteCueActual(index, cueDraft.cueCount)}
-                              disabled={!editorChordproCancion?.mp3 || allCuesCaptured}
+                              onClick={() => hasMultipleCues
+                                ? capturarSiguienteCueActual(index, cueDraft.cueCount)
+                                : capturarInicioMusicalActual(index)}
+                              disabled={!editorChordproCancion?.mp3 || (hasMultipleCues && allCuesCaptured)}
                               className="inline-flex h-9 w-full items-center justify-center rounded-lg border border-brand/25 bg-brand/10 px-2.5 text-[11px] font-medium text-brand transition-colors hover:bg-brand/15 disabled:cursor-not-allowed disabled:border-border disabled:bg-background disabled:text-content-muted sm:w-auto"
                             >
                               {allCuesCaptured
                                 ? 'Cues listos'
                                 : cueDraft.cueCount > 1
                                   ? `Marcar cue ${nextCueNumber}`
-                                  : 'Marcar ahora'}
+                                  : 'Marcar inicio'}
                             </button>
                             <button
                               type="button"
                               onClick={() => {
-                                actualizarEditorSectionMarker(index, toManualMarkerPatch({ startSec: null, cueMarkers: [] }));
+                                actualizarEditorSectionMarker(index, toManualMarkerPatch({ startSec: null, vocalStartSec: null, cueMarkers: [] }));
                               }}
                               className="inline-flex h-9 w-full items-center justify-center rounded-lg px-2.5 text-[11px] font-medium text-content-muted transition-colors hover:bg-surface hover:text-content sm:w-auto"
                             >
@@ -4829,11 +4878,32 @@ export default function AdminRepertorio({ libraryScope = 'general', isAdmin = fa
                             </button>
                           </div>
 
+                          {!hasMultipleCues && (
+                            <div className="mt-2 grid grid-cols-[minmax(0,1fr)_6.3rem] items-center gap-2 border-t border-border/40 px-1 pt-2 sm:grid-cols-[minmax(0,1fr)_6.3rem_auto]">
+                              <p className="text-[12px] text-content-muted">
+                                <span className="font-medium text-content">Entrada de voz</span>
+                                <span className="ml-1">· vacía = inicio musical</span>
+                              </p>
+                              <MarkerTimeInput
+                                value={marker.vocalStartSec}
+                                onCommit={(nextValue) => actualizarEditorSectionMarker(index, toManualMarkerPatch({ vocalStartSec: nextValue }))}
+                                ariaLabel={`Entrada vocal de ${marker.sectionName}`}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => capturarEntradaVocalActual(index)}
+                                disabled={!editorChordproCancion?.mp3}
+                                className="col-span-2 h-8 justify-self-end rounded-md border border-brand/20 px-2 text-[10px] font-medium text-brand hover:bg-brand/10 disabled:opacity-50 sm:col-span-1"
+                              >
+                                Marcar voz
+                              </button>
+                            </div>
+                          )}
+
                           {hasMultipleCues && (
                             <div className="mt-2 border-t border-border/50 px-1 pt-2.5">
                               <div className="grid gap-1.5">
                                 {groupedCuePreviews.map((preview) => {
-                                  const isSectionStartCue = preview.cueMarkerIndex == null;
                                   const cueMarkerIndex = preview.cueMarkerIndex;
 
                                   return (
@@ -4846,27 +4916,52 @@ export default function AdminRepertorio({ libraryScope = 'general', isAdmin = fa
                                         {preview.text ? ` · ${preview.text}` : ''}
                                       </p>
                                       <MarkerTimeInput
-                                        value={isSectionStartCue
-                                          ? marker.startSec
-                                          : capturedCueMarkers[cueMarkerIndex] ?? null}
-                                        onCommit={(nextValue) => {
-                                          if (isSectionStartCue) {
-                                            actualizarEditorSectionMarker(index, toManualMarkerPatch({
-                                              startSec: nextValue,
-                                              cueMarkers: normalizeCueMarkerTimes(marker?.cueMarkers, nextValue),
-                                            }));
-                                            return;
-                                          }
-                                          actualizarCueMarkerIndividual(index, cueMarkerIndex, nextValue);
-                                        }}
-                                        disabled={!isSectionStartCue && (
-                                          !hasSectionStart || cueMarkerIndex > capturedCueMarkers.length
-                                        )}
+                                        value={capturedCueMarkers[cueMarkerIndex] ?? null}
+                                        onCommit={(nextValue) => actualizarCueMarkerIndividual(index, cueMarkerIndex, nextValue)}
+                                        disabled={!hasVoiceAnchor || cueMarkerIndex > capturedCueMarkers.length}
                                         ariaLabel={`Tiempo de ${preview.label} en ${marker.sectionName}`}
                                       />
                                     </div>
                                   );
                                 })}
+                              </div>
+                              <div className="mt-2 grid grid-cols-[minmax(0,1fr)_6.3rem] items-center gap-2 border-t border-border/40 pt-2">
+                                <p className="text-[13px] text-content-muted">
+                                  <span className="font-medium text-content">Inicio musical</span>
+                                  <span className="ml-1">· salto de seccion</span>
+                                </p>
+                                <MarkerTimeInput
+                                  value={marker.startSec}
+                                  onCommit={(nextValue) => {
+                                    actualizarEditorSectionMarker(index, toManualMarkerPatch({
+                                      startSec: nextValue,
+                                      cueMarkers: normalizeCueMarkerTimes(marker?.cueMarkers, marker?.vocalStartSec ?? nextValue),
+                                    }));
+                                  }}
+                                  ariaLabel={`Inicio musical de ${marker.sectionName}`}
+                                />
+                              </div>
+                              <div className="mt-1 grid grid-cols-[minmax(0,1fr)_6.3rem] items-center gap-2 sm:grid-cols-[minmax(0,1fr)_6.3rem_auto]">
+                                <p className="min-w-0 text-[13px] text-content-muted">
+                                  <span className="font-medium text-content">Entrada de voz</span>
+                                  <span className="ml-1 block truncate text-[11px]">Vacía = inicio musical{cueDraft.sectionStartPreview ? ` · ${cueDraft.sectionStartPreview}` : ''}</span>
+                                </p>
+                                <MarkerTimeInput
+                                  value={marker.vocalStartSec}
+                                  onCommit={(nextValue) => actualizarEditorSectionMarker(index, toManualMarkerPatch({
+                                    vocalStartSec: nextValue,
+                                    cueMarkers: normalizeCueMarkerTimes(marker?.cueMarkers, nextValue ?? marker?.startSec),
+                                  }))}
+                                  ariaLabel={`Entrada vocal de ${marker.sectionName}`}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => capturarEntradaVocalActual(index)}
+                                  disabled={!editorChordproCancion?.mp3}
+                                  className="col-span-2 h-8 justify-self-end rounded-md border border-brand/20 px-2 text-[10px] font-medium text-brand hover:bg-brand/10 disabled:opacity-50 sm:col-span-1"
+                                >
+                                  Marcar voz
+                                </button>
                               </div>
                             </div>
                           )}

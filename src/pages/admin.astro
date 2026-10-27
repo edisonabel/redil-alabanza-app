@@ -27,7 +27,7 @@ import AdminRepertorio from '../components/AdminRepertorio.jsx';
     </header>
 
     <div class="min-h-0 flex-1 w-full overflow-hidden px-0">
-      <AdminRepertorio client:load isAdmin={Boolean(Astro.locals.perfil?.is_admin)} />
+      <AdminRepertorio client:load isAdmin={Boolean(Astro.locals.perfil?.is_admin)} initialArea={['reaper', 'chordpro'].includes(Astro.url.searchParams.get('area') || '') ? Astro.url.searchParams.get('area') : 'songs'} />
     </div>
   </main>
 </Layout>
