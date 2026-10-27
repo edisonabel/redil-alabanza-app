@@ -34,6 +34,7 @@ try {
       return start.call(this, when, ...args);
     };
   });
+  await page.evaluateOnNewDocument(() => localStorage.setItem('live-director:section-map', 'open')); // mapa visible para leer sus marcas
   await page.goto(`http://127.0.0.1:${PORT}/`);
   await page.waitForFunction(() => document.querySelector('[data-live-director-control="guide-status"]')?.dataset.guideState === 'ready', { timeout: 120000 });
   await page.waitForSelector('[data-live-director-control="next-instruction"]', { timeout: 5000 });

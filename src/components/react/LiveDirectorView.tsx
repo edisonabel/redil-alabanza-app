@@ -36,6 +36,7 @@ import {
   Upload,
   X,
   Megaphone,
+  Map as MapIcon,
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type PointerEvent as ReactPointerEvent } from 'react';
@@ -686,6 +687,7 @@ export function LiveDirectorView({
   const passiveSectionIndexRef = useRef<number | null>(null);
   const [passiveActiveSectionIndex, setPassiveActiveSectionIndex] = useState<number | null>(null);
   const sectionsMinimapViewportRef = useRef<HTMLDivElement | null>(null);
+  const updateSectionsMinimapViewportRef = useRef<((scrollLeft: number) => void) | null>(null);
   const sectionsDragStateRef = useRef<DragScrollState>({
     active: false,
     captured: false,
@@ -760,6 +762,15 @@ export function LiveDirectorView({
   const passiveMixerLevelRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const passiveSectionPlayheadRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const passiveMinimapPlayheadRef = useRef<HTMLDivElement | null>(null);
+  // Mapa de secciones (barra de toda la canción bajo el carril): desplegable y oculto por defecto para
+  // ganar alto y quitar ruido. Se recuerda en este dispositivo.
+  const [showSectionMap, setShowSectionMap] = useState(() => {
+    try { return typeof localStorage !== 'undefined' && localStorage.getItem('live-director:section-map') === 'open'; } catch { return false; }
+  });
+  const toggleSectionMap = useCallback(() => setShowSectionMap(previous => {
+    try { localStorage.setItem('live-director:section-map', previous ? 'closed' : 'open'); } catch { /* solo se pierde el recuerdo */ }
+    return !previous;
+  }), []);
   const passiveFpsMonitorRef = useRef({
     lastSampleAt: 0,
     frames: 0,
@@ -2231,7 +2242,7 @@ export function LiveDirectorView({
     if (!marker) return;
     const width = marker.parentElement?.clientWidth || 0;
     marker.style.transform = `translate3d(${width * sectionLaneMinimapPlayheadPct / 100 - 1}px, 0, 0)`;
-  }, [sectionLaneMinimapPlayheadPct, sectionsLaneViewportWidth, showSectionsPanel]);
+  }, [sectionLaneMinimapPlayheadPct, sectionsLaneViewportWidth, showSectionsPanel, showSectionMap]);
 
   // Project the big lane's scrolled viewport onto the timeline fraction.
   // Simplification: we treat the scrollable track as linear over
@@ -2264,6 +2275,9 @@ export function LiveDirectorView({
   const sectionLaneMinimapViewport = getSectionLaneMinimapViewport(
     sectionsLaneScrollLeftRef.current,
   );
+  useEffect(() => {
+    if (showSectionMap) updateSectionsMinimapViewportRef.current?.(sectionsLaneScrollLeftRef.current);
+  }, [showSectionMap]);
   const updateSectionsMinimapViewport = useCallback((scrollLeft: number) => {
     const marker = sectionsMinimapViewportRef.current;
     sectionsLaneScrollLeftRef.current = Math.max(0, scrollLeft);
@@ -2277,6 +2291,7 @@ export function LiveDirectorView({
     marker.style.width = `${viewport.widthPct}%`;
     marker.style.transform = `translate3d(${minimapWidth * (viewport.leftPct / 100)}px, 0, 0)`;
   }, [getSectionLaneMinimapViewport]);
+  updateSectionsMinimapViewportRef.current = updateSectionsMinimapViewport;
 
   const omittedWarningByTrackId = useMemo(() => {
     const warningMap = new Map<string, MultitrackEngineLoadWarning>();
@@ -5517,6 +5532,10 @@ export function LiveDirectorView({
                 {eventAdvance.notice && <span role="status" title={eventAdvance.notice} className="min-w-0 truncate text-[10px] text-cyan-100/60">{eventAdvance.notice}</span>}
                 {arrangementEntries && <span data-live-director-control="arrangement-status" title={arrangement.notice || 'Arreglo de prueba'} className="min-w-0 truncate text-[10px] text-cyan-100/60">Arreglo {arrangement.index + 1}/{resolvedSections.length}{arrangement.notice.startsWith('Arreglo pausado') ? ' · Pausado' : ''}</span>}
                 <button type="button" aria-label="Abrir ajuste de desfase" title="Ajustar marcadores con precisión" onClick={() => showOffsetModal ? void handleCloseOffsetModal() : handleOpenOffsetModal()} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white/35 hover:bg-white/5 hover:text-white/80">±</button>
+                {sectionLaneMinimapSegments.length > 0 && <button type="button" data-live-director-control="section-map" aria-pressed={showSectionMap}
+                  aria-label={showSectionMap ? 'Ocultar mapa de secciones' : 'Mostrar mapa de secciones'} title={showSectionMap ? 'Ocultar mapa de secciones' : 'Mostrar mapa de secciones'}
+                  onClick={toggleSectionMap}
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg hover:bg-white/5 ${showSectionMap ? 'bg-white/8 text-cyan-100/90' : 'text-white/35 hover:text-white/80'}`}><MapIcon size={14}/></button>}
                 <span className="sr-only" role="status" aria-live="polite">{[sectionJump.notice, arrangementEntries ? arrangement.notice : ''].filter(Boolean).join('. ')}</span>
               </div>
               {!experimentalTools && nextSectionPreview && !sectionJump.armed && !sectionJump.repeat && (
@@ -5633,7 +5652,7 @@ export function LiveDirectorView({
                 <div className="pointer-events-none absolute inset-y-0 right-0 z-20 w-16 bg-[linear-gradient(270deg,rgba(23,24,26,0.96),rgba(23,24,26,0))]" />
                 <div
                   className={`pointer-events-none absolute top-3 z-30 w-[4px] -translate-x-1/2 rounded-full bg-white shadow-[0_0_18px_rgba(255,255,255,0.68)] ${
-                    isUltraCompactLandscape ? 'bottom-[28px]' : isCompactLandscape ? 'bottom-[36px]' : 'bottom-[44px]'
+                    !showSectionMap ? 'bottom-3' : isUltraCompactLandscape ? 'bottom-[28px]' : isCompactLandscape ? 'bottom-[36px]' : 'bottom-[44px]'
                   }`}
                   style={{ left: `${sectionLanePlayheadOffsetPx}px` }}
                 />
@@ -5652,7 +5671,7 @@ export function LiveDirectorView({
                   }}
                 >
                     <div
-                      className={`relative flex h-full min-h-0 items-stretch gap-[14px] pt-4 ${isUltraCompactLandscape ? 'pb-[32px]' : isCompactLandscape ? 'pb-[40px]' : 'pb-[48px]'}`}
+                      className={`relative flex h-full min-h-0 items-stretch gap-[14px] pt-4 ${!showSectionMap ? 'pb-3' : isUltraCompactLandscape ? 'pb-[32px]' : isCompactLandscape ? 'pb-[40px]' : 'pb-[48px]'}`}
                       style={{
                         width: `${sectionLaneContentWidth}px`,
                         paddingLeft: `${sectionLanePlayheadOffsetPx}px`,
@@ -5802,7 +5821,7 @@ export function LiveDirectorView({
                 </div>
 
                 {/* Whole-song overview follows the edited order, including duplicates. */}
-                {sectionLaneMinimapSegments.length > 0 && (
+                {showSectionMap && sectionLaneMinimapSegments.length > 0 && (
                   <div
                     className={`pointer-events-none absolute left-4 right-4 z-40 ${
                       isUltraCompactLandscape ? 'bottom-1 h-[20px]' : isCompactLandscape ? 'bottom-1.5 h-[24px]' : 'bottom-2 h-[28px]'
@@ -6555,7 +6574,7 @@ export function LiveDirectorView({
         <section
           className={`grid min-h-0 flex-1 ${isUltraCompactLandscape ? 'gap-0.5' : isCompactLandscape ? 'gap-1.5' : 'gap-4'}`}
           data-live-director-layout={desktopCombined ? 'desktop-combined' : 'mobile-pages'}
-          style={{ gridTemplateColumns: `minmax(0,1fr) ${mixerLayoutColumns}`, ...(desktopCombined ? { gridTemplateRows: showArrangementEditor ? 'minmax(250px, 0.55fr) minmax(210px, 1fr)' : 'minmax(170px, 0.42fr) minmax(250px, 1fr)' } : {}) }}
+          style={{ gridTemplateColumns: `minmax(0,1fr) ${mixerLayoutColumns}`, ...(desktopCombined ? { gridTemplateRows: showArrangementEditor ? 'minmax(250px, 0.55fr) minmax(210px, 1fr)' : showSectionMap ? 'minmax(170px, 0.42fr) minmax(250px, 1fr)' : 'minmax(140px, 0.36fr) minmax(250px, 1fr)' } : {}) }}
         >
           {desktopCombined && <div className="grid min-h-0 min-w-0" style={{ gridColumn: '1 / -1' }}>{sectionSurface}</div>}
           <div className="grid min-h-0 min-w-0">
