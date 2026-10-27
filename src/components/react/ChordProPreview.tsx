@@ -4,6 +4,7 @@ import SongSheet, {
   type SongSheetMetadata,
   type SongSheetPrintProfile,
 } from './SongSheet';
+import PaginatedSongSheet from './PaginatedSongSheet';
 import { parseChordProSemantic } from '../../utils/parseChordProSemantic';
 import { resolveSongSheetSemanticBlocks } from '../../utils/resolveSongSheetSemanticBlocks';
 
@@ -30,6 +31,7 @@ export type ChordProPreviewProps = {
   domSync?: boolean;
   selectors?: ChordProPreviewSelectors;
   printProfile?: SongSheetPrintProfile;
+  onPageCountChange?: (count: number, fontSize: number) => void;
 };
 
 type LivePreviewState = {
@@ -145,6 +147,7 @@ export function ChordProPreview({
   domSync = false,
   selectors,
   printProfile = 'classic',
+  onPageCountChange,
 }: ChordProPreviewProps) {
   const mergedSelectors = useMemo<Required<ChordProPreviewSelectors>>(
     () => ({
@@ -168,6 +171,8 @@ export function ChordProPreview({
   );
   const [previewScale, setPreviewScale] = useState(1);
   const [isPrinting, setIsPrinting] = useState(false);
+  const [documentHeight, setDocumentHeight] = useState(pageHeightPx);
+  const paginated = printProfile === 'v2-optimized';
 
   useEffect(() => {
     if (domSync) return;
@@ -294,16 +299,16 @@ export function ChordProPreview({
   const blocks = previewData.blocks;
 
   const scaledWidth = Math.max(pageWidthPx * previewScale, 1);
-  const scaledHeight = Math.max(pageHeightPx * previewScale, 1);
+  const scaledHeight = Math.max((paginated ? documentHeight : pageHeightPx) * previewScale, 1);
 
   return (
     <div className={['w-full', className].filter(Boolean).join(' ')}>
       <div
         ref={previewViewportRef}
-        className="relative flex h-full min-h-[28rem] w-full items-start justify-center overflow-auto rounded-[2rem] border border-zinc-200/70 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.08),_transparent_28%),linear-gradient(180deg,_rgba(255,255,255,0.96),_rgba(248,250,252,0.98))] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] dark:border-white/10 dark:bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.14),_transparent_28%),linear-gradient(180deg,_rgba(15,23,42,0.84),_rgba(2,6,23,0.92))] print:block print:min-h-0 print:overflow-visible print:rounded-none print:border-0 print:bg-transparent print:p-0 print:shadow-none"
+        className="song-sheet-preview-viewport relative flex h-full min-h-[28rem] w-full items-start justify-center overflow-auto rounded-[2rem] border border-zinc-200/70 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.08),_transparent_28%),linear-gradient(180deg,_rgba(255,255,255,0.96),_rgba(248,250,252,0.98))] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] dark:border-white/10 dark:bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.14),_transparent_28%),linear-gradient(180deg,_rgba(15,23,42,0.84),_rgba(2,6,23,0.92))] print:block print:min-h-0 print:overflow-visible print:rounded-none print:border-0 print:bg-transparent print:p-0 print:shadow-none"
       >
         <div
-          className="relative flex-none print:block"
+          className="song-sheet-preview-sizing relative flex-none print:block"
           style={
             isPrinting
               ? undefined
@@ -314,22 +319,30 @@ export function ChordProPreview({
           }
         >
           <div
-            className="absolute left-0 top-0 origin-top-left print:static"
+            className="song-sheet-preview-transform absolute left-0 top-0 origin-top-left print:static"
             style={
               isPrinting
                 ? undefined
                 : {
                     width: `${pageWidthPx}px`,
-                    height: `${pageHeightPx}px`,
+                    height: `${paginated ? documentHeight : pageHeightPx}px`,
                     transform: `scale(${previewScale})`,
                   }
             }
           >
             <div
               id="chordpro-print-sheet"
-              className="mx-auto h-[11in] w-[8.5in] overflow-hidden bg-white shadow-[0_24px_80px_rgba(15,23,42,0.18)] ring-1 ring-zinc-200/80 print:h-[11in] print:w-[8.5in] print:overflow-hidden print:shadow-none print:ring-0"
+              className="mx-auto w-[8.5in] bg-white shadow-[0_24px_80px_rgba(15,23,42,0.18)] ring-1 ring-zinc-200/80 print:w-[8.5in] print:shadow-none print:ring-0"
+              style={{ height: paginated ? undefined : pageHeightPx }}
             >
-              {blocks.length > 0 ? (
+              {blocks.length > 0 ? paginated ? (
+                <PaginatedSongSheet
+                  blocks={blocks} title={liveState.title || 'SIN TITULO'} artist={liveState.artist}
+                  metadata={liveState.metadata} options={sheetOptions} precomputedCollapseMap={previewData.collapseMap}
+                  pageHeightPx={pageHeightPx} pageWidthPx={pageWidthPx} printProfile={printProfile}
+                  onPagination={({ height, pageCount, fontSize }) => { setDocumentHeight(height); onPageCountChange?.(pageCount, fontSize); }}
+                />
+              ) : (
                 <SongSheet
                   blocks={blocks}
                   title={liveState.title || 'SIN TITULO'}
@@ -353,7 +366,7 @@ export function ChordProPreview({
                       Pega tu ChordPro para generar la hoja
                     </h2>
                     <p className="mt-3 text-sm leading-6 text-zinc-500">
-                      La vista se ajusta automaticamente para caber en una sola pagina Carta/A4.
+                      La vista distribuye la canción en hojas Carta sin cortar el contenido.
                     </p>
                   </div>
                 </div>

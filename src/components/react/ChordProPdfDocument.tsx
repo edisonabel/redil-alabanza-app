@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import SongSheet from './SongSheet';
+import PaginatedSongSheet from './PaginatedSongSheet';
 import type { SongSheetPrintProfile } from './SongSheet';
 import type { ChordProPdfPayload } from '../../lib/chordproPdfPayload';
 import {
@@ -169,6 +170,14 @@ export default function ChordProPdfDocument({
 
       await waitForPdfFonts();
 
+      if (printProfile === 'v2-optimized') {
+        for (let index = 0; index < 300; index += 1) {
+          if (document.querySelector('.song-sheet-pagination[data-pagination-ready="true"]')) break;
+          await nextFrame();
+          if (cancelled) return;
+        }
+        if (!document.querySelector('.song-sheet-pagination[data-pagination-ready="true"]')) return;
+      }
       const frameCount = printProfile === 'v2-optimized' ? 5 : 2;
       for (let index = 0; index < frameCount; index += 1) {
         await nextFrame();
@@ -205,6 +214,7 @@ export default function ChordProPdfDocument({
     payload?.sheetOptions.showSectionDividers,
     payload?.sheetOptions.showSongMap,
     payload?.sheetOptions.styleMode,
+    payload?.sheetOptions.pageMode,
     payload?.title,
     printProfile,
   ]);
@@ -264,9 +274,16 @@ export default function ChordProPdfDocument({
           ) : null}
           <div
             id="chordpro-pdf-sheet"
-            className="mx-auto h-[11in] w-[8.5in] overflow-hidden bg-white print:overflow-hidden print:w-[8.5in] print:max-w-[8.5in] print:h-[11in]"
+            className="mx-auto w-[8.5in] bg-white print:w-[8.5in] print:max-w-[8.5in]"
+            style={{ height: printProfile === 'v2-optimized' ? undefined : PAGE_HEIGHT_PX }}
           >
-            <SongSheet
+            {printProfile === 'v2-optimized' ? (
+              <PaginatedSongSheet
+                blocks={previewData.blocks} title={payload.title || 'SIN TITULO'} artist={payload.artist}
+                metadata={payload.metadata} options={payload.sheetOptions} precomputedCollapseMap={previewData.collapseMap}
+                pageHeightPx={PAGE_HEIGHT_PX} pageWidthPx={PAGE_WIDTH_PX} printProfile={printProfile} pageGap={0}
+              />
+            ) : <SongSheet
               blocks={previewData.blocks}
               title={payload.title || 'SIN TITULO'}
               artist={payload.artist}
@@ -278,7 +295,7 @@ export default function ChordProPdfDocument({
               framed={false}
               className="h-full"
               printProfile={printProfile}
-            />
+            />}
           </div>
         </>
       ) : isWaitingForPayload ? (

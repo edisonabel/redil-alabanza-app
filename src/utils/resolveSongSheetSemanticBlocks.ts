@@ -27,17 +27,6 @@ export type ResolveSemanticSongSheetOptions = {
   inheritTargetIdentity?: boolean;
 };
 
-const LYRIC_VARIANT_COLLAPSE_KINDS = new Set<SemanticSectionKind>([
-  'verse',
-  'chorus',
-  'prechorus',
-]);
-
-const normalizeLyricSignature = (lines: ParsedChordLine[]) =>
-  lines
-    .map((line) => String(line?.lyrics || '').trim().replace(/\s+/g, ' '))
-    .join('||');
-
 const normalizeContentSignature = (lines: ParsedChordLine[]) =>
   lines
     .map((line) => {
@@ -71,12 +60,15 @@ const buildResolvedBlock = (
     isCollapsed: boolean;
     referenceTargetId: string | null;
     referenceResolved: boolean;
+    repeatOfTitle?: string;
   }
 ): ResolvedSemanticSongSheetBlock => ({
   id: node.id,
   typeMarker: options.typeMarker,
   fullTitle: options.fullTitle,
   lines,
+  pageBreakBefore: node.pageBreakBefore,
+  repeatOfTitle: options.repeatOfTitle,
   semanticNodeType: node.nodeType,
   semanticKind: node.kind,
   semanticSource: node.source,
@@ -99,9 +91,7 @@ export function resolveSongSheetSemanticBlocks(
   } = options;
 
   const contentNodesById = new Map<string, SemanticContentSection>();
-  const expandedReferenceKeys = new Set<string>();
-  const exactContentKeys = new Set<string>();
-  const lyricVariantKeys = new Set<string>();
+  const exactContentKeys = new Map<string, SemanticContentSection>();
 
   for (const node of nodes) {
     if (node.nodeType === 'section') {
@@ -115,24 +105,14 @@ export function resolveSongSheetSemanticBlocks(
     if (node.nodeType === 'section') {
       const baseLines = node.lines.map(cloneParsedChordLine);
       const contentSignature = normalizeContentSignature(baseLines);
-      const lyricSignature = normalizeLyricSignature(baseLines);
       const exactKey = `${node.kind}::content::${contentSignature}`;
-      const lyricKey = `${node.kind}::lyrics::${lyricSignature}`;
-      const canCollapseByLyrics =
-        LYRIC_VARIANT_COLLAPSE_KINDS.has(node.kind) && Boolean(lyricSignature.trim());
       const shouldCollapse =
         mode === 'condensed' &&
-        (expandedReferenceKeys.has(node.referenceKey) ||
-          exactContentKeys.has(exactKey) ||
-          (canCollapseByLyrics && lyricVariantKeys.has(lyricKey)));
+        exactContentKeys.has(exactKey);
       const lines = shouldCollapse ? [] : baseLines;
 
       if (!shouldCollapse && lines.length > 0) {
-        expandedReferenceKeys.add(node.referenceKey);
-        exactContentKeys.add(exactKey);
-        if (canCollapseByLyrics) {
-          lyricVariantKeys.add(lyricKey);
-        }
+        exactContentKeys.set(exactKey, node);
       }
 
       resolvedBlocks.push(
@@ -140,7 +120,8 @@ export function resolveSongSheetSemanticBlocks(
           typeMarker: node.typeMarker,
           fullTitle: node.fullTitle,
           isCollapsed: shouldCollapse,
-          referenceTargetId: null,
+          referenceTargetId: shouldCollapse ? exactContentKeys.get(exactKey)?.id || null : null,
+          repeatOfTitle: shouldCollapse ? exactContentKeys.get(exactKey)?.fullTitle : undefined,
           referenceResolved: true,
         })
       );
@@ -159,16 +140,13 @@ export function resolveSongSheetSemanticBlocks(
       lines = target.lines.map(cloneParsedChordLine);
     }
 
-    if (!shouldCollapse && lines.length > 0) {
-      expandedReferenceKeys.add(node.referenceKey);
-    }
-
     resolvedBlocks.push(
       buildResolvedBlock(node, lines, {
         typeMarker: inheritTargetIdentity && target ? target.typeMarker : node.typeMarker,
         fullTitle: inheritTargetIdentity && target ? target.fullTitle : node.fullTitle,
         isCollapsed: shouldCollapse,
         referenceTargetId: target?.id || null,
+        repeatOfTitle: shouldCollapse ? target?.fullTitle : undefined,
         referenceResolved: Boolean(target),
       })
     );

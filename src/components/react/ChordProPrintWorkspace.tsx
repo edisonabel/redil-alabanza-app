@@ -10,8 +10,17 @@ import type {
 import { parseChordProSemantic } from '../../utils/parseChordProSemantic';
 import { resolveSongSheetSemanticBlocks } from '../../utils/resolveSongSheetSemanticBlocks';
 import { inferChordProTone } from '../../utils/inferChordProTone';
+import { buildProPresenterText, type ProPresenterLinesPerSlide } from '../../utils/buildProPresenterText';
 import { buildChordProPdfFileName } from '../../lib/chordproPdfPayload';
 import { createChordProPdfBrowserToken } from '../../lib/chordproPdfBrowserStore';
+import { fetchEventArrangement } from '../../utils/liveDirectorEventArrangement';
+import { applyChordProEventArrangement } from '../../utils/applyChordProEventArrangement';
+import { supabase } from '../../lib/supabase.js';
+import {
+  buildChordProPersonalPreferencesRow,
+  CHORD_PRO_PERSONAL_PREFERENCES_TABLE,
+  sanitizeChordProPersonalPreferences,
+} from '../../utils/chordProPersonalPreferences.js';
 
 type PdfEngine = 'v1' | 'v2';
 
@@ -68,6 +77,13 @@ type ChordProPrintWorkspaceProps = {
   initialMetadata?: SongSheetMetadata;
   initialTargetTone?: string;
   initialCapo?: string | number | null;
+  initialSectionMarkers?: Array<Record<string, unknown>>;
+  eventId?: string;
+  songId?: string;
+  userId?: string;
+  initialPersonalPreferences?: Record<string, unknown>;
+  personalPreferencesRemoteAvailable?: boolean;
+  personalPreferencesLoadedFromRemote?: boolean;
 };
 
 const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -243,36 +259,166 @@ export default function ChordProPrintWorkspace({
   initialMetadata,
   initialTargetTone = '',
   initialCapo = null,
+  initialSectionMarkers = [],
+  eventId = '',
+  songId = '',
+  userId = '',
+  initialPersonalPreferences,
+  personalPreferencesRemoteAvailable = false,
+  personalPreferencesLoadedFromRemote = false,
 }: ChordProPrintWorkspaceProps) {
+  const [eventArrangement, setEventArrangement] = useState<import('../../utils/liveDirectorArrangement').ArrangementEntry[] | null>(null);
+  const [eventArrangementState, setEventArrangementState] = useState<'idle' | 'loading' | 'ready' | 'error'>(eventId ? 'loading' : 'idle');
+  const [eventArrangementError, setEventArrangementError] = useState('');
+  useEffect(() => {
+    if (!eventId) return;
+    let cancelled = false;
+    setEventArrangementState('loading');
+    void fetchEventArrangement(eventId, songId)
+      .then((result) => {
+        if (cancelled) return;
+        if (result.arrangement?.entries && result.arrangement.sourceSignature !== result.sourceSignature) {
+          throw new Error('Las secciones del evento cambiaron. Revisa el arreglo en Live Director antes de exportar.');
+        }
+        setEventArrangement(result.arrangement?.entries ?? null);
+        setEventArrangementState('ready');
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setEventArrangementError(error instanceof Error ? error.message : 'No se pudo cargar el arreglo del evento.');
+        setEventArrangementState('error');
+      });
+    return () => { cancelled = true; };
+  }, [eventId, songId]);
+  const eventChordProText = useMemo(() => (
+    eventArrangementState === 'ready'
+      ? applyChordProEventArrangement(initialChordProText, initialSectionMarkers, eventArrangement)
+      : initialChordProText
+  ), [eventArrangement, eventArrangementState, initialChordProText, initialSectionMarkers]);
   const pdfEngine = useMemo(() => readRequestedPdfEngine(), []);
   const printProfile: SongSheetPrintProfile = pdfEngine === 'v2' ? 'v2-optimized' : 'classic';
   const explicitOriginalTone = normalizeNote(initialMetadata?.tone);
   const inferredOriginalTone = useMemo(() => {
     if (explicitOriginalTone) return '';
-    const semanticNodes = parseChordProSemantic(initialChordProText);
+    const semanticNodes = parseChordProSemantic(eventChordProText);
     const semanticBlocks = resolveSongSheetSemanticBlocks(semanticNodes, {
       mode: 'complete',
     });
     return inferChordProTone(semanticBlocks);
-  }, [explicitOriginalTone, initialChordProText]);
+  }, [eventChordProText, explicitOriginalTone]);
   const originalTone = explicitOriginalTone || inferredOriginalTone;
   const [isDarkTheme, setIsDarkTheme] = useState(() => readIsDarkTheme());
   const [title, setTitle] = useState(initialTitle || '');
   const [artist, setArtist] = useState(initialArtist || '');
-  const [targetTone, setTargetTone] = useState(normalizeNote(initialTargetTone) || originalTone || '');
-  const [selectedCapo, setSelectedCapo] = useState(() => normalizeCapo(initialCapo ?? initialMetadata?.capo));
+  const [targetTone, setTargetTone] = useState(() => normalizeNote(String(initialPersonalPreferences?.targetTone || initialTargetTone)) || originalTone || '');
+  const [selectedCapo, setSelectedCapo] = useState(() => normalizeCapo(String(initialPersonalPreferences?.capoFret ?? initialCapo ?? initialMetadata?.capo ?? 0)));
+  const [personalNotes, setPersonalNotes] = useState(() => String(initialPersonalPreferences?.personalNotes || ''));
+  const [personalPreferencesStatus, setPersonalPreferencesStatus] = useState<'ready' | 'saving' | 'saved-cloud' | 'saved-device' | 'error'>(
+    personalPreferencesLoadedFromRemote ? 'saved-cloud' : 'ready'
+  );
+  const [personalPreferencesHydrated, setPersonalPreferencesHydrated] = useState(personalPreferencesLoadedFromRemote);
   const [previewZoom, setPreviewZoom] = useState(1);
+  const [previewPageCount, setPreviewPageCount] = useState(1);
+  const [previewFontSize, setPreviewFontSize] = useState(16);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [proPresenterLinesPerSlide, setProPresenterLinesPerSlide] = useState<ProPresenterLinesPerSlide>(4);
   const pdfFeedbackTimeoutRef = useRef<number | null>(null);
   const pdfObjectUrlsRef = useRef<string[]>([]);
   const [sheetOptions, setSheetOptions] = useState<Required<SongSheetLayoutOptions>>({
-    renderMode: 'chords-lyrics',
-    columnCount: 2,
-    density: 'complete',
-    showSongMap: true,
-    showSectionDividers: true,
-    styleMode: 'completo',
+    renderMode: initialPersonalPreferences?.renderMode === 'lyrics-only' || initialPersonalPreferences?.renderMode === 'chords-only'
+      ? initialPersonalPreferences.renderMode as SongSheetRenderMode
+      : 'chords-lyrics',
+    columnCount: Number(initialPersonalPreferences?.columnCount) === 1 ? 1 : 2,
+    density: initialPersonalPreferences?.density === 'condensed' ? 'condensed' : 'complete',
+    showSongMap: initialPersonalPreferences?.showSongMap !== false,
+    showSectionDividers: initialPersonalPreferences?.showSectionDividers !== false,
+    styleMode: initialPersonalPreferences?.density === 'condensed' ? 'condensado' : 'completo',
+    pageMode: initialPersonalPreferences?.pageMode === 'two' ? 'two' : 'one',
   });
+  const personalPreferencesStorageKey = `redil:chordpro-personal:v1:${encodeURIComponent(userId || 'anon')}:${encodeURIComponent(songId || initialTitle || 'song')}`;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (personalPreferencesLoadedFromRemote) {
+      setPersonalPreferencesHydrated(true);
+      return;
+    }
+    try {
+      const localValue = window.localStorage.getItem(personalPreferencesStorageKey);
+      if (localValue) {
+        const restored = sanitizeChordProPersonalPreferences(JSON.parse(localValue));
+        setPersonalNotes(restored.personalNotes);
+        if (restored.targetTone) setTargetTone(restored.targetTone);
+        setSelectedCapo(restored.capoFret);
+        setSheetOptions((current) => ({
+          ...current,
+          renderMode: restored.renderMode,
+          columnCount: restored.columnCount as 1 | 2,
+          density: restored.density,
+          styleMode: restored.density === 'condensed' ? 'condensado' : 'completo',
+          showSongMap: restored.showSongMap,
+          showSectionDividers: restored.showSectionDividers,
+          pageMode: restored.pageMode,
+        }));
+        setPersonalPreferencesStatus('saved-device');
+      }
+    } catch {
+      // Ignore invalid or unavailable browser storage.
+    } finally {
+      setPersonalPreferencesHydrated(true);
+    }
+  }, [personalPreferencesLoadedFromRemote, personalPreferencesStorageKey]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !userId || !songId || !personalPreferencesHydrated) return;
+    const safePreferences = sanitizeChordProPersonalPreferences({
+      personalNotes,
+      targetTone,
+      capoFret: selectedCapo,
+      ...sheetOptions,
+    });
+    const timer = window.setTimeout(async () => {
+      setPersonalPreferencesStatus('saving');
+      let savedOnDevice = false;
+      try {
+        window.localStorage.setItem(personalPreferencesStorageKey, JSON.stringify(safePreferences));
+        savedOnDevice = true;
+      } catch {
+        // The authenticated database record remains the durable copy.
+      }
+
+      if (personalPreferencesRemoteAvailable) {
+        try {
+          const { data: { user }, error: authError } = await supabase.auth.getUser();
+          if (!authError && user?.id === userId) {
+            const row = buildChordProPersonalPreferencesRow({ userId, songId, preferences: safePreferences });
+            const { error } = await supabase
+              .from(CHORD_PRO_PERSONAL_PREFERENCES_TABLE)
+              .upsert(row, { onConflict: 'perfil_id,cancion_id' });
+            if (!error) {
+              setPersonalPreferencesStatus('saved-cloud');
+              return;
+            }
+          }
+        } catch {
+          // Keep the user's private browser copy if the remote save is unavailable.
+        }
+      }
+      setPersonalPreferencesStatus(savedOnDevice ? 'saved-device' : 'error');
+    }, 650);
+    return () => window.clearTimeout(timer);
+  }, [
+    personalPreferencesHydrated,
+    personalPreferencesLoadedFromRemote,
+    personalPreferencesRemoteAvailable,
+    personalPreferencesStorageKey,
+    personalNotes,
+    selectedCapo,
+    sheetOptions,
+    songId,
+    targetTone,
+    userId,
+  ]);
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -313,28 +459,6 @@ export default function ChordProPrintWorkspace({
     };
   }, []);
 
-  useEffect(() => {
-    setSheetOptions((current) => {
-      const needsCondensedSingleColumn = current.columnCount === 1 && current.density !== 'condensed';
-      const needsSectionDividers = !current.showSectionDividers;
-
-      if (!needsCondensedSingleColumn && !needsSectionDividers) {
-        return current;
-      }
-
-      return {
-        ...current,
-        showSectionDividers: true,
-        ...(needsCondensedSingleColumn
-          ? {
-            density: 'condensed',
-            styleMode: 'condensado' as const,
-          }
-          : {}),
-      };
-    });
-  }, []);
-
   const semitoneDelta = useMemo(
     () => getSignedSemitoneDelta(originalTone, targetTone),
     [originalTone, targetTone]
@@ -343,7 +467,7 @@ export default function ChordProPrintWorkspace({
   const songChordTokens = useMemo(() => {
     const tokens: string[] = [];
     const seen = new Set<string>();
-    String(initialChordProText || '').replace(/\[([^\]]+)\]/g, (_, chord) => {
+    String(eventChordProText || '').replace(/\[([^\]]+)\]/g, (_, chord) => {
       const safe = String(chord || '').trim();
       if (isTransposableChordToken(safe) && !seen.has(safe)) {
         seen.add(safe);
@@ -352,7 +476,7 @@ export default function ChordProPrintWorkspace({
       return '';
     });
     return tokens;
-  }, [initialChordProText]);
+  }, [eventChordProText]);
 
   const capoScores = useMemo(() => {
     const base = targetTone || originalTone;
@@ -389,8 +513,8 @@ export default function ChordProPrintWorkspace({
   );
 
   const transposedChordProText = useMemo(
-    () => transposeChordProText(initialChordProText, playbackSemitoneDelta),
-    [initialChordProText, playbackSemitoneDelta]
+    () => transposeChordProText(eventChordProText, playbackSemitoneDelta),
+    [eventChordProText, playbackSemitoneDelta]
   );
 
   const previewMetadata = useMemo(
@@ -400,9 +524,10 @@ export default function ChordProPrintWorkspace({
         ? `${selectedCapo}${displayedTone ? ` (${displayedTone})` : ''}`
         : '0',
       tempo: initialMetadata?.tempo ?? '',
-      time: initialMetadata?.time ?? '',
+      time: initialMetadata?.time || eventChordProText.match(/\{(?:time|time_signature|compas):\s*([^}]+)\}/i)?.[1]?.trim() || '',
+      personalNote: personalNotes,
     }),
-    [displayedTone, initialMetadata?.tempo, initialMetadata?.time, originalTone, selectedCapo, targetTone]
+    [displayedTone, eventChordProText, initialMetadata?.tempo, initialMetadata?.time, originalTone, personalNotes, selectedCapo, targetTone]
   );
 
   const setRenderMode = (renderMode: SongSheetRenderMode) => {
@@ -418,25 +543,12 @@ export default function ChordProPrintWorkspace({
   };
 
   const setColumnCountMode = (columnCount: 1 | 2) => {
-    setSheetOptions((current) => {
-      if (columnCount === 1) {
-        return {
-          ...current,
-          columnCount,
-          density: 'condensed',
-          styleMode: 'condensado',
-        };
-      }
-
-      return {
-        ...current,
-        columnCount,
-      };
-    });
+    setSheetOptions((current) => ({ ...current, columnCount }));
   };
 
   const handlePrint = async () => {
     if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    if (eventId && eventArrangementState !== 'ready') return;
 
     const payload = {
       chordProText: transposedChordProText,
@@ -447,6 +559,7 @@ export default function ChordProPrintWorkspace({
         capo: String(previewMetadata.capo ?? ''),
         tempo: String(previewMetadata.tempo ?? ''),
         time: String(previewMetadata.time ?? ''),
+        personalNote: String(previewMetadata.personalNote ?? ''),
       },
       sheetOptions,
       fileName: `${buildChordProPdfFileName(title, artist)}.pdf`,
@@ -546,8 +659,28 @@ export default function ChordProPrintWorkspace({
     }
   };
 
+  const handleExportProPresenterText = () => {
+    if (typeof window === 'undefined') return;
+    if (eventId && eventArrangementState !== 'ready') return;
+    const text = buildProPresenterText(
+      parseChordProSemantic(transposedChordProText),
+      proPresenterLinesPerSlide,
+    );
+    if (!text) return;
+
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${buildChordProPdfFileName(title, artist)}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+  };
+
   const zoomLabel = `${Math.round(previewZoom * 100)}%`;
-  const completeModeDisabled = sheetOptions.columnCount === 1;
+
 
   const sidebarShellClasses = isDarkTheme
     ? 'border-white/10 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.18),_transparent_28%),linear-gradient(180deg,_rgba(9,9,11,0.98),_rgba(15,23,42,0.96))] text-white shadow-[0_30px_80px_rgba(2,6,23,0.35)]'
@@ -572,7 +705,7 @@ export default function ChordProPrintWorkspace({
     <div className="mx-auto flex w-full max-w-[1880px] flex-col gap-4 px-4 pb-4 lg:flex-row lg:items-start lg:px-6 xl:px-8 print:block print:max-w-none print:px-0 print:py-0">
       <aside
         className={[
-          'w-full shrink-0 rounded-[2rem] border p-4 lg:sticky lg:top-4 lg:max-h-[calc(100dvh-2.75rem)] lg:w-[340px] lg:overflow-auto xl:w-[360px] 2xl:w-[390px] print:hidden',
+          'w-full shrink-0 rounded-[2rem] border p-4 lg:sticky lg:top-4 lg:flex lg:h-[calc(100dvh-2.75rem)] lg:flex-col lg:overflow-hidden xl:w-[360px] 2xl:w-[390px] print:hidden',
           sidebarShellClasses,
         ].join(' ')}
       >
@@ -592,7 +725,7 @@ export default function ChordProPrintWorkspace({
           </span>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-1">
           <section className="space-y-3">
             <h2 className={['text-xs font-black uppercase tracking-[0.18em]', eyebrowTextClasses].join(' ')}>
               Cancion
@@ -632,16 +765,17 @@ export default function ChordProPrintWorkspace({
             </div>
           </section>
 
-          <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className={['text-xs font-black uppercase tracking-[0.18em]', eyebrowTextClasses].join(' ')}>
-                Transponer
-              </h2>
-              <span className={['text-xs font-bold uppercase tracking-[0.14em]', isDarkTheme ? 'text-sky-300' : 'text-sky-600'].join(' ')}>
-                {formatTransposeSummary(semitoneDelta)}
+          <details className={['group rounded-2xl border p-3', structurePanelClasses].join(' ')}>
+            <summary className={['flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg outline-none [&::-webkit-details-marker]:hidden focus-visible:ring-2 focus-visible:ring-sky-400', sectionTitleClasses].join(' ')}>
+              <span className="text-xs font-black uppercase tracking-[0.16em]">Transponer</span>
+              <span className="flex items-center gap-2">
+                <span className={['text-xs font-bold', isDarkTheme ? 'text-sky-300' : 'text-sky-600'].join(' ')}>
+                  {targetTone || originalTone || '--'} · {formatTransposeSummary(semitoneDelta)}
+                </span>
+                <span aria-hidden="true" className={['text-lg leading-none transition-transform group-open:rotate-90', sectionBodyClasses].join(' ')}>›</span>
               </span>
-            </div>
-            <div className="space-y-2">
+            </summary>
+            <div className="mt-3 space-y-2">
               {NOTE_BUTTON_ROWS.map((row, rowIndex) => (
                 <div key={`tone-row-${rowIndex}`} className="grid grid-cols-6 gap-2">
                   {row.map((note) => (
@@ -657,18 +791,19 @@ export default function ChordProPrintWorkspace({
                 </div>
               ))}
             </div>
-          </section>
+          </details>
 
-          <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className={['text-xs font-black uppercase tracking-[0.18em]', eyebrowTextClasses].join(' ')}>
-                Capo
-              </h2>
-              <span className={['text-xs font-bold uppercase tracking-[0.14em]', isDarkTheme ? 'text-sky-300' : 'text-sky-600'].join(' ')}>
+          <details className={['group rounded-2xl border p-3', structurePanelClasses].join(' ')}>
+            <summary className={['flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg outline-none [&::-webkit-details-marker]:hidden focus-visible:ring-2 focus-visible:ring-sky-400', sectionTitleClasses].join(' ')}>
+              <span className="text-xs font-black uppercase tracking-[0.16em]">Capo</span>
+              <span className="flex items-center gap-2">
+                <span className={['text-xs font-bold', isDarkTheme ? 'text-sky-300' : 'text-sky-600'].join(' ')}>
                 {selectedCapo > 0 ? `${selectedCapo} / ${displayedTone || '--'}` : 'Sin capo'}
+                </span>
+                <span aria-hidden="true" className={['text-lg leading-none transition-transform group-open:rotate-90', sectionBodyClasses].join(' ')}>›</span>
               </span>
-            </div>
-            <div className="grid grid-cols-8 gap-1.5">
+            </summary>
+            <div className="mt-3 grid grid-cols-8 gap-1.5">
               {CAPO_OPTIONS.map((fret) => {
                 const isRec = recommendedCapo?.fret === fret;
                 return (
@@ -689,13 +824,22 @@ export default function ChordProPrintWorkspace({
                 );
               })}
             </div>
-          </section>
+          </details>
 
-          <section className="space-y-3">
-            <h2 className={['text-xs font-black uppercase tracking-[0.18em]', eyebrowTextClasses].join(' ')}>
-              Salida
-            </h2>
-            <div className="grid grid-cols-1 gap-3">
+          <details open className={['group rounded-2xl border p-3', structurePanelClasses].join(' ')}>
+            <summary className={['flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg outline-none [&::-webkit-details-marker]:hidden focus-visible:ring-2 focus-visible:ring-sky-400', sectionTitleClasses].join(' ')}>
+              <span className="text-xs font-black uppercase tracking-[0.16em]">Diseño del chart</span>
+              <span className="flex min-w-0 items-center gap-2">
+                <span className={['max-w-[205px] truncate text-right text-[11px] font-semibold leading-4', sectionBodyClasses].join(' ')}>
+                  {sheetOptions.renderMode === 'chords-lyrics' ? 'Acordes + letra' : sheetOptions.renderMode === 'lyrics-only' ? 'Solo letra' : 'Solo acordes'} · {sheetOptions.columnCount} col · {sheetOptions.density === 'complete' ? 'Completo' : 'Condensado'}{pdfEngine === 'v2' ? ` · ${sheetOptions.pageMode === 'one' ? '1 página' : '2 páginas'}` : ''}
+                </span>
+                <span aria-hidden="true" className={['text-lg leading-none transition-transform group-open:rotate-90', sectionBodyClasses].join(' ')}>›</span>
+              </span>
+            </summary>
+            <div className="mt-4 space-y-5">
+            <section className="space-y-3">
+              <h2 className={['text-xs font-black uppercase tracking-[0.18em]', eyebrowTextClasses].join(' ')}>Salida</h2>
+              <div className="grid grid-cols-1 gap-3">
               <button
                 type="button"
                 className={getOptionButtonClass(sheetOptions.renderMode === 'chords-lyrics', isDarkTheme)}
@@ -717,14 +861,12 @@ export default function ChordProPrintWorkspace({
               >
                 Solo acordes
               </button>
-            </div>
-          </section>
+              </div>
+            </section>
 
-          <section className="space-y-3">
-            <h2 className={['text-xs font-black uppercase tracking-[0.18em]', eyebrowTextClasses].join(' ')}>
-              Formato
-            </h2>
-            <div className="grid grid-cols-2 gap-3">
+            <section className="space-y-3">
+              <h2 className={['text-xs font-black uppercase tracking-[0.18em]', eyebrowTextClasses].join(' ')}>Formato</h2>
+              <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
                 className={getOptionButtonClass(sheetOptions.columnCount === 2, isDarkTheme)}
@@ -741,20 +883,8 @@ export default function ChordProPrintWorkspace({
               </button>
               <button
                 type="button"
-                disabled={completeModeDisabled}
-                title={completeModeDisabled ? '1 columna solo funciona en condensado' : undefined}
-                className={[
-                  getOptionButtonClass(sheetOptions.density === 'complete', isDarkTheme),
-                  completeModeDisabled
-                    ? isDarkTheme
-                      ? 'cursor-not-allowed opacity-45 saturate-50'
-                      : 'cursor-not-allowed opacity-50'
-                    : '',
-                ].join(' ')}
-                onClick={() => {
-                  if (completeModeDisabled) return;
-                  setDensityMode('complete');
-                }}
+                className={getOptionButtonClass(sheetOptions.density === 'complete', isDarkTheme)}
+                onClick={() => setDensityMode('complete')}
               >
                 Completo
               </button>
@@ -765,14 +895,21 @@ export default function ChordProPrintWorkspace({
               >
                 Condensado
               </button>
-            </div>
-          </section>
+              </div>
+            </section>
 
-          <section className="space-y-3">
-            <h2 className={['text-xs font-black uppercase tracking-[0.18em]', eyebrowTextClasses].join(' ')}>
-              Extras
-            </h2>
-            <div className={['space-y-3 rounded-[1.5rem] border p-4', structurePanelClasses].join(' ')}>
+            {pdfEngine === 'v2' && <section className="space-y-3">
+              <h2 className={['text-xs font-black uppercase tracking-[0.18em]', eyebrowTextClasses].join(' ')}>Páginas</h2>
+              <div className="grid grid-cols-2 gap-3">
+              <button type="button" aria-pressed={sheetOptions.pageMode === 'one'} className={getOptionButtonClass(sheetOptions.pageMode === 'one', isDarkTheme)} onClick={() => setSheetOptions((current) => ({ ...current, pageMode: 'one' }))}>1 página</button>
+              <button type="button" aria-pressed={sheetOptions.pageMode === 'two'} className={getOptionButtonClass(sheetOptions.pageMode === 'two', isDarkTheme)} onClick={() => setSheetOptions((current) => ({ ...current, pageMode: 'two' }))}>2 páginas</button>
+              </div>
+              <p className={['text-xs leading-5', sectionBodyClasses].join(' ')} aria-live="polite">{sheetOptions.pageMode === 'one' && previewPageCount === 1 && previewFontSize < 10 ? 'Ajustada a una página con letra muy pequeña. Elige 2 páginas para leerla con más comodidad.' : previewPageCount > (sheetOptions.pageMode === 'two' ? 2 : 1) ? `Esta canción necesita ${previewPageCount} páginas para mantener la letra legible.` : sheetOptions.pageMode === 'one' ? 'Intenta ajustar la canción a una página; si no cabe, añade hojas para mantener la letra legible.' : 'Distribuye la canción en dos páginas; si no cabe, añade hojas para mantener la letra legible.'}</p>
+            </section>}
+
+            <section className="space-y-3">
+              <h2 className={['text-xs font-black uppercase tracking-[0.18em]', eyebrowTextClasses].join(' ')}>Extras</h2>
+              <div className={['space-y-3 rounded-[1.5rem] border p-4', structurePanelClasses].join(' ')}>
               <button
                 type="button"
                 className="flex w-full items-center justify-between gap-3 text-left"
@@ -790,16 +927,63 @@ export default function ChordProPrintWorkspace({
                   <span className="m-1 h-4 w-4 rounded-full bg-white shadow-sm" />
                 </span>
               </button>
+              </div>
+            </section>
             </div>
-          </section>
+          </details>
+
+          <details className={['group rounded-2xl border p-3', structurePanelClasses].join(' ')}>
+            <summary className={['flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg outline-none [&::-webkit-details-marker]:hidden focus-visible:ring-2 focus-visible:ring-sky-400', sectionTitleClasses].join(' ')}>
+              <span className="text-xs font-black uppercase tracking-[0.16em]">Mis notas personales</span>
+              <span className="flex items-center gap-2">
+                <span className={['max-w-[180px] truncate text-right text-[10px] font-semibold', personalNotes.trim() ? (isDarkTheme ? 'text-emerald-300' : 'text-emerald-700') : sectionBodyClasses].join(' ')} aria-live="polite">
+                  {personalPreferencesStatus === 'saving'
+                    ? 'Guardando…'
+                    : personalPreferencesStatus === 'saved-cloud'
+                      ? 'Guardado en tu perfil'
+                      : personalPreferencesStatus === 'saved-device'
+                        ? 'Guardado en este dispositivo'
+                        : personalPreferencesStatus === 'error'
+                          ? 'No se pudo guardar'
+                          : personalNotes.trim() ? 'Con nota' : 'Añadir'}
+                </span>
+                <span aria-hidden="true" className={['text-lg leading-none transition-transform group-open:rotate-90', sectionBodyClasses].join(' ')}>›</span>
+              </span>
+            </summary>
+            <div className="mt-3 space-y-2">
+              <textarea
+                value={personalNotes}
+                onChange={(event) => setPersonalNotes(event.target.value.slice(0, 1000))}
+                maxLength={1000}
+                rows={3}
+                placeholder="Ej.: guitarra entra en el segundo coro; bajo en silencio en la intro…"
+                aria-label="Notas personales privadas para esta canción"
+                className={['w-full resize-y rounded-2xl border px-4 py-3 text-sm leading-5 outline-none transition', fieldClasses].join(' ')}
+              />
+              <p className={['text-[11px] leading-4', sectionBodyClasses].join(' ')}>
+                Privadas para tu cuenta. No modifican la canción ni el arreglo del evento; también aparecen en tu PDF individual.
+              </p>
+            </div>
+          </details>
         </div>
 
+        <div className={['mt-4 shrink-0 border-t pt-3', isDarkTheme ? 'border-white/10' : 'border-zinc-200'].join(' ')}>
+        {eventId && eventArrangementState === 'loading' && (
+          <p className={['mt-3 text-center text-xs leading-5', sectionBodyClasses].join(' ')} aria-live="polite">
+            Cargando el orden de secciones guardado para este evento…
+          </p>
+        )}
+        {eventId && eventArrangementState === 'error' && (
+          <p className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs leading-5 text-amber-700 dark:text-amber-200" role="alert">
+            {eventArrangementError}
+          </p>
+        )}
         <button
           type="button"
           onClick={handlePrint}
-          disabled={isGeneratingPdf}
+          disabled={isGeneratingPdf || Boolean(eventId && eventArrangementState !== 'ready')}
           className={[
-            'mt-6 inline-flex w-full items-center justify-center rounded-2xl px-4 py-3 text-sm font-black transition',
+            'inline-flex w-full items-center justify-center rounded-2xl px-4 py-3 text-sm font-black transition',
             isDarkTheme
               ? 'bg-sky-500 text-slate-950 hover:bg-sky-400'
               : 'bg-sky-500 text-white shadow-[0_18px_32px_rgba(14,165,233,0.24)] hover:bg-sky-600',
@@ -808,12 +992,55 @@ export default function ChordProPrintWorkspace({
         >
           {isGeneratingPdf ? 'Generando PDF...' : 'Imprimir PDF'}
         </button>
+        <details className={['group mt-2 rounded-2xl border p-3', structurePanelClasses].join(' ')}>
+          <summary className={['flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg outline-none [&::-webkit-details-marker]:hidden focus-visible:ring-2 focus-visible:ring-sky-400', sectionTitleClasses].join(' ')}>
+            <span className="text-xs font-black uppercase tracking-[0.16em]">ProPresenter</span>
+            <span className="flex items-center gap-2">
+              <span className={['text-xs font-semibold', sectionBodyClasses].join(' ')}>Exportar letra</span>
+              <span aria-hidden="true" className={['text-lg leading-none transition-transform group-open:rotate-90', sectionBodyClasses].join(' ')}>›</span>
+            </span>
+          </summary>
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={handleExportProPresenterText}
+              disabled={Boolean(eventId && eventArrangementState !== 'ready')}
+              className={[
+                'inline-flex w-full items-center justify-center rounded-2xl border px-4 py-3 text-sm font-bold transition',
+                isDarkTheme
+                  ? 'border-white/12 bg-white/5 text-zinc-100 hover:bg-white/10'
+                  : 'border-zinc-200 bg-white text-zinc-800 hover:bg-zinc-50',
+              ].join(' ')}
+            >
+              Descargar letra (.txt)
+            </button>
+            <label className={['mt-3 flex items-center justify-between gap-3 text-xs font-semibold', sectionBodyClasses].join(' ')}>
+              Líneas por diapositiva
+              <select
+                value={proPresenterLinesPerSlide}
+                onChange={(event) => setProPresenterLinesPerSlide(Number(event.target.value) as ProPresenterLinesPerSlide)}
+                className={[
+                  'rounded-xl border px-3 py-2 text-sm outline-none',
+                  isDarkTheme ? 'border-white/10 bg-zinc-900 text-white' : 'border-zinc-200 bg-white text-zinc-900',
+                ].join(' ')}
+              >
+                <option value={1}>1</option>
+                <option value={2}>2</option>
+                <option value={4}>4</option>
+              </select>
+            </label>
+            <p className={['mt-2 text-center text-xs leading-5', sectionBodyClasses].join(' ')}>
+              Exporta la letra sin acordes. Cada grupo se separa con una línea vacía; configura el importador para usarla como límite de diapositiva.
+            </p>
+          </div>
+        </details>
+        </div>
       </aside>
 
       <div className="min-w-0 flex-1 lg:min-h-[calc(100dvh-3rem)]">
         <div className="mb-3 flex items-center justify-between print:hidden">
           <p className="text-sm font-black uppercase tracking-[0.22em] text-zinc-400 dark:text-zinc-500">
-            Vista previa
+            Vista previa · {previewPageCount} {previewPageCount === 1 ? 'página' : 'páginas'}
           </p>
           <div className="inline-flex items-center gap-1">
             <button
@@ -847,6 +1074,7 @@ export default function ChordProPrintWorkspace({
             sheetOptions={sheetOptions}
             zoomMultiplier={previewZoom}
             printProfile={printProfile}
+            onPageCountChange={(count, fontSize) => { setPreviewPageCount(count); setPreviewFontSize(fontSize); }}
             className="w-full min-h-[26rem] sm:min-h-[32rem] lg:h-[calc(100dvh-5.9rem)] xl:h-[calc(100dvh-5.5rem)]"
           />
         </section>

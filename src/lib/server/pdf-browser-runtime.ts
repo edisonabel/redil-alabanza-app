@@ -1,5 +1,16 @@
-import type { Browser } from 'puppeteer-core';
+import type { Browser, Page } from 'puppeteer-core';
+import type { AstroCookies } from 'astro';
 import { readEnv } from './supabase-env.js';
+
+// Render routes have the same access rules as the workspace. Give the isolated
+// PDF browser the caller's session, scoped to this origin, without public URLs
+// or authentication tokens in query strings.
+export const setPdfBrowserSession = async (page: Page, origin: string, cookies: AstroCookies) => {
+  for (const name of ['sb-access-token', 'sb-refresh-token']) {
+    const value = cookies.get(name)?.value;
+    if (value) await page.setCookie({ name, value, url: origin, httpOnly: true, sameSite: 'Lax', secure: origin.startsWith('https:') });
+  }
+};
 
 type PdfViewport = {
   width: number;

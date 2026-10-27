@@ -174,18 +174,19 @@ const cueOneCapture = buildNextChordProCueCapture(
   3,
   56,
 );
-assert.deepEqual(cueOneCapture, { startSec: 56, cueMarkers: [] });
+// La captura guarda el inicio de la voz (vocalStartSec) sin mover el inicio de la sección.
+assert.deepEqual(cueOneCapture, { vocalStartSec: 56, cueMarkers: [] });
 assert.deepEqual(
   buildNextChordProCueCapture({ startSec: '', cueMarkers: [null, ''] }, 3, 56),
-  { startSec: 56, cueMarkers: [] },
+  { vocalStartSec: 56, cueMarkers: [] },
   'Empty marker values must capture cue 1 instead of being coerced to zero.',
 );
 
 const cueTwoCapture = buildNextChordProCueCapture(cueOneCapture, 3, 72.35);
-assert.deepEqual(cueTwoCapture, { startSec: 56, cueMarkers: [72.35] });
+assert.deepEqual(cueTwoCapture, { vocalStartSec: 56, cueMarkers: [72.35] });
 
 const cueThreeCapture = buildNextChordProCueCapture(cueTwoCapture, 3, 78.12);
-assert.deepEqual(cueThreeCapture, { startSec: 56, cueMarkers: [72.35, 78.12] });
+assert.deepEqual(cueThreeCapture, { vocalStartSec: 56, cueMarkers: [72.35, 78.12] });
 const guidedMarker = {
   startSec: null,
   cueMarkers: [],

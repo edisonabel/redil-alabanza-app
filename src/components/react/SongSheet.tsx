@@ -7,6 +7,7 @@ export type SongSheetMetadata = {
   capo?: string | number | null;
   tempo?: string | number | null;
   time?: string | null;
+  personalNote?: string | null;
 };
 
 export type SongSheetProps = {
@@ -26,6 +27,10 @@ export type SongSheetProps = {
   fixedFontSize?: number;
   printProfile?: SongSheetPrintProfile;
   liveTiming?: SongSheetLiveTiming;
+  columnGroups?: ChordProBlock[][];
+  songMapBlocks?: ChordProBlock[];
+  pageNumber?: number;
+  pageCount?: number;
 };
 
 export type SongSheetRenderMode = 'chords-lyrics' | 'lyrics-only' | 'chords-only';
@@ -40,6 +45,7 @@ export type SongSheetLayoutOptions = {
   styleMode?: SongSheetStyleMode;
   showSongMap?: boolean;
   showSectionDividers?: boolean;
+  pageMode?: 'one' | 'two';
 };
 
 export type SongSheetLiveCueTiming = {
@@ -65,6 +71,11 @@ export type SongSheetLiveTiming = {
 type GroupedChord = {
   position: number;
   text: string;
+};
+
+type ChordLyricChunk = {
+  chord: string;
+  lyrics: string;
 };
 
 type SectionColors = {
@@ -176,7 +187,7 @@ const SONG_SHEET_PRINT_CSS = `
       text-size-adjust: 100% !important;
       width: 8.5in !important;
       min-width: 8.5in !important;
-      height: 11in !important;
+      height: auto !important;
       min-height: 11in !important;
     }
 
@@ -244,6 +255,11 @@ const SONG_SHEET_PRINT_CSS = `
       transform: translateZ(0) !important;
     }
 
+    .song-sheet-section[data-song-sheet-page-break-before="true"] {
+      break-before: page !important;
+      page-break-before: always !important;
+    }
+
     .text-blue-600 {
       color: #2563eb !important;
       -webkit-print-color-adjust: exact !important;
@@ -275,6 +291,7 @@ const DEFAULT_SHEET_OPTIONS: Required<SongSheetLayoutOptions> = {
   styleMode: 'completo',
   showSongMap: true,
   showSectionDividers: true,
+  pageMode: 'one',
 };
 
 type RenderableBlock = ChordProBlock & {
@@ -336,21 +353,6 @@ type PackedLineInspection = {
   rows: PackedLineRow[];
   decisions: LinePackDecision[];
   mergedCount: number;
-};
-
-const FAMILY_COLLAPSE_MODE: Record<string, 'family' | 'content'> = {
-  C: 'family',
-  PR: 'family',
-  PU: 'family',
-  IN: 'family',
-  INT: 'family',
-  OUT: 'family',
-  TAG: 'family',
-  RF: 'family',
-  FIN: 'family',
-  INST: 'family',
-  V: 'content',
-  S: 'content',
 };
 
 const getLineHeight = (fontSize: number, ratio = LINE_HEIGHT_RATIO) =>
@@ -439,45 +441,34 @@ const groupLineChords = (line: ParsedChordLine): GroupedChord[] => {
     }));
 };
 
-const buildChordGuide = (line: ParsedChordLine): string => {
+const buildChordLyricChunks = (line: ParsedChordLine): ChordLyricChunk[] => {
   const lyrics = String(line?.lyrics || '');
-  const groupedChords = groupLineChords(line);
+  const chords = groupLineChords(line);
+  if (chords.length === 0) return [{ chord: '', lyrics }];
 
-  if (groupedChords.length === 0) return '';
+  const chunks: ChordLyricChunk[] = [];
+  let lyricCursor = 0;
 
-  // Como podemos desplazar acordes hacia la derecha e insertar guiones
-  // reservamos un buffer de espacios bastante grande por si acaso.
-  const estMaxLen = lyrics.length + groupedChords.reduce((sum, item) => sum + item.text.length + 2, 0) + 10;
-  const buffer = Array.from({ length: Math.max(estMaxLen, 1) }, () => ' ');
-
-  let cursor = 0;
-
-  for (const item of groupedChords) {
-    let startPos = item.position;
-
-    // Si la posición objetivo está ocupada porque el acorde anterior 
-    // tenía texto muy largo o cayeron casi juntos en el texto original:
-    if (startPos < cursor) {
-      startPos = cursor;
-
-      // Añadimos un guión visual para indicar que es un grupo de 
-      // acordes de paso rápido o que comparten pulso.
-      if (startPos > 0) {
-        buffer[startPos] = '-';
-        startPos += 1;
-      }
+  for (let index = 0; index < chords.length; index += 1) {
+    const item = chords[index];
+    const position = Math.min(lyrics.length, Math.max(lyricCursor, Math.trunc(item.position)));
+    if (position > lyricCursor) {
+      chunks.push({ chord: '', lyrics: lyrics.slice(lyricCursor, position) });
     }
 
-    for (let index = 0; index < item.text.length; index += 1) {
-      buffer[startPos + index] = item.text[index];
-    }
-
-    // Avanzamos el cursor y exigimos un mínimo de 1 espacio en blanco real 
-    // al final para que el siguiente acorde se lea claramente.
-    cursor = startPos + item.text.length + 1;
+    const nextPosition = Math.min(
+      lyrics.length,
+      Math.max(position, Math.trunc(chords[index + 1]?.position ?? lyrics.length)),
+    );
+    chunks.push({ chord: item.text, lyrics: lyrics.slice(position, nextPosition) });
+    lyricCursor = nextPosition;
   }
 
-  return buffer.join('').trimEnd();
+  if (lyricCursor < lyrics.length) {
+    chunks.push({ chord: '', lyrics: lyrics.slice(lyricCursor) });
+  }
+
+  return chunks;
 };
 
 const getPrintableLyrics = (line: ParsedChordLine): string => {
@@ -520,12 +511,6 @@ const getBlockContentSignature = (block: ChordProBlock) => (
 const getCondensedBlockKey = (block: ChordProBlock) => {
   const markerFamily = getMarkerFamily(block?.typeMarker);
   const contentSignature = getBlockContentSignature(block);
-  const collapseMode = FAMILY_COLLAPSE_MODE[markerFamily] || 'content';
-
-  if (collapseMode === 'family') {
-    return `${markerFamily || 'SECTION'}::family`;
-  }
-
   return `${markerFamily || 'SECTION'}::${contentSignature}`;
 };
 
@@ -542,10 +527,9 @@ const V2_CONDENSED_LINE_PACKING_PROFILE: LinePackingProfile = {
 const LINE_PACKING_GAP_SPACES = 3;
 
 const getLineVisualWidth = (line: ParsedChordLine) => (
-  Math.max(
-    String(line?.lyrics || '').trimEnd().length,
-    buildChordGuide(line).length
-  )
+  buildChordLyricChunks(line).reduce((width, chunk) => (
+    width + Math.max(chunk.chord.length, chunk.lyrics.length)
+  ), 0)
 );
 
 const canPackLinePair = (
@@ -817,75 +801,81 @@ const splitBlocksIntoBalancedColumns = (blocks: RenderableBlock[]) => {
   return [blocks.slice(0, splitIndex), blocks.slice(splitIndex)] as [RenderableBlock[], RenderableBlock[]];
 };
 
-function SongSheetLine({
-  line,
-  renderMode,
-  liveTiming,
-}: {
+const buildChordLyricWords = (line: ParsedChordLine): ChordLyricChunk[][] => {
+  const words: ChordLyricChunk[][] = [];
+  let current: ChordLyricChunk[] = [];
+  for (const chunk of buildChordLyricChunks(line)) {
+    if (!chunk.lyrics && chunk.chord) {
+      if (current.length) { words.push(current); current = []; }
+      words.push([{ chord: chunk.chord, lyrics: '  ' }]);
+      continue;
+    }
+    const parts = chunk.lyrics.match(/\s+|\S+/g) || [''];
+    parts.forEach((lyrics, index) => {
+      current.push({ chord: index === 0 ? chunk.chord : '', lyrics });
+      if (/\s$/.test(lyrics)) {
+        words.push(current);
+        current = [];
+      }
+    });
+  }
+  if (current.length) words.push(current);
+  return words;
+};
+
+function SongSheetLine({ line, renderMode, liveTiming, lineIndex }: {
   line: ParsedChordLine;
   renderMode: SongSheetRenderMode;
   liveTiming?: SongSheetLineLiveTiming;
+  lineIndex?: number;
 }) {
-  const chordGuide = buildChordGuide(line);
   const lyrics = getPrintableLyrics(line);
-  const shouldRenderLyricsRow = hasLyricWords(String(line?.lyrics || '')) || !chordGuide;
-
-  if (renderMode === 'chords-only') {
-    const chords = groupLineChords(line);
-    if (chords.length === 0) return null;
-
-    // Compact display: chords separated by 4 spaces, not position-based
-    const compactChords = chords.map((g) => g.text).join('    ');
-
+  const chords = groupLineChords(line);
+  const attributes = { ...buildLiveLineAttributes(liveTiming), 'data-song-sheet-line-index': lineIndex };
+  if (renderMode === 'chords-only' || (renderMode === 'chords-lyrics' && !hasLyricWords(line.lyrics))) {
+    if (!chords.length) return null;
     return (
-      <div className="break-inside-avoid" {...buildLiveLineAttributes(liveTiming)}>
-        <div
-          className="song-sheet-width-guard overflow-hidden whitespace-pre text-[0.9em] font-black tracking-[-0.02em] text-blue-600"
-          style={{
-            lineHeight: '1.38',
-            fontFamily: BODY_FONT_FAMILY,
-          }}
-        >
-          {compactChords}
+      <div className="song-sheet-line break-inside-avoid" {...attributes}>
+        <div className="song-sheet-width-guard flex flex-wrap gap-x-[1.5em] text-[0.9em] font-black text-blue-600"
+          style={{ lineHeight: '1.38', fontFamily: BODY_FONT_FAMILY }}>
+          {chords.map((chord, index) => <span key={index} className="whitespace-nowrap">{chord.text}</span>)}
         </div>
       </div>
     );
   }
-
   if (renderMode === 'lyrics-only') {
+    if (!hasLyricWords(line.lyrics)) return null;
     return (
-      <div className="break-inside-avoid" {...buildLiveLineAttributes(liveTiming)}>
-        <div
-          className="song-sheet-width-guard overflow-hidden whitespace-pre text-[0.94em] font-medium tracking-[-0.01em] text-zinc-950"
-          style={{ fontFamily: BODY_FONT_FAMILY }}
-        >
-          {lyrics}
-        </div>
+      <div className="song-sheet-line break-inside-avoid" {...attributes}>
+        <div className="song-sheet-width-guard whitespace-pre-wrap break-words text-[0.94em] font-medium tracking-[-0.01em] text-zinc-950"
+          style={{ fontFamily: BODY_FONT_FAMILY }}>{lyrics}</div>
       </div>
     );
   }
-
   return (
-    <div className="break-inside-avoid" {...buildLiveLineAttributes(liveTiming)}>
-      {chordGuide ? (
-        <div
-          className="song-sheet-width-guard overflow-hidden whitespace-pre text-[0.86em] font-black tracking-[-0.02em] text-blue-600"
-          style={{
-            lineHeight: '1.02',
-            fontFamily: BODY_FONT_FAMILY,
-          }}
-        >
-          {chordGuide}
-        </div>
-      ) : null}
-      {shouldRenderLyricsRow ? (
-        <div
-          className="song-sheet-width-guard overflow-hidden whitespace-pre text-[0.92em] font-medium tracking-[-0.01em] text-zinc-950"
-          style={{ fontFamily: BODY_FONT_FAMILY }}
-        >
-          {lyrics}
-        </div>
-      ) : null}
+    <div className="song-sheet-line break-inside-avoid" {...attributes}>
+      <div className="song-sheet-width-guard flex flex-wrap items-start">
+        {buildChordLyricWords(line).map((word, wordIndex) => {
+          return (
+            <span key={wordIndex} className="inline-flex align-top whitespace-pre" style={{ fontFamily: BODY_FONT_FAMILY }}>
+              {word.map((chunk, chunkIndex) => (
+                <span
+                  key={`${wordIndex}-${chunkIndex}`}
+                  className="inline-grid shrink-0 align-top whitespace-pre"
+                  style={{ gridTemplateRows: 'auto auto' }}
+                >
+                  <span className="whitespace-pre text-[0.92em] font-black leading-[1.02] tracking-[-0.01em] text-blue-600">
+                    {chunk.chord || '\u00a0'}
+                  </span>
+                  <span className="whitespace-pre text-[0.92em] font-medium leading-[1.28] tracking-[-0.01em] text-zinc-950">
+                    {chunk.lyrics || '\u00a0'}
+                  </span>
+                </span>
+              ))}
+            </span>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -907,6 +897,10 @@ export default function SongSheet({
   fixedFontSize,
   printProfile = 'classic',
   liveTiming,
+  columnGroups,
+  songMapBlocks,
+  pageNumber,
+  pageCount,
 }: SongSheetProps) {
   const sheetRef = useRef<HTMLDivElement | null>(null);
   const columnsRef = useRef<HTMLDivElement | null>(null);
@@ -969,13 +963,13 @@ export default function SongSheet({
     : null;
   const debugFlags = getSongSheetDebugFlags();
   const songMap = resolvedOptions.showSongMap
-    ? blocks.map((block) => block.typeMarker).filter(Boolean)
+    ? (songMapBlocks || blocks).map((block) => block.typeMarker).filter(Boolean)
     : [];
   const metaItems = [
     { label: 'Tono', value: getMetaValue(metadata?.tone) },
     { label: 'Capo', value: getMetaValue(metadata?.capo) },
     { label: 'Tempo', value: getMetaValue(metadata?.tempo) },
-    { label: 'Time', value: getMetaValue(metadata?.time) },
+    { label: 'Compás', value: getMetaValue(metadata?.time) },
   ];
   const liveSectionTimingByIndex = new Map<number, SongSheetLiveSectionTiming>();
   const liveLineTimingBySectionIndex = new Map<number, SongSheetLineLiveTiming[]>();
@@ -1031,7 +1025,9 @@ export default function SongSheet({
     : CONDENSED_LINE_PACKING_PROFILE;
   const twoColumnBlockGroups = isSingleCol
     ? [renderableBlocks, []] as [RenderableBlock[], RenderableBlock[]]
-    : splitBlocksIntoBalancedColumns(renderableBlocks);
+    : columnGroups
+      ? columnGroups.map((group) => group.map((block) => renderableBlocks.find((item) => item.id === block.id) || block))
+      : splitBlocksIntoBalancedColumns(renderableBlocks);
 
   useEffect(() => {
     const sheetNode = sheetRef.current;
@@ -1400,7 +1396,7 @@ export default function SongSheet({
         mapMargin: isSingleCol ? 'mt-[0.58em]' : 'mt-[0.68em]',
         mapGap: isSingleCol ? 'gap-[0.36em]' : 'gap-[0.38em]',
         mainPadding: isSingleCol ? 'pt-[1.15em]' : 'pt-[1.45em]',
-        sectionMargin: isSingleCol ? 'mb-[1.15em]' : 'mb-[1.68em]',
+        sectionMargin: isSingleCol ? 'mb-[1.15em]' : 'mb-[1.35em]',
         collapsedSectionMargin: isSingleCol ? 'mb-[0.72em]' : 'mb-[1.08em]',
         sectionTopClearance: isSingleCol ? 'pt-[0.62em]' : 'pt-[0.66em]',
         sectionHeaderMargin: isSingleCol ? 'mb-0' : 'mb-[0.18em]',
@@ -1500,7 +1496,9 @@ export default function SongSheet({
       return (
         <section
           key={block.id}
+          data-song-sheet-block-id={block.id}
           className="song-sheet-section mb-1 shrink-0 break-inside-avoid"
+          data-song-sheet-page-break-before={block.pageBreakBefore ? 'true' : undefined}
           data-live-chord-section={sectionTiming ? 'true' : undefined}
           data-live-section-index={sectionTiming ? blockSectionIndex : undefined}
           data-live-section-start={sectionTiming?.startSec ?? undefined}
@@ -1523,6 +1521,7 @@ export default function SongSheet({
             >
               {block.fullTitle}
             </h3>
+            <span className="ml-auto text-[0.62em] text-zinc-500">Repite {block.repeatOfTitle || 'sección anterior'}</span>
           </div>
         </section>
       );
@@ -1531,6 +1530,8 @@ export default function SongSheet({
     return (
       <section
         key={block.id}
+        data-song-sheet-block-id={block.id}
+        data-song-sheet-page-break-before={block.pageBreakBefore ? 'true' : undefined}
         data-live-chord-section={sectionTiming ? 'true' : undefined}
         data-live-section-index={sectionTiming ? blockSectionIndex : undefined}
         data-live-section-start={sectionTiming?.startSec ?? undefined}
@@ -1568,7 +1569,7 @@ export default function SongSheet({
             </span>
 
             <h3
-              className={['shrink-0 font-bold uppercase tracking-[0.04em]', densityClasses.sectionTitleSize, sectionColors.text].join(' ')}
+              className={['min-w-0 font-bold uppercase tracking-[0.04em]', densityClasses.sectionTitleSize, sectionColors.text].join(' ')}
               style={{ fontFamily: DISPLAY_FONT_FAMILY }}
             >
               {block.fullTitle}
@@ -1579,14 +1580,19 @@ export default function SongSheet({
             ) : null}
           </header>
 
-          {block.isCollapsed ? null : (
+          {block.isCollapsed ? (
+            <p className="mt-1 text-[0.68em] text-zinc-500">Repite {block.repeatOfTitle || 'sección anterior'}</p>
+          ) : (
             <div className={['overflow-hidden', densityClasses.linesGap].join(' ')}>
-              {packedLineRows ? (
+              {(resolvedOptions.renderMode === 'lyrics-only' && isChordOnlyBlock) || block.lines.length === 0 ? (
+                <p className="text-[0.72em] italic text-zinc-400">{isChordOnlyBlock && block.lines.length ? 'Instrumental' : 'Sin contenido definido'}</p>
+              ) : packedLineRows ? (
                 packedLineRows.map((row, index) => (
                   <SongSheetLine
                     key={`${block.id}-row-${index}-${row.kind}`}
                     line={row.line}
                     renderMode={resolvedOptions.renderMode}
+                    lineIndex={index}
                     liveTiming={lineTimings[index]}
                   />
                 ))
@@ -1596,6 +1602,7 @@ export default function SongSheet({
                     key={`${block.id}-line-${index}`}
                     line={line}
                     renderMode={resolvedOptions.renderMode}
+                    lineIndex={index}
                     liveTiming={lineTimings[index]}
                   />
                 ))
@@ -1679,6 +1686,16 @@ export default function SongSheet({
             </div>
           </header>
 
+          {metadata?.personalNote?.trim() ? (
+            <aside
+              aria-label="Nota personal del músico"
+              className="mt-2 shrink-0 whitespace-pre-wrap rounded-md border-l-2 border-amber-500 bg-amber-50 px-2 py-1 text-[0.68em] leading-snug text-zinc-700 print:border-amber-600 print:bg-amber-50"
+            >
+              <span className="mr-1 font-bold uppercase tracking-wide text-amber-800">Mi nota</span>
+              {metadata.personalNote.trim()}
+            </aside>
+          ) : null}
+
           <main className={['min-h-0 flex-1 overflow-hidden', densityClasses.mainPadding].join(' ')}>
             {isSingleCol ? (
               <div
@@ -1704,6 +1721,11 @@ export default function SongSheet({
               </div>
             )}
           </main>
+          {pageNumber && pageCount ? (
+            <footer className="shrink-0 flex justify-between border-t border-zinc-100 pt-1 text-[10px] leading-[14px] text-zinc-400" style={{ fontFamily: DISPLAY_FONT_FAMILY }}>
+              <span className="truncate">{title}</span><span className="shrink-0 pl-4">{pageNumber} / {pageCount}</span>
+            </footer>
+          ) : null}
         </div>
       </div>
     </div>

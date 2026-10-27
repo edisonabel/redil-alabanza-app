@@ -32,6 +32,7 @@ export type SemanticContentSection = {
   explicitNumber: number | null;
   lines: ParsedChordLine[];
   referenceKey: string;
+  pageBreakBefore?: boolean;
 };
 
 export type SemanticSectionReference = {
@@ -49,6 +50,7 @@ export type SemanticSectionReference = {
   targetTypeMarker: string | null;
   targetFullTitle: string | null;
   resolved: boolean;
+  pageBreakBefore?: boolean;
 };
 
 export type SemanticChordProNode = SemanticContentSection | SemanticSectionReference;
@@ -65,6 +67,7 @@ type PendingSection = {
   descriptor: SemanticSectionDescriptor;
   source: SemanticSectionSource;
   rawLines: string[];
+  pageBreakBefore: boolean;
 };
 
 const CHORD_BODY_PATTERN =
@@ -548,6 +551,7 @@ export function parseChordProSemantic(chordProText: string): SemanticChordProNod
   const referenceTargetsByKey = new Map<string, SemanticContentSection>();
   const latestReferenceTargetByKind = new Map<SemanticSectionKind, SemanticContentSection>();
   let currentSection: PendingSection | null = null;
+  let nextPageBreakBefore = false;
 
   const registerContentNode = (
     descriptor: SemanticSectionDescriptor,
@@ -597,6 +601,7 @@ export function parseChordProSemantic(chordProText: string): SemanticChordProNod
         explicitTitle: currentSection.descriptor.explicitTitle,
         explicitNumber: identity.explicitNumber,
         lines: parsedLines,
+        pageBreakBefore: currentSection.pageBreakBefore,
         referenceKey: buildContentReferenceKey(currentSection.descriptor, {
           kind: currentSection.descriptor.kind,
           fullTitle: identity.fullTitle,
@@ -634,6 +639,7 @@ export function parseChordProSemantic(chordProText: string): SemanticChordProNod
         targetTypeMarker: identity.targetMarker,
         targetFullTitle: identity.targetTitle,
         resolved: Boolean(target),
+        pageBreakBefore: currentSection.pageBreakBefore,
       });
     }
 
@@ -650,7 +656,9 @@ export function parseChordProSemantic(chordProText: string): SemanticChordProNod
       descriptor,
       source,
       rawLines: inlineText.trim() ? [inlineText] : [],
+      pageBreakBefore: nextPageBreakBefore,
     };
+    nextPageBreakBefore = false;
   };
 
   const appendLine = (line = '') => {
@@ -673,7 +681,13 @@ export function parseChordProSemantic(chordProText: string): SemanticChordProNod
       continue;
     }
 
-    if (trimmed.match(DIRECTIVE_RE)) {
+    const genericDirective = trimmed.match(DIRECTIVE_RE);
+    if (genericDirective) {
+      const directiveName = String(genericDirective[1] || '').trim().toLowerCase();
+      if (directiveName === 'new_page' || directiveName === 'np' || directiveName === 'page_break') {
+        finalizeCurrentSection();
+        nextPageBreakBefore = true;
+      }
       continue;
     }
 
@@ -722,6 +736,7 @@ export function adaptSemanticNodesToChordProBlocks(
         typeMarker: node.typeMarker,
         fullTitle: node.fullTitle,
         lines: node.lines.map(cloneParsedChordLine),
+        pageBreakBefore: node.pageBreakBefore,
       };
     }
 
@@ -734,6 +749,7 @@ export function adaptSemanticNodesToChordProBlocks(
       typeMarker: inheritTargetIdentity && target ? target.typeMarker : node.typeMarker,
       fullTitle: inheritTargetIdentity && target ? target.fullTitle : node.fullTitle,
       lines: expandedLines,
+      pageBreakBefore: node.pageBreakBefore,
     };
   });
 }
