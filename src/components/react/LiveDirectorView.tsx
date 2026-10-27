@@ -6018,9 +6018,10 @@ export function LiveDirectorView({
 
   return (
     <div ref={liveDirectorRootRef} className={shellClassName} onPointerDownCapture={cancelAutomaticAdvancePointer} onClickCapture={cancelAutomaticAdvanceClick}>
-      {eventId && (eventArrangement.error || (eventArrangement.loading && !eventAdvance.pending)) && <div role="status" className="absolute inset-x-3 top-3 z-[90] flex items-center gap-3 rounded-lg border border-amber-200/30 bg-[#252325] p-3 text-xs text-amber-100">
-        <span>{eventArrangement.loading ? 'Cargando arreglo del evento…' : eventArrangement.error}</span>
-        {eventArrangement.error && <button type="button" className="rounded border border-white/20 px-3 py-2" onClick={eventArrangement.reload}>Reintentar</button>}
+      {/* La carga del arreglo ya se ve en el indicador de carga de la canción: aquí solo el error. */}
+      {eventId && eventArrangement.error && !eventArrangement.loading && <div role="status" className="absolute inset-x-3 top-3 z-[90] flex items-center gap-3 rounded-lg border border-amber-200/30 bg-[#252325] p-3 text-xs text-amber-100">
+        <span>{eventArrangement.error}</span>
+        <button type="button" className="rounded border border-white/20 px-3 py-2" onClick={eventArrangement.reload}>Reintentar</button>
       </div>}
       {canUseGeneratedClick && clickTrack && selectedMultitrackEngine.loadGeneratedClickSamples && selectedMultitrackEngine.setGeneratedClick &&
         <LiveDirectorClickMixer key={`click:${trackSignature}:${reloadKey}`} open={showClickMixer} onClose={closeClickMixer}
