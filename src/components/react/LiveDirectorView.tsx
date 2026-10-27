@@ -22,7 +22,6 @@ import {
   ChevronRight,
   FolderOpen,
   Pencil,
-  Link2,
   ListMusic,
   Pause,
   Play,
@@ -39,7 +38,7 @@ import {
   Megaphone,
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import {
   canUseAdvancedStreamingEngine,
@@ -55,6 +54,11 @@ import { LiveDirectorClickMixer } from './live-director/LiveDirectorClickMixer';
 import type { GeneratedClickSettings } from '../../utils/liveDirectorGeneratedClick';
 import { ChannelStrip, FaderThumb, PrecisionFaderSurface } from './live-director/ChannelStrip';
 import { EnsayoQueueAddCard, EnsayoQueueCard, EnsayoQueueSaveCard } from './live-director/EnsayoQueueCard';
+import { SongTransitionControl } from './live-director/SongTransitionControl';
+import {
+  DEFAULT_SONG_TRANSITION, SONG_BLEND_SECONDS, readSongTransitions, transitionAllowsPad, writeSongTransitions,
+  type SongTransition,
+} from '../../utils/liveDirectorSongTransitions';
 import { useLiveDirectorRehearsalDownload } from '../../hooks/useLiveDirectorRehearsalDownload';
 import { ManualTempoSongModal } from './live-director/ManualTempoSongModal';
 import {
@@ -3569,19 +3573,20 @@ export function LiveDirectorView({
 
   const eventQueueIndex = queueSongs.findIndex(song => song.id === (activeQueueSongId || songId));
   const nextEventSong = eventQueueIndex >= 0 ? queueSongs[eventQueueIndex + 1] : undefined;
-  // Encadenar canciones del evento (botón solo en PC): se decide por transición, «esta canción → la
-  // siguiente», y se recuerda por evento. Así 1→2 y 3→4 pueden ir sin espacio y 2→3 detenerse.
-  const chainStorageKey = eventId ? `live-director:chain:${eventId}` : '';
-  const [chainedSongIds, setChainedSongIds] = useState<string[]>([]);
-  useEffect(() => {
-    try {
-      const saved = chainStorageKey ? JSON.parse(localStorage.getItem(chainStorageKey) || '[]') : [];
-      setChainedSongIds(Array.isArray(saved) ? saved.filter((id): id is string => typeof id === 'string') : []);
-    } catch { setChainedSongIds([]); }
-  }, [chainStorageKey]);
+  const nextEventSongRef = useRef(nextEventSong); nextEventSongRef.current = nextEventSong;
+  // Transiciones del evento, como en Playback: el círculo entre dos portadas elige qué pasa al terminar
+  // «esta canción → la siguiente». Se recuerdan por evento en este dispositivo.
+  const [songTransitions, setSongTransitions] = useState<Record<string, SongTransition>>({});
+  useEffect(() => { setSongTransitions(readSongTransitions(eventId || '')); }, [eventId]);
+  const [openTransitionFrom, setOpenTransitionFrom] = useState<string | null>(null);
   const currentQueueSongId = activeQueueSongId || songId;
-  const canChainNextSong = experimentalTools && !isManualTempoMode && Boolean(eventId && onSelectQueueSong && nextEventSong && nextEventSong.kind !== 'manual-tempo');
-  const chainNextSong = canChainNextSong && chainedSongIds.includes(currentQueueSongId);
+  const currentTransition = songTransitions[currentQueueSongId] ?? DEFAULT_SONG_TRANSITION;
+  const currentTransitionRef = useRef(currentTransition); currentTransitionRef.current = currentTransition;
+  const showSongTransitions = experimentalTools && !isManualTempoMode && Boolean(eventId && onSelectQueueSong);
+  // AutoLink, Sobreponer y Transición Cruzada cambian de canción sonando: necesitan el cambio preparado.
+  const preparedTransitionUnavailable = diagnostics?.engineRoute !== 'streaming-worker' || !onPrepareQueueSong
+    ? 'Este navegador no puede pasar a la siguiente canción sin detenerse.' : '';
+  const transitionTarget = nextEventSong && nextEventSong.kind !== 'manual-tempo' ? nextEventSong : undefined;
   const chainArmedRef = useRef('');
   // Un salto o una repetición manual manda sobre el encadenado: suelta el cambio de canción ya armado
   // (podrá armarse otra vez al terminar la repetición si aún queda tiempo).
@@ -3592,8 +3597,16 @@ export function LiveDirectorView({
   };
   const eventAdvance = useLiveDirectorEventAdvance({
     enabled: experimentalTools && Boolean(eventId && onSelectQueueSong) && !isManualTempoMode,
-    // Sin cuenta 5-4-3-2-1: la siguiente solo entra por «Encadenar» (cambio preparado sin silencio).
+    // Sin cuenta 5-4-3-2-1: al terminar sola, la transición elegida decide (los modos que pasan
+    // sonando ya cambiaron de canción antes del final con el cambio preparado).
     autoAdvance: false,
+    onEnded: () => {
+      const transition = currentTransitionRef.current;
+      if (!transitionAllowsPad(transition.mode)) return;
+      if (transition.continuePad && !isPadActive) setPadActiveFromGesture(true);
+      const next = nextEventSongRef.current;
+      if (transition.mode === 'cue' && next) { eventMixFlushRef.current(); onSelectQueueSong?.(next.id, { autoPlay: false }); }
+    },
     identity: `${transportIdentity}:${reloadKey}`, songId: activeQueueSongId || songId,
     nextSong: nextEventSong?.kind === 'manual-tempo' ? undefined : nextEventSong,
     playing: isPlaying, ready: currentSessionPrepared,
@@ -3768,19 +3781,19 @@ export function LiveDirectorView({
     if(isPlaying&&!isManualTempoMode){void musicalNavigation.arm('song',target.id,target.title);return;}
     musicalNavigation.cancel();entryCount.cancel();if(usesEventMixPersistence)eventMixFlushRef.current();onSelectQueueSong?.(target.id);
   },[activeQueueSongId,isPlaying,isManualTempoMode,musicalNavigation.arm,musicalNavigation.cancel,entryCount.cancel,usesEventMixPersistence,onSelectQueueSong]);
-  const toggleChainNextSong=useCallback(()=>{
-    const enabling=!chainedSongIds.includes(currentQueueSongId);
-    const next=enabling?[...chainedSongIds,currentQueueSongId]:chainedSongIds.filter(id=>id!==currentQueueSongId);
-    setChainedSongIds(next);
-    try{if(chainStorageKey)localStorage.setItem(chainStorageKey,JSON.stringify(next));}catch{/* solo se pierde el recuerdo */}
-    if(!enabling&&musicalNavigation.pending?.kind==='song')musicalNavigation.cancel();
-  },[chainedSongIds,currentQueueSongId,chainStorageKey,musicalNavigation.pending,musicalNavigation.cancel]);
-  // Encadenado: al entrar en la última sección se prepara la siguiente canción y entra justo al terminar
-  // esta (el mismo cambio preparado que al elegir una canción sonando). Una vez por pasada; si ya no
-  // queda tiempo para prepararla, la cuenta de 5 s del final queda como respaldo.
+  const changeSongTransition=useCallback((fromSongId:string,transition:SongTransition)=>{
+    setSongTransitions(previous=>{const next={...previous,[fromSongId]:transition};writeSongTransitions(eventId||'',next);return next;});
+    // Un cambio ya armado para esta canción se suelta; el nuevo modo se arma solo si corresponde.
+    if(fromSongId===currentQueueSongId&&chainArmedRef.current){chainArmedRef.current='';if(musicalNavigation.pending?.kind==='song')musicalNavigation.cancel();}
+  },[eventId,currentQueueSongId,musicalNavigation.pending,musicalNavigation.cancel]);
+  // AutoLink, Sobreponer y Cruzada: al entrar en la última sección se prepara la siguiente canción. AutoLink
+  // entra justo al terminar esta; las mezclas empiezan antes para terminar con ella (lo menor entre 5 s y
+  // la última sección). Una vez por pasada; si ya no queda tiempo para prepararla, la canción termina sola.
+  const preparedTransition=showSongTransitions&&!preparedTransitionUnavailable&&transitionTarget&&!transitionAllowsPad(currentTransition.mode)?currentTransition.mode:null;
   useEffect(()=>{
-    if(!chainNextSong||!nextEventSong||!isPlaying)return;
-    const key=`${currentQueueSongId}>${nextEventSong.id}`;
+    const nextEventSong=transitionTarget;
+    if(!preparedTransition||!nextEventSong||!isPlaying)return;
+    const key=`${currentQueueSongId}>${nextEventSong.id}:${preparedTransition}`;
     const timer=setInterval(()=>{
       if(musicalNavigationPendingRef.current||isTransportCueBusyRef.current||sectionJumpActiveRef.current)return;
       const lastIndex=resolvedSections.length-1,last=resolvedSections[lastIndex];if(!last)return;
@@ -3788,10 +3801,13 @@ export function LiveDirectorView({
       const inLast=arrangementEntries?arrangementCursor.current===lastIndex&&time>=last.startTime:time>=last.startTime;
       if(!inLast){if(chainArmedRef.current===key)chainArmedRef.current='';return;}
       if(chainArmedRef.current===key||last.endTime-time<CHAIN_MIN_PREPARE_SECONDS)return;
-      chainArmedRef.current=key;handleMusicalQueueSelect(nextEventSong);
+      chainArmedRef.current=key;
+      if(preparedTransition==='autolink'){handleMusicalQueueSelect(nextEventSong);return;}
+      void musicalNavigation.arm('song',nextEventSong.id,nextEventSong.title,
+        {mode:preparedTransition,seconds:Math.min(SONG_BLEND_SECONDS,last.endTime-last.startTime)});
     },100);
     return()=>clearInterval(timer);
-  },[chainNextSong,nextEventSong,isPlaying,currentQueueSongId,resolvedSections,arrangementEntries,selectedMultitrackEngine,handleMusicalQueueSelect]);
+  },[preparedTransition,transitionTarget,isPlaying,currentQueueSongId,resolvedSections,arrangementEntries,selectedMultitrackEngine,handleMusicalQueueSelect,musicalNavigation.arm]);
 
   useEffect(() => {
     if (isIOSNativeEngineSurface) {
@@ -5020,7 +5036,7 @@ export function LiveDirectorView({
         const control = !event.shiftKey ? ({
           KeyG: '[data-live-director-control="groups"]',
           KeyH: '[data-live-director-control="repeat-hold"]',
-          KeyL: '[data-live-director-control="chain-next-song"]',
+          KeyL: '[data-live-director-control="song-transition"][data-transition-current="true"]',
           KeyA: '[data-live-director-control="song-level"]',
           KeyT: 'button[aria-label="Configurar metrónomo"]',
           KeyI: '[data-live-director-control="guide-instructions"]',
@@ -6276,12 +6292,6 @@ export function LiveDirectorView({
                 onClick={() => setShowPhoneSongStrip(previous => !previous)}
                 className={`${CONTROL_CARD} h-11 shrink-0 flex-col px-1.5 font-semibold ${showPhoneSongStrip ? 'border-cyan-300/32 bg-cyan-300/10 text-cyan-100' : 'text-white/75 hover:bg-white/5'}`}
                 style={{ width: scaleRem(4.35, 3.75) }}><ListMusic className="h-3.5 w-3.5" /><span className="mt-0.5 text-[0.46rem] tracking-[0.12em]">CANCIONES</span></button>}
-              {canChainNextSong && hasFinePointer && !isToolbarCompactLandscape && !isCompactLandscape && <button type="button" data-live-director-control="chain-next-song"
-                aria-pressed={chainNextSong} onClick={toggleChainNextSong} aria-keyshortcuts="L"
-                aria-label={chainNextSong ? `Encadenado con ${nextEventSong?.title}: desactivar` : `Encadenar con ${nextEventSong?.title}`}
-                title={chainNextSong ? `Encadenado: «${nextEventSong?.title}» entra sin espacio al terminar esta canción. Clic para desactivar · L` : `Encadenar: «${nextEventSong?.title}» entra sin espacio al terminar esta canción · L`}
-                className={`${CONTROL_CARD} group relative shrink-0 justify-center px-3 ${chainNextSong ? 'border-cyan-300/40 bg-cyan-300/12 text-cyan-100 shadow-[0_0_16px_rgba(103,232,249,0.12)]' : 'text-white/45 hover:bg-white/5 hover:text-white/75'}`}
-                style={{ minWidth: '3.75rem' }}><Link2 size={20} strokeWidth={2.2} /><KeyboardHint>L</KeyboardHint></button>}
               {/* El motivo va en el contenedor: Safari no muestra el título de un botón deshabilitado. */}
               {experimentalTools && !isManualTempoMode && <span className="flex flex-1" style={{ minWidth: '4rem' }} data-live-director-edit-reason={editSongUnavailableReason ?? undefined}
                 title={editSongUnavailableReason ?? `${arrangementEntries ? 'Editar arreglo de prueba' : 'Editar canción'} · Shift+E`}><button type="button" data-live-director-control="edit-song" aria-keyshortcuts="Shift+E"
@@ -6332,14 +6342,18 @@ export function LiveDirectorView({
         </div>}
         <section data-live-director-song-strip={isUltraCompactLandscape ? (showPhoneSongStrip ? 'open' : 'collapsed') : 'visible'}
           // Al elegir una canción en el teléfono, la tira se cierra y vuelve la mezcla completa.
-          onClickCapture={isUltraCompactLandscape ? (event) => { if ((event.target as HTMLElement).closest('button')) setShowPhoneSongStrip(false); } : undefined}
+          onClickCapture={isUltraCompactLandscape ? (event) => { const target = event.target as HTMLElement; if (target.closest('button') && !target.closest('[data-live-director-control="song-transition"]')) setShowPhoneSongStrip(false); } : undefined}
           className={`shrink-0 overflow-hidden ${isUltraCompactLandscape ? `pr-0 pb-0 ${showPhoneSongStrip ? '' : 'hidden'}` : isCompactLandscape ? 'pr-0.5' : ''}`}>
           <div className={`overflow-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.96),rgba(27,29,30,0.96))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isUltraCompactLandscape ? 'px-1.5 py-1' : isCompactLandscape ? 'px-2 py-1.5' : 'px-4 py-4'}`}>
             {isEnsayoMode ? (
               <div className="flex h-full items-center">
                 <div className="hide-scrollbar -mx-0.5 -my-4 overflow-x-auto overflow-y-hidden">
                   <div className={`flex py-4 ${isUltraCompactLandscape ? 'gap-1 px-0.5' : 'gap-1.5 px-0.5'}`}>
-                    {ensayoSlotSongs.map((queueSong, queueIndex) => (
+                    {ensayoSlotSongs.map((queueSong, queueIndex) => {
+                      const followingSong = ensayoSlotSongs[queueIndex + 1];
+                      const transition = songTransitions[queueSong.id] ?? DEFAULT_SONG_TRANSITION;
+                      return (
+                      <Fragment key={queueSong.id}>
                       <EnsayoQueueCard
                         key={queueSong.id}
                         song={queueSong}
@@ -6359,7 +6373,22 @@ export function LiveDirectorView({
                           ? () => onRemoveQueueSong(queueSong.id)
                           : undefined}
                       />
-                    ))}
+                      {showSongTransitions && followingSong && queueSong.kind !== 'manual-tempo' && followingSong.kind !== 'manual-tempo' && (
+                        // Sin ancho propio: el círculo queda centrado en el hueco entre las dos portadas.
+                        <div className="relative w-0 shrink-0 self-stretch" style={{ margin: isUltraCompactLandscape ? '0 -0.125rem' : '0 -0.1875rem' }}>
+                          <SongTransitionControl
+                            fromSongId={queueSong.id} fromTitle={queueSong.title} toTitle={followingSong.title}
+                            transition={transition} current={queueSong.id === currentQueueSongId}
+                            open={openTransitionFrom === queueSong.id} compact={isCompactLandscape}
+                            preparedUnavailableReason={preparedTransitionUnavailable}
+                            onOpenChange={open => setOpenTransitionFrom(open ? queueSong.id : null)}
+                            onChange={next => changeSongTransition(queueSong.id, next)}
+                          />
+                        </div>
+                      )}
+                      </Fragment>
+                      );
+                    })}
                     {canAddQueueSong && onAddQueueSong && (
                       <EnsayoQueueAddCard
                         compact={isCompactLandscape}

@@ -54,8 +54,9 @@ try {
   await page.keyboard.press('g'); assert.equal(await control('groups').getAttribute('aria-pressed'), 'false');
   await page.keyboard.press('h'); await page.waitForFunction(() => document.querySelector('[data-live-director-control="repeat-hold"]').getAttribute('aria-pressed') === 'true', null, { timeout: 5000 });
   await page.keyboard.press('h'); await page.waitForFunction(() => document.querySelector('[data-live-director-control="repeat-hold"]').getAttribute('aria-pressed') === 'false', null, { timeout: 5000 });
-  await page.keyboard.press('l'); assert.equal(await control('chain-next-song').getAttribute('aria-pressed'), 'true', 'L encadena');
-  await page.keyboard.press('l'); assert.equal(await control('chain-next-song').getAttribute('aria-pressed'), 'false');
+  // L abre el menú de la transición que sigue a la canción actual; Esc lo cierra.
+  await page.keyboard.press('l'); assert.equal(await page.getByRole('menu', { name: 'Transición entre canciones' }).count(), 1, 'L abre la transición');
+  await page.keyboard.press('Escape'); assert.equal(await page.getByRole('menu', { name: 'Transición entre canciones' }).count(), 0);
   await page.keyboard.press('i'); assert.equal(await page.getByRole('menu', { name: 'Instrucciones' }).count(), 1, 'I abre el menú');
   assert.equal(await page.locator('[data-guide-instruction="softly"] kbd').innerText(), 'Z', 'El menú muestra la tecla');
   await page.keyboard.press('i'); assert.equal(await page.getByRole('menu', { name: 'Instrucciones' }).count(), 0);
@@ -71,9 +72,10 @@ try {
   results.controls = ['G', 'H', 'L', 'I', 'A', 'T', 'Shift+E'];
 
   // Cada botón anuncia su tecla.
-  for (const [name, key] of [['back', 'Escape'], ['groups', 'G'], ['repeat-hold', 'H'], ['chain-next-song', 'L'], ['guide-instructions', 'I'], ['edit-song', 'Shift+E'], ['song-level', 'A']]) {
+  for (const [name, key] of [['back', 'Escape'], ['groups', 'G'], ['repeat-hold', 'H'], ['guide-instructions', 'I'], ['edit-song', 'Shift+E'], ['song-level', 'A']]) {
     assert.equal(await control(name).getAttribute('aria-keyshortcuts'), key, `${name} anuncia ${key}`);
   }
+  assert.equal(await page.locator('[data-live-director-control="song-transition"][data-transition-current="true"]').getAttribute('aria-keyshortcuts'), 'L', 'La transición actual anuncia L');
   assert.deepEqual(errors, []);
   const result = { pass: true, ...results };
   await writeFile('.lab/results/shortcuts-check.json', JSON.stringify(result, null, 2)); console.log(JSON.stringify(result));
