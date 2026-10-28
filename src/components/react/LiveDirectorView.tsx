@@ -1132,6 +1132,7 @@ export function LiveDirectorView({
   // When the user taps Back while audio is playing, defer the navigation and
   // show a confirmation modal. Prevents disastrous accidental exits live.
   const [showBackConfirm, setShowBackConfirm] = useState(false);
+  const [showRedownloadConfirm, setShowRedownloadConfirm] = useState(false);
   const [showManualTempoModal, setShowManualTempoModal] = useState(false);
 
   useEffect(() => {
@@ -3569,6 +3570,8 @@ export function LiveDirectorView({
   );
   const rehearsalDownload = useLiveDirectorRehearsalDownload({
     enabled: isEnsayoMode && Boolean(eventId) && Boolean(onResolveQueueSongTracks) && diagnostics?.engineRoute === 'streaming-worker',
+    // En PC la sesión se carga sola, cuando la canción actual ya está lista (no le quita red a su carga).
+    autoStart: hasFinePointer && currentSessionPrepared,
     rehearsalId: eventId || null,
     songIds: rehearsalStemSongIds,
     resolveTracks: onResolveQueueSongTracks,
@@ -6439,7 +6442,8 @@ export function LiveDirectorView({
                         state={rehearsalDownload.state}
                         compact={isCompactLandscape}
                         ultraCompact={isUltraCompactLandscape}
-                        onSave={() => { void rehearsalDownload.start(); }}
+                        // Ya cargada, volver a descargarla (para refrescarla) se confirma antes.
+                        onSave={() => { if (rehearsalDownload.state.phase === 'saved') setShowRedownloadConfirm(true); else void rehearsalDownload.start(); }}
                         onCancel={rehearsalDownload.cancel}
                       />
                     )}
@@ -7262,6 +7266,30 @@ export function LiveDirectorView({
                   Aplicar
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showRedownloadConfirm && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/58 px-5 backdrop-blur-[6px]"
+          role="dialog" aria-modal="true" aria-labelledby="live-director-redownload-title"
+          onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); setShowRedownloadConfirm(false); } }}>
+          <div className="w-full max-w-sm rounded-[1.6rem] border border-white/12 bg-[linear-gradient(180deg,rgba(22,24,26,0.98),rgba(16,18,20,0.98))] px-6 py-6 shadow-[0_32px_72px_rgba(0,0,0,0.42)]">
+            <p className="text-[0.68rem] font-black uppercase tracking-[0.28em] text-emerald-200/82">Sesión cargada</p>
+            <h3 id="live-director-redownload-title" className="mt-2 text-[1.25rem] font-semibold tracking-tight text-white">¿Volver a descargar la sesión?</h3>
+            <p className="mt-2 text-[0.88rem] leading-relaxed text-white/60">
+              Ya está guardada en este equipo. Vuelve a descargarla solo para refrescarla: se revisan los stems y se bajan los que falten o hayan cambiado.
+            </p>
+            <div className="mt-5 flex items-center gap-3">
+              <button type="button" autoFocus onClick={() => setShowRedownloadConfirm(false)}
+                className="ui-pressable-soft flex-1 rounded-[1rem] border border-white/12 bg-white/4 px-4 py-3 text-[0.92rem] font-semibold text-white/86 hover:bg-white/8">
+                Cancelar
+              </button>
+              <button type="button" onClick={() => { setShowRedownloadConfirm(false); void rehearsalDownload.start(); }}
+                className="ui-pressable-soft flex-1 rounded-[1rem] border border-cyan-300/38 bg-cyan-300/12 px-4 py-3 text-[0.92rem] font-semibold text-cyan-50 hover:bg-cyan-300/18">
+                Volver a descargar
+              </button>
             </div>
           </div>
         </div>

@@ -50,6 +50,7 @@ function Lab() {
       title="LiveDirector · Experimental" subtitle={song.titulo} bpm={clickGrid?.bpm ?? song.bpm} timeSignature={song.timeSignature} generatedClickGrid={clickGrid}
       initialSession={resolvedSession} sections={sections} requiresSongContext
       queueSongs={queue} activeQueueSongId={song.id} onSelectQueueSong={selectSong} onPrepareQueueSong={prepareQueueSong}
+      onResolveQueueSongTracks={labEventId?async(id:string)=>(await prepareQueueSong(id)).tracks.filter((track:any)=>track.enabled!==false):undefined}
       autoPlayRequest={autoPlayRequest} onCancelAutoPlay={cancelAutoPlay} onAutoPlayHandled={token=>setAutoPlayRequest(previous=>previous?.token===token?null:previous)}
       autoStartPadWithTransport={false} onEventMixChange={mix=>{mixes.current[song.id]=mix;}}
       onBack={()=>{location.reload();}} backLabel="Reiniciar prueba" className="lab-director"

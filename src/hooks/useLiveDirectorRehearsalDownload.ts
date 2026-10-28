@@ -17,6 +17,8 @@ export type RehearsalDownloadState =
 
 type Options = {
   enabled: boolean;
+  /** Descarga sola al abrir el ensayo si aún no está en el equipo (una vez; cancelarla la deja así). */
+  autoStart?: boolean;
   rehearsalId: string | null;
   songIds: string[];
   resolveTracks?: (songId: string) => Promise<TrackData[]>;
@@ -46,6 +48,8 @@ export function useLiveDirectorRehearsalDownload(options: Options) {
   const [state, setState] = useState<RehearsalDownloadState>({ phase: 'idle' });
   const job = useRef<{ cancel: () => void } | null>(null);
   const songKey = options.songIds.join('|');
+  const autoStarted = useRef('');
+  const startRef = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
     if (!options.enabled || !options.rehearsalId) return;
@@ -53,12 +57,16 @@ export function useLiveDirectorRehearsalDownload(options: Options) {
     void readSavedRehearsal().then(saved => {
       if (cancelled || job.current) return;
       const current = latest.current;
-      setState(saved && saved.rehearsalId === current.rehearsalId && sameSongs(saved.songIds, current.songIds)
-        ? { phase: 'saved', totalBytes: saved.totalBytes }
-        : { phase: 'idle' });
+      const isSaved = Boolean(saved && saved.rehearsalId === current.rehearsalId && sameSongs(saved.songIds, current.songIds));
+      setState(isSaved ? { phase: 'saved', totalBytes: saved!.totalBytes } : { phase: 'idle' });
+      const key = `${current.rehearsalId}:${songKey}`;
+      if (!isSaved && current.autoStart && autoStarted.current !== key) {
+        autoStarted.current = key;
+        void startRef.current();
+      }
     });
     return () => { cancelled = true; };
-  }, [options.enabled, options.rehearsalId, songKey]);
+  }, [options.enabled, options.rehearsalId, songKey, options.autoStart]);
 
   useEffect(() => () => { job.current?.cancel(); job.current = null; }, []);
 
@@ -94,6 +102,8 @@ export function useLiveDirectorRehearsalDownload(options: Options) {
       if (job.current === marker) job.current = null;
     }
   }, []);
+
+  startRef.current = start;
 
   const cancel = useCallback(() => {
     const running = job.current;

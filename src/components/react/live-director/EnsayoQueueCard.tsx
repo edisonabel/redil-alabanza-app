@@ -164,19 +164,21 @@ export const EnsayoQueueSaveCard = memo(function EnsayoQueueSaveCard({
   const busy = state.phase === 'resolving' || state.phase === 'downloading';
   const percent = state.phase === 'downloading' ? Math.floor(state.progress * 100) : 0;
   const label = state.phase === 'saved'
-    ? 'En este equipo'
+    ? 'Sesión cargada'
     : state.phase === 'downloading'
-      ? state.held ? `En pausa · ${percent}%` : `Guardando ${percent}%`
+      ? state.held ? `En pausa · ${percent}%` : `Cargando ${percent}%`
       : state.phase === 'resolving'
         ? 'Preparando…'
-        : state.phase === 'error' ? 'Reintentar' : 'Guardar ensayo';
+        : state.phase === 'error' ? 'Reintentar' : 'Cargar sesión';
   const title = state.phase === 'saved'
-    ? `Ensayo guardado en este equipo (${formatMegabytes(state.totalBytes)}). Pulsa para verificar.`
+    ? `Sesión cargada en este equipo (${formatMegabytes(state.totalBytes)}). Pulsa para volver a descargarla.`
     : state.phase === 'downloading'
-      ? state.held ? 'Se reanuda al pausar la reproducción. Pulsa para cancelar.' : 'Pulsa para cancelar.'
+      ? state.held ? 'Sigue al pausar la reproducción. Pulsa para cancelar.' : 'Pulsa para cancelar.'
       : state.phase === 'error'
         ? state.message
         : 'Guarda solo los stems de este ensayo en el equipo. Al guardar otro ensayo, este se reemplaza.';
+  // La tarjeta se llena de arriba hacia abajo con el avance; cargada queda llena.
+  const fill = state.phase === 'saved' ? 1 : state.phase === 'downloading' ? state.progress : 0;
   const Icon = state.phase === 'saved' ? CheckCircle2 : state.phase === 'error' ? AlertTriangle : Download;
   const tone = state.phase === 'saved'
     ? 'border-emerald-200/30 text-emerald-100/85 hover:border-emerald-200/45'
@@ -197,10 +199,11 @@ export const EnsayoQueueSaveCard = memo(function EnsayoQueueSaveCard({
           : 'h-[5.55rem]'
       }`}
       style={{ width: ultraCompact ? '7.5rem' : compact ? '8.2rem' : '8.9rem' }}
-      aria-label={busy ? `Cancelar guardado del ensayo (${label})` : state.phase === 'saved' ? 'Ensayo guardado en este equipo. Verificar' : 'Guardar este ensayo en el equipo'}
+      aria-label={busy ? `Cancelar la carga de la sesión (${label})` : state.phase === 'saved' ? 'Sesión cargada en este equipo. Volver a descargar' : 'Cargar la sesión en este equipo'}
       title={title}
     >
-      <span className="flex flex-col items-center gap-1">
+      <span aria-hidden="true" data-live-rehearsal-fill={Math.round(fill * 100)} className={`pointer-events-none absolute inset-x-0 top-0 transition-[height] duration-500 ease-out ${state.phase === 'saved' ? 'bg-emerald-300/12' : 'bg-cyan-300/14'}`} style={{ height: `${fill * 100}%` }} />
+      <span className="relative flex flex-col items-center gap-1">
         <span className={`flex items-center justify-center rounded-full bg-white/7 transition group-hover:bg-cyan-300/12 ${ultraCompact ? 'h-7 w-7' : 'h-8 w-8'}`}>
           <Icon className={`${ultraCompact ? 'h-4 w-4' : 'h-[1.1rem] w-[1.1rem]'} ${state.phase === 'resolving' ? 'animate-pulse' : ''}`} />
         </span>
@@ -208,11 +211,6 @@ export const EnsayoQueueSaveCard = memo(function EnsayoQueueSaveCard({
           {label}
         </span>
       </span>
-      {state.phase === 'downloading' && (
-        <span aria-hidden="true" className="absolute inset-x-3 bottom-2 h-0.5 overflow-hidden rounded-full bg-white/8">
-          <span className="block h-full origin-left rounded-full bg-cyan-200/70 transition-transform duration-300" style={{ transform: `scaleX(${state.progress})` }} />
-        </span>
-      )}
     </button>
   );
 });

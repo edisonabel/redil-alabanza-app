@@ -105,6 +105,7 @@
     "test:live-shortcuts-ui": "node scripts/test-live-director-shortcuts-browser.mjs",
     "test:live-song-transitions-ui": "node scripts/test-live-director-song-transitions-browser.mjs",
     "test:live-song-blend": "node scripts/test-live-director-song-blend.mjs",
+    "test:live-rehearsal-download-ui": "node scripts/test-live-director-rehearsal-download-browser.mjs",
     "test:live-jump-count": "node scripts/test-live-director-jump-count.mjs"
   },
   "dependencies": {
