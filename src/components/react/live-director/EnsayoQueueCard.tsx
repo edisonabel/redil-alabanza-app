@@ -128,7 +128,8 @@ export const EnsayoQueueAddCard = memo(function EnsayoQueueAddCard({
           ? 'h-[5.1rem]'
           : 'h-[5.55rem]'
       }`}
-      style={{ width: ultraCompact ? '7.5rem' : compact ? '8.2rem' : '8.9rem' }}
+      // Mismo ancho que las portadas de las canciones, para que la tira quede pareja.
+      style={{ width: ultraCompact ? '9.15rem' : compact ? '10rem' : '10.95rem' }}
       aria-label="Añadir canción con click y pad"
     >
       <span className="flex flex-col items-center gap-1">
