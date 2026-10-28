@@ -47,6 +47,24 @@ export class S3Client{constructor(config){globalThis.__reaperFixture.clientConfi
   assert.deepEqual(saved.sectionMarkers.map(marker=>marker.sectionName),['Intro 1'],'Instructions are never applied as sections');
   assert.deepEqual(saved.instructionMarkers,[{id:'reaper-cue-60',name:'Hits',startSec:5}],'Only instructions inside UNO–FIN AUDIO are applied');
   assert.deepEqual(applied.instructionMarkers,saved.instructionMarkers);
+  // Canción sin stems (RPP hecho sobre su MP3): aplicar crea la sesión con la pista virtual de click.
+  const applyAgain=()=>PUT({request:new Request('https://fixture.invalid/api/admin-reaper-project',{method:'PUT',headers:{origin:'https://fixture.invalid','content-type':'application/json'},body:JSON.stringify({songId:'song-1',key:'live-director/reaper-projects/song-1/Mapa.RPP',markerIds:[1]})}),cookies:{get:()=>({value:'fixture-token'})}});
+  globalThis.__reaperFixture.song={...song,multitrack_session:null};
+  const stemless=await applyAgain();assert.equal(stemless.status,200,JSON.stringify(await stemless.clone().json()));
+  const clickOnly=globalThis.__reaperFixture.sessionUpdates.at(-1);
+  assert.equal(clickOnly.tracks.length,1);assert.match(clickOnly.tracks[0].url,/^\/api\/live-director-click-carrier\/\d+(\.\d+)?\.m4a$/);
+  assert.equal(clickOnly.reaperTiming.source,'reaper-rpp');assert.deepEqual(clickOnly.sectionMarkers.map(marker=>marker.sectionName),['Intro 1']);
+  // Volver a aplicar sobre la sesión de click la rehace (no la trata como stems).
+  globalThis.__reaperFixture.song={...song,multitrack_session:clickOnly};
+  assert.equal((await applyAgain()).status,200);assert.equal(globalThis.__reaperFixture.sessionUpdates.at(-1).tracks.length,1);
+  // Las secciones de REAPER mandan: si no coinciden con el borrador del ChordPro (orden distinto o
+  // secciones que faltan), se avisa pero se aplica igual.
+  globalThis.__reaperFixture.song={...song,section_markers:[{sectionName:'Verso 1',startSec:1},{sectionName:'Intro 1',startSec:2},{sectionName:'Coro 1',startSec:null}]};
+  globalThis.__reaperFixture.stored=globalThis.__reaperFixture.stored.replace('  MARKER 10001 ','  MARKER 2 6 "Verso 1" 0 0 1\n  MARKER 10001 ');
+  const reordered=await PUT({request:new Request('https://fixture.invalid/api/admin-reaper-project',{method:'PUT',headers:{origin:'https://fixture.invalid','content-type':'application/json'},body:JSON.stringify({songId:'song-1',key:'live-director/reaper-projects/song-1/Mapa.RPP',markerIds:[1,2]})}),cookies:{get:()=>({value:'fixture-token'})}});
+  assert.equal(reordered.status,200,JSON.stringify(await reordered.clone().json()));
+  assert.deepEqual(globalThis.__reaperFixture.sessionUpdates.at(-1).sectionMarkers.map(marker=>marker.sectionName),['Intro 1','Verso 1'],'Quedan las secciones de REAPER');
+  globalThis.__reaperFixture.song=song;
  }finally{console.error=oldError}
- console.log('REAPER upload: authentication, admin role, origin, song binding, draft review, RPP storage, no catalog writes and apply with separate instructions passed.');
+ console.log('REAPER upload: authentication, admin role, origin, song binding, draft review, RPP storage, no catalog writes, apply with separate instructions and click-only sessions for songs without stems passed.');
 }finally{delete globalThis.__reaperFixture;await rm(dir,{recursive:true,force:true})}

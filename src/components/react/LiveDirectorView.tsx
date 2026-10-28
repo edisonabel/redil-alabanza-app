@@ -56,6 +56,7 @@ import type { GeneratedClickSettings } from '../../utils/liveDirectorGeneratedCl
 import { ChannelStrip, FaderThumb, PrecisionFaderSurface } from './live-director/ChannelStrip';
 import { EnsayoQueueAddCard, EnsayoQueueCard, EnsayoQueueSaveCard } from './live-director/EnsayoQueueCard';
 import { SongTransitionControl } from './live-director/SongTransitionControl';
+import { isClickCarrierUrl } from '../../utils/silentClickCarrier.js';
 import {
   DEFAULT_SONG_TRANSITION, SONG_BLEND_SECONDS, readSongTransitions, transitionAllowsPad, writeSongTransitions,
   type SongTransition,
@@ -6079,6 +6080,7 @@ export function LiveDirectorView({
           onConfirmedMeter={setConfirmedClickMeter} trackId={clickTrack.id} bpm={generatedClickGrid?.bpm ?? reaperTransport?.clickGrid?.bpm ?? bpm}
           originSeconds={generatedClickGrid?.originSeconds ?? reaperTransport?.clickGrid?.originSeconds ?? sourceSections[0]?.startTime ?? 0}
           meter={reaperTransport?.timeSignature ?? shownMeter} confirmedByReaper={Boolean(reaperTransport?.timeSignature && reaperTransport?.clickGrid)}
+          forceGenerated={isClickCarrierUrl(clickTrack.url)}
           ready={isReady} playing={isPlaying} busy={isSectionSeekBusy || isCongregationFading}
           loadSamples={selectedMultitrackEngine.loadGeneratedClickSamples} onConfigure={selectedMultitrackEngine.setGeneratedClick} />}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(93,214,240,0.08),_transparent_24%),linear-gradient(180deg,#232526_0%,#222425_46%,#202224_100%)]" />

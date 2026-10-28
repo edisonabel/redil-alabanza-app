@@ -8,6 +8,7 @@ import {
 import { createClient } from '@supabase/supabase-js';
 import { getSupabaseServerEnv, getSupabaseServiceRoleKey, readEnv } from '../../lib/server/supabase-env.js';
 import { parseReaperProject, reviewReaperProject, safeReaperProjectName } from '../../utils/reaperProjectParser.js';
+import { buildClickOnlySession, isClickOnlySession } from '../../utils/liveDirectorClickOnlySession.js';
 
 export const prerender = false;
 
@@ -180,7 +181,7 @@ const sectionIdentity = (value) => normalizeProjectSectionName(value).normalize(
 const APPLY_BLOCKERS = new Set([
   'drafts', 'uno', 'end', 'invalid', 'tempo', 'audio-moved', 'no-media', 'unverified-media',
   'trimmed', 'song', 'unbound', 'duplicate-anchor', 'duplicate-time', 'duplicate-name',
-  'duplicate-id', 'outside', 'tail', 'range', 'tempo-map', 'media-count', 'order', 'untimed-source',
+  'duplicate-id', 'outside', 'tail', 'range', 'tempo-map', 'media-count',
 ]);
 
 export const PUT = async ({ request, cookies }) => {
@@ -233,30 +234,34 @@ export const PUT = async ({ request, cookies }) => {
     if (typeof session === 'string') {
       try { session = JSON.parse(session); } catch { session = null; }
     }
-    if (!session || typeof session !== 'object' || !Array.isArray(session.tracks) || !session.tracks.length) {
-      return jsonResponse({ error: 'La canción no tiene una sesión multitrack disponible para recibir el mapa.' }, 409);
-    }
     const appliedAt = new Date().toISOString();
-    const nextSession = {
+    // Spoken instructions inside UNO–FIN AUDIO; they never become sections.
+    const instructionMarkers = (project.instructions || [])
+      .filter((cue) => cue.timeSeconds >= (review.unoSeconds ?? 0) && (review.endSeconds == null || cue.timeSeconds < review.endSeconds))
+      .map((cue) => ({ id: `reaper-cue-${cue.id}`, name: cue.name, startSec: cue.timeSeconds }));
+    const reaperTiming = {
+      source: 'reaper-rpp',
+      projectName: safeReaperProjectName(key.split('/').at(-1) || 'Proyecto.RPP'),
+      tempo: project.tempo,
+      meter: project.meter,
+      unoSeconds: review.unoSeconds,
+      finAudioSeconds: review.endSeconds,
+      appliedAt,
+    };
+    const hasStems = session && typeof session === 'object' && Array.isArray(session.tracks) && session.tracks.length > 0 && !isClickOnlySession(session);
+    // Sin stems (proyecto hecho sobre el MP3 de la canción): la sesión es solo el click digital.
+    const nextSession = !hasStems ? buildClickOnlySession({
+      songId: song.id, songTitle: song.titulo, finAudioSeconds: review.endSeconds, appliedAt,
+      sectionMarkers: markers, instructionMarkers, reaperTiming,
+    }) : {
       ...session,
       updatedAt: appliedAt,
       // RPP markers are absolute positions in the original stems. A prior
       // lyric/MP3 offset must not be added to this newly calibrated map.
       sectionOffsetSeconds: 0,
       sectionMarkers: markers,
-      // Spoken instructions inside UNO–FIN AUDIO; they never become sections.
-      instructionMarkers: (project.instructions || [])
-        .filter((cue) => cue.timeSeconds >= (review.unoSeconds ?? 0) && (review.endSeconds == null || cue.timeSeconds < review.endSeconds))
-        .map((cue) => ({ id: `reaper-cue-${cue.id}`, name: cue.name, startSec: cue.timeSeconds })),
-      reaperTiming: {
-        source: 'reaper-rpp',
-        projectName: safeReaperProjectName(key.split('/').at(-1) || 'Proyecto.RPP'),
-        tempo: project.tempo,
-        meter: project.meter,
-        unoSeconds: review.unoSeconds,
-        finAudioSeconds: review.endSeconds,
-        appliedAt,
-      },
+      instructionMarkers,
+      reaperTiming,
     };
     const { error: updateError } = await serviceRoleClient.from('canciones').update({ multitrack_session: nextSession }).eq('id', song.id);
     if (updateError) throw updateError;
