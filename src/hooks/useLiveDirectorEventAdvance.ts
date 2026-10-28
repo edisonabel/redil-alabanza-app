@@ -4,8 +4,10 @@ export type EventPlaybackRequest = { songId: string; token: number };
 export type QueueSelectionOptions = { autoPlay?: boolean };
 type Options = {
   enabled: boolean;
-  /** «Encadenar» activo para esta canción: al terminar pasa a la siguiente. Apagado, termina y se detiene. */
+  /** Cuenta 5-4-3-2-1 y pasa a la siguiente. Apagado, la canción termina y se avisa con onEnded. */
   autoAdvance?: boolean;
+  /** La canción llegó a su final sola (sin un cambio de canción armado): aplica la transición elegida. */
+  onEnded?: () => void;
   identity: string;
   songId: string;
   nextSong?: { id: string; title: string };
@@ -64,7 +66,9 @@ export function useLiveDirectorEventAdvance(options: Options) {
   }, []);
   const complete = useCallback(() => {
     const o = latest.current;
-    if (!o.enabled || o.autoAdvance === false || o.busy || o.manualNavigation.current || !o.nextSong || completedPass.current || waiting.current || selectingRef.current) return;
+    if (!o.enabled || o.busy || o.manualNavigation.current || completedPass.current || waiting.current || selectingRef.current) return;
+    if (o.autoAdvance === false) { completedPass.current = true; cancelEnd(); o.onEnded?.(); return; }
+    if (!o.nextSong) return;
     completedPass.current = true;
     cancelEnd();
     waiting.current = { deadline: performance.now() + COUNTDOWN_SECONDS * 1000, nextId: o.nextSong.id };
@@ -132,7 +136,8 @@ export function useLiveDirectorEventAdvance(options: Options) {
         });
         return;
       }
-      if (finalStart !== null && o.playing && o.ready && !o.busy && !o.manualNavigation.current &&
+      // El inicio de «Final» solo adelanta la cuenta; el fin real de la canción llega por scheduleEnd.
+      if (o.autoAdvance !== false && finalStart !== null && o.playing && o.ready && !o.busy && !o.manualNavigation.current &&
           Number.isFinite(position) && position! >= finalStart) {
         complete();
       }

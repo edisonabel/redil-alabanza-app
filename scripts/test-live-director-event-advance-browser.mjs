@@ -1,6 +1,6 @@
-// Final de canción en un evento: ya no hay cuenta 5-4-3-2-1. La siguiente canción solo entra por
-// «Encadenar» (cambio preparado sin silencio, ver test-live-director-chain-browser.mjs); sin él, termina
-// y se detiene. Aunque esté encadenada, si ya no queda tiempo para preparar el cambio, tampoco cuenta.
+// Final de canción en un evento: ya no hay cuenta 5-4-3-2-1. Con «Mantenerse en Canción» termina y se
+// detiene; con AutoLink, si ya no queda tiempo para preparar el cambio, tampoco cuenta ni avanza (los
+// demás modos se prueban en test-live-director-song-transitions-browser.mjs).
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -25,11 +25,12 @@ async function playToEnd(secondsBefore) {
 }
 try {
   await mkdir('.lab/results', { recursive: true });
-  for (const [name, chained] of [['sin-encadenar', false], ['encadenada-sin-tiempo', true]]) {
-    await page.evaluate(([event, id, on]) => { try { localStorage.setItem(`live-director:chain:${event}`, JSON.stringify(on ? [id] : [])); } catch {} }, [EVENT, PROVIDENCIA, chained]).catch(() => {});
-    await page.goto(`${LAB}/?labEvent=${EVENT}&labRetainView=1`); await ready(15);
+  for (const [name, mode] of [['mantenerse', 'stay'], ['autolink-sin-tiempo', 'autolink']]) {
+    await page.goto(`${LAB}/?labEvent=${EVENT}&labRetainView=1`);
+    await page.evaluate(([event, id, mode]) => localStorage.setItem(`live-director:transitions:${event}`, JSON.stringify({ [id]: { mode, continuePad: false } })), [EVENT, PROVIDENCIA, mode]);
+    await page.reload(); await ready(15);
     const ids = await chooser.locator('option').evaluateAll(options => options.map(option => option.value));
-    assert.equal(await page.locator('[data-live-director-control="chain-next-song"]').getAttribute('aria-pressed'), String(chained));
+    assert.equal(await page.locator('[data-live-director-control="song-transition"]').first().getAttribute('data-transition-mode'), mode);
     await playToEnd(1.5);
     assert.equal(await page.locator('[data-live-event-countdown]').count(), 0, `${name}: sin cuenta 5-4-3-2-1`);
     assert.equal(await page.locator('[data-live-event-countdown-large]').count(), 0);

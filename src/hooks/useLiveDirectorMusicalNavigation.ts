@@ -1,16 +1,21 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 import type {TrackData} from '../services/MultitrackEngine';
+import type {SongBlend} from '../services/StreamingMultitrackEngine';
 type Prepared={serial:number;completion:Promise<boolean>};
 type Pending={kind:'restart'|'song';id:string;title:string;phase:'preparing'|'ready';boundary:number|null};
 type Options={enabled:boolean;identity:string;playing:boolean;ready:boolean;busy:boolean;getTime:()=>number;
   sectionEnd:(time:number)=>number|null;recordedEntry:boolean;
-  prepareSong?:(id:string)=>Promise<{tracks:TrackData[];recordedEntry:boolean;startSeconds?:number}>;
+  prepareSong?:(id:string)=>Promise<{tracks:TrackData[];recordedEntry:boolean;startSeconds?:number;firstSectionSeconds?:number}>;
   prepareAudio?:(tracks:TrackData[],pauseAtTarget?:boolean,startSeconds?:number)=>Promise<Prepared>;
   prepareRestart?:(pauseAtTarget:boolean)=>Promise<Prepared>;
-  schedule?:(serial:number,boundary:number)=>void;cancelAudio?:()=>void;
+  schedule?:(serial:number,boundary:number,blend?:SongBlend)=>void;cancelAudio?:()=>void;
   afterRestart?:()=>void;
   beforeArm:()=>void;select:(id:string,recorded:boolean)=>void;startCount:()=>Promise<void>;
 };
+// Margen mínimo entre tener lista la canción nueva y el inicio de la mezcla.
+const BLEND_SCHEDULE_MARGIN_SECONDS=.5;
+/** Sobreponer / Transición cruzada: la mezcla termina justo al final de la canción que suena. */
+export type SongTransitionBlend={mode:SongBlend['mode'];seconds:number};
 export function useLiveDirectorMusicalNavigation(options:Options){
  const latest=useRef(options);latest.current=options;
  const[pending,setPending]=useState<Pending|null>(null),[notice,setNotice]=useState('');
@@ -19,7 +24,7 @@ export function useLiveDirectorMusicalNavigation(options:Options){
  useEffect(()=>{if(job.current)latest.current.cancelAudio?.();generation.current++;job.current=null;setPending(null);setNotice('');},[options.identity]);
  useEffect(()=>()=>{if(job.current)latest.current.cancelAudio?.();generation.current++;},[]);
  useEffect(()=>{if(pending&&(!options.enabled||!options.playing||!options.ready||options.busy)&&!committing.current)cancel();},[options.enabled,options.playing,options.ready,options.busy,pending,cancel]);
- const arm=useCallback(async(kind:'restart'|'song',id:string,title:string)=>{
+ const arm=useCallback(async(kind:'restart'|'song',id:string,title:string,blendRequest?:SongTransitionBlend)=>{
   const o=latest.current;if(!o.enabled){setNotice('Este motor necesita pausa para cambiar de canción.');return false;}if(!o.ready||!o.playing||o.busy)return false;
   cancel();
   // Lock the end of the section that was playing when the user requested the
@@ -34,12 +39,19 @@ export function useLiveDirectorMusicalNavigation(options:Options){
    if(kind==='song'&&!o.prepareSong)throw new Error('Esta pantalla no puede preparar la siguiente canción sin pausa.');
    const destination=kind==='song'?await o.prepareSong?.(id):null;
    if(generation.current!==token)return false;
-   const recorded=kind==='song'?destination?.recordedEntry??false:o.recordedEntry;
+   // La mezcla dura lo menor entre lo pedido, la primera sección de la nueva y el tiempo que queda; si
+   // ya no cabe, la canción nueva entra al final como en AutoLink.
+   const blendSeconds=kind==='song'&&blendRequest?Math.min(blendRequest.seconds,destination?.firstSectionSeconds??blendRequest.seconds,
+     boundary-latest.current.getTime()-BLEND_SCHEDULE_MARGIN_SECONDS-1):0;
+   const blend=blendRequest&&blendSeconds>=.25?{mode:blendRequest.mode,seconds:blendSeconds}:undefined;
+   const recorded=kind==='song'?(blend?true:destination?.recordedEntry??false):o.recordedEntry;
    const prepared=kind==='song'&&destination?await o.prepareAudio?.(destination.tracks,!recorded,destination.startSeconds):await o.prepareRestart?.(!recorded);
    if(generation.current!==token)return false;
    if(!prepared)throw new Error('El motor no admite este cambio preparado.');
-   latest.current.schedule?.(prepared.serial,boundary);
-   const armed={...initial,phase:'ready' as const,boundary};job.current=armed;setPending(armed);
+   const switchAt=blend?boundary-blend.seconds:boundary;
+   if(blend&&switchAt-latest.current.getTime()<BLEND_SCHEDULE_MARGIN_SECONDS)throw new Error('No dio tiempo de preparar la mezcla. La canción continúa.');
+   latest.current.schedule?.(prepared.serial,switchAt,blend);
+   const armed={...initial,phase:'ready' as const,boundary:switchAt};job.current=armed;setPending(armed);
    const done=await prepared.completion;if(generation.current!==token)return false;
    if(!done)throw new Error('El audio no estuvo listo para el cierre. La canción continúa.');
    committing.current=true;job.current=null;setPending(null);setNotice('');

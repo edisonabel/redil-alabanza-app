@@ -290,6 +290,7 @@ type WorkletMessage =
   | {
       type: 'prepare-section-switch'; serial: number; boundarySeconds: number; targetSeconds: number;
       minimumFrames: number; controlBuffer: SharedArrayBuffer; replaceSong?: boolean; pauseAtTarget?: boolean;
+      blend?: { mode: SongBlend['mode']; frames: number; mutedTrackIndices: number[] } | null;
       tracks: Omit<WorkletTrackBufferMessage, 'type'>[];
     }
   | { type: 'cancel-section-switch'; serial: number }
@@ -1013,6 +1014,11 @@ type PreloadedStreamingSession = {
 
 export type PreparedSectionJump = { serial: number; completion: Promise<boolean> };
 type StandbySectionPool = { sessionId: number; workers: Worker[]; tracks: TrackRuntime[] };
+/** Sobreponer: la nueva entra completa; Transición cruzada: la nueva sube mientras la anterior baja. */
+export type SongBlend = { mode: 'overlap' | 'crossfade'; seconds: number };
+const SONG_BLEND_MAX_SECONDS = 5;
+const SONG_CUE_TRACK_PATTERN = /\b(click|metronomo|metronome|guide|guia)\b/i;
+
 type SectionJumpPreparation = {
   serial: number;
   sessionId: number;
@@ -1028,6 +1034,7 @@ type SectionJumpPreparation = {
   seekReady: Set<number>;
   phase: 'seeking' | 'ready' | 'scheduled';
   songTracks?: TrackData[]; pauseAtTarget?: boolean; deferSchedule?: boolean;
+  blend?: SongBlend;
   ready: Deferred<PreparedSectionJump>;
   completion: Deferred<boolean>;
   readySettled: boolean;
@@ -1035,7 +1042,7 @@ type SectionJumpPreparation = {
   startedAt: number;
 };
 
-const AUDIO_WORKER_ASSET_VERSION = '20261026-rehearsal-download-1';
+const AUDIO_WORKER_ASSET_VERSION = '20261027-song-blend-1';
 const GENERATED_CLICK_SAMPLE_GAIN = 1.41; // +3 dB
 declare const __LIVE_AUDIO_PRODUCER_URL__: string;
 const DEFAULT_WORKLET_MODULE_URL = `/workers/MultitrackWorkletProcessor.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
@@ -2992,10 +2999,13 @@ export class StreamingMultitrackEngine {
     return this.prepareSectionJump(targetSeconds, Math.max(this.getDuration(), this.getCurrentTime()) + 60, normalized, pauseAtTarget);
   }
 
-  schedulePreparedSongChange(serial: number, boundary: number): void {
+  schedulePreparedSongChange(serial: number, boundary: number, blend?: SongBlend): void {
     const pending = this.pendingSectionJump;
     if (!pending || pending.serial !== serial || pending.phase !== 'ready' || boundary - this.getCurrentTime() < .05) throw new Error('El cambio no está listo para el final de esta sección.');
-    pending.boundarySeconds = boundary; this.schedulePreparedSwitch(pending);
+    if (blend && (!pending.songTracks || pending.pauseAtTarget || !(blend.seconds > 0) || blend.seconds > SONG_BLEND_MAX_SECONDS)) {
+      throw new Error('Esta mezcla de canciones no es válida.');
+    }
+    pending.boundarySeconds = boundary; pending.blend = blend; this.schedulePreparedSwitch(pending);
   }
 
   private schedulePreparedSwitch(pending: SectionJumpPreparation): void {
@@ -3005,6 +3015,12 @@ export class StreamingMultitrackEngine {
         type: 'prepare-section-switch', serial: pending.serial,
         boundarySeconds: pending.boundarySeconds, targetSeconds: pending.targetSeconds,
         replaceSong: !!pending.songTracks, pauseAtTarget: pending.pauseAtTarget,
+        // La cola de la canción anterior no lleva click ni guía: el músico sigue el de la nueva.
+        blend: pending.blend ? {
+          mode: pending.blend.mode, frames: Math.round(pending.blend.seconds * this.context.sampleRate),
+          mutedTrackIndices: this.tracks.flatMap((track, index) =>
+            isGuideRoutingTrack(track) || SONG_CUE_TRACK_PATTERN.test(`${track.id} ${track.name || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '')) ? [index] : []),
+        } : null,
         minimumFrames: pending.minimumFrames, controlBuffer: pending.control.buffer as SharedArrayBuffer,
         tracks: pending.tracks.map(state => ({
           ...(pending.songTracks ? { id: pending.songTracks[state.index].id, volume: state.volume, isMuted: state.muted, outputRoute: state.outputRoute, isCue: isGuideRoutingTrack(pending.songTracks[state.index]) } : {}),
@@ -3062,10 +3078,12 @@ export class StreamingMultitrackEngine {
     // one idle pool for the next repeat instead of paying fresh startup again.
     for (const worker of oldWorkers) {
       worker.onmessage = null; worker.onerror = null;
-      worker.postMessage({ type: 'transport-state', sessionId: oldSessionId, playing: false });
+      // Con mezcla, los productores de la canción anterior siguen llenando su cola hasta que termina.
+      if (!pending.blend) worker.postMessage({ type: 'transport-state', sessionId: oldSessionId, playing: false });
     }
     if (pending.songTracks) {
-      oldWorkers.forEach(worker => worker.terminate()); oldTracks.forEach(track => track.abortController.abort());
+      const release = () => { oldWorkers.forEach(worker => worker.terminate()); oldTracks.forEach(track => track.abortController.abort()); };
+      if (pending.blend) setTimeout(release, (pending.blend.seconds + 1) * 1000); else release();
     } else this.standbySectionPool = { sessionId: oldSessionId, workers: oldWorkers, tracks: oldTracks };
     pending.completion.resolve(true);
     this.logFlatLiveDiagnostic('streaming:section-switch-complete', {

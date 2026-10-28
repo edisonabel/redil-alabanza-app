@@ -9,6 +9,10 @@ page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{if(!['GET',
 try {
  await page.goto(`${LAB}/`);
  await page.waitForFunction(()=>window.__streamingEngineDumpOwner?.getTracks().length===15&&!document.querySelector('[data-live-director-control="edit-song"]')?.disabled,null,{timeout:90000});
+ // El mapa de secciones es desplegable y empieza oculto; el botón junto a los íconos lo muestra.
+ const mapToggle=page.locator('[data-live-director-control="section-map"]');
+ assert.equal(await mapToggle.getAttribute('aria-pressed'),'false');assert.equal(await page.locator('[data-live-section-minimap]').count(),0,'Oculto por defecto');
+ await mapToggle.click();assert.equal(await mapToggle.getAttribute('aria-pressed'),'true');
  const map=page.getByRole('slider',{name:'Mini-mapa de la canción'});
  await map.waitFor();assert.equal(await map.locator('[data-minimap-section]').count(),14);
  const colors=await map.locator('[data-minimap-section]').evaluateAll(els=>els.map(e=>getComputedStyle(e).backgroundColor));
