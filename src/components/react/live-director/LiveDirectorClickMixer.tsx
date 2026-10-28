@@ -9,6 +9,8 @@ type Props = {
   /** Compás de la canción; con REAPER el «uno» y el compás ya están confirmados y el acento suena sin marcar la casilla. */
   meter?: { numerator: number; denominator: number } | null; confirmedByReaper?: boolean;
   loadSamples: () => Promise<void>;
+  /** Canción sin stems: no hay click grabado, así que el digital se enciende solo (aunque llegue sonando). */
+  forceGenerated?: boolean;
   onConfigure: (trackId: string, settings: GeneratedClickSettings | null) => boolean;
 };
 export function LiveDirectorClickMixer(props: Props) {
@@ -38,7 +40,7 @@ export function LiveDirectorClickMixer(props: Props) {
   }, [props.open]);
   useEffect(() => { if (!props.ready) { generation.current++; setEnabled(false); setLoading(false); } }, [props.ready]);
   useEffect(() => { if (!settings) setEnabled(false); }, [settings]);
-  useEffect(() => { if (props.playing && loading) { generation.current++; setLoading(false); } }, [props.playing, loading]);
+  useEffect(() => { if (props.playing && loading && !props.forceGenerated) { generation.current++; setLoading(false); } }, [props.playing, loading, props.forceGenerated]);
   useEffect(() => {
     props.onConfigure(props.trackId, enabled && settings ? settings : null);
   }, [props.onConfigure, props.trackId, enabled, settings]);
@@ -46,8 +48,8 @@ export function LiveDirectorClickMixer(props: Props) {
     generation.current++;
     props.onConfigure(props.trackId, null);
   }, [props.onConfigure, props.trackId]);
-  const enable = async () => {
-    if (gridLocked || !settings || enabled) return;
+  const enable = async (force = false) => {
+    if ((gridLocked && !force) || !props.ready || !settings || enabled) return;
     const token = ++generation.current;
     setLoading(true); setError('');
     try {
@@ -60,6 +62,9 @@ export function LiveDirectorClickMixer(props: Props) {
       if (generation.current === token) setError(error instanceof Error ? error.message : 'No se pudo preparar el metrónomo.');
     } finally { if (generation.current === token) setLoading(false); }
   };
+  useEffect(() => {
+    if (props.forceGenerated && props.ready && settings && !enabled && !loading && !error) void enable(true);
+  });
   const changeGrid = (update: () => void) => { update(); setAccentConfirmed(false); };
   const controlClass = 'min-h-10 rounded-lg border border-white/15 bg-black/25 px-3 py-2 text-sm text-white focus-visible:outline-2 focus-visible:outline-cyan-200 disabled:opacity-40';
   return <dialog ref={dialog} onClose={props.onClose} aria-labelledby="ld-click-title"
@@ -69,8 +74,8 @@ export function LiveDirectorClickMixer(props: Props) {
       <button type="button" className={controlClass} onClick={() => dialog.current?.close()} aria-label="Cerrar metrónomo">Cerrar</button>
     </header>
     <div className="mt-3 flex flex-wrap items-center gap-2" role="group" aria-label="Fuente del click">
-      <button type="button" className={`${controlClass} ${!enabled ? 'border-cyan-200/60 bg-cyan-300/15' : ''}`} aria-pressed={!enabled} disabled={gridLocked}
-        onClick={() => { generation.current++; setEnabled(false); setError(''); }}>Click grabado</button>
+      {!props.forceGenerated && <button type="button" className={`${controlClass} ${!enabled ? 'border-cyan-200/60 bg-cyan-300/15' : ''}`} aria-pressed={!enabled} disabled={gridLocked}
+        onClick={() => { generation.current++; setEnabled(false); setError(''); }}>Click grabado</button>}
       <button type="button" className={`${controlClass} ${enabled ? 'border-cyan-200/60 bg-cyan-300/15' : ''}`} aria-pressed={enabled}
         disabled={gridLocked || !settings} onClick={() => { void enable(); }}>{loading ? 'Preparando sonidos…' : 'Click generado'}</button>
       <span className="text-xs text-white/60">{props.playing ? 'Pausa para cambiar la fuente o el mapa.' : 'Los faders se pueden ajustar durante la reproducción.'}</span>

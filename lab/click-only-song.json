@@ -1,0 +1,20 @@
+{
+  "_comment": "Canción sin secuencia para probar el click digital: «Oh tu fidelidad» solo tiene MP3. Su sesión es la que crea Alabanza al aplicar un RPP hecho sobre el MP3 (FIN AUDIO = duración del MP3).",
+  "id": "8a76174e-1471-4fb8-b8d2-090dd267fb02",
+  "titulo": "Oh tu fidelidad",
+  "cantante": "Majo Solís",
+  "tonalidad": "B",
+  "bpm": 75,
+  "timeSignature": { "numerator": 4, "denominator": 4 },
+  "unoSeconds": 0,
+  "finAudioSeconds": 214.018,
+  "sectionMarkers": [
+    { "id": "reaper-1", "sectionName": "Intro", "startSec": 0 },
+    { "id": "reaper-2", "sectionName": "Verso 1", "startSec": 17 },
+    { "id": "reaper-3", "sectionName": "Coro 1", "startSec": 55 },
+    { "id": "reaper-4", "sectionName": "Interludio", "startSec": 92 },
+    { "id": "reaper-5", "sectionName": "Verso 2", "startSec": 104 },
+    { "id": "reaper-6", "sectionName": "Coro 2", "startSec": 142 },
+    { "id": "reaper-7", "sectionName": "Outro", "startSec": 179 }
+  ]
+}

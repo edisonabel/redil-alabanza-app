@@ -12,8 +12,16 @@ const {Scanner}=require('@tailwindcss/oxide');
 const fixturePath=process.env.LD_LAB_FIXTURE || resolve(root,'.lab/songs.json');
 const fixture=JSON.parse(await readFile(fixturePath,'utf8'));
 const reaperMap=JSON.parse(await readFile(resolve(root,'lab/providencia-reaper-map.json'),'utf8'));
+const {buildClickOnlySession}=await import('../src/utils/liveDirectorClickOnlySession.js');
+const {buildSilentAacMp4,readClickCarrierSeconds}=await import('../src/utils/silentClickCarrier.js');
+// Canción sin secuencia: su sesión es la misma que crea Alabanza al aplicar un RPP hecho sobre el MP3.
+const clickOnly=JSON.parse(await readFile(resolve(root,'lab/click-only-song.json'),'utf8'));
+const clickOnlySong={id:clickOnly.id,titulo:clickOnly.titulo,cantante:clickOnly.cantante,tonalidad:clickOnly.tonalidad,bpm:clickOnly.bpm,timeSignature:clickOnly.timeSignature,
+  section_markers:clickOnly.sectionMarkers,multitrack_session:buildClickOnlySession({songId:clickOnly.id,songTitle:clickOnly.titulo,finAudioSeconds:clickOnly.finAudioSeconds,appliedAt:'lab',
+    sectionMarkers:clickOnly.sectionMarkers,reaperTiming:{source:'reaper-rpp',projectName:'lab',tempo:clickOnly.bpm,meter:`${clickOnly.timeSignature.numerator}/${clickOnly.timeSignature.denominator}`,
+      unoSeconds:clickOnly.unoSeconds,finAudioSeconds:clickOnly.finAudioSeconds,appliedAt:'lab'}})};
 const media=new Map();
-const songs=fixture.songs.map((originalSong,songIndex)=>{
+const songs=[...fixture.songs,clickOnlySong].map((originalSong,songIndex)=>{
   // REAPER markers use absolute source seconds; do not add the legacy offset.
   const importedMarkers=originalSong.id===reaperMap.songId ? new Map(reaperMap.sectionMarkers.map(marker=>[marker.id,marker])) : null;
   const song=importedMarkers ? {...originalSong,bpm:reaperMap.bpm,timeSignature:reaperMap.timeSignature,
@@ -25,7 +33,7 @@ const songs=fixture.songs.map((originalSong,songIndex)=>{
         unoSeconds:reaperMap.confirmedDownbeatSeconds??null,finAudioSeconds:reaperMap.audioEndSeconds??null,appliedAt:'lab'}}} : originalSong;
   const artworkPath=`/lab-artwork/${songIndex}.webp`;
   media.set(artworkPath,`https://stems.alabanzaredilestadio.com/songs/${encodeURIComponent(song.id)}/artwork/cover-500.webp`);
-  return {...song,artworkUrl:artworkPath,multitrack_session:{...song.multitrack_session,folder:undefined,manifestUrl:undefined,tracks:song.multitrack_session.tracks.map((track,index)=>{
+  return {...song,artworkUrl:artworkPath,multitrack_session:{...song.multitrack_session,folder:undefined,manifestUrl:undefined,tracks:song===clickOnlySong?song.multitrack_session.tracks:song.multitrack_session.tracks.map((track,index)=>{
   const local=`/lab-media/${songIndex}/${index}.m4a`;
   media.set(local,track.optimizedUrl || track.url);
   return {...track,url:local,iosUrl:undefined,nativeUrl:undefined,optimizedUrl:undefined,cafUrl:undefined,pcmUrl:undefined};
@@ -80,6 +88,16 @@ const server=createServer(async(req,res)=>{
         }else res.end();
       }catch(error){if(abort.signal.aborted)return;stats.mediaFailures++;if(!res.headersSent)res.writeHead(502);res.end('No se pudo leer el audio. Reintenta la carga.');}
       return;
+    }
+    const carrierSeconds=readClickCarrierSeconds(url.pathname);
+    if(carrierSeconds!==null){
+      // Igual que /api/live-director-click-carrier en Alabanza: silencio AAC servido por rangos.
+      const bytes=buildSilentAacMp4(carrierSeconds),range=/^bytes=(\d*)-(\d*)$/.exec(req.headers.range||'');
+      res.setHeader('Content-Type','audio/mp4');res.setHeader('Accept-Ranges','bytes');res.setHeader('ETag',`"click-carrier-v1-${carrierSeconds}"`);
+      if(!range){res.setHeader('Content-Length',bytes.length);res.writeHead(200);res.end(Buffer.from(bytes));return;}
+      const start=range[1]===''?Math.max(0,bytes.length-Number(range[2])):Number(range[1]),end=range[1]===''||range[2]===''?bytes.length-1:Math.min(bytes.length-1,Number(range[2]));
+      if(!(start<=end)||start>=bytes.length){res.setHeader('Content-Range',`bytes */${bytes.length}`);res.writeHead(416);res.end();return;}
+      res.setHeader('Content-Range',`bytes ${start}-${end}/${bytes.length}`);res.setHeader('Content-Length',end-start+1);res.writeHead(206);res.end(Buffer.from(bytes.slice(start,end+1)));return;
     }
     if(url.pathname.startsWith('/api/'))return sendJson(res,404,{error:'Ruta no disponible en el laboratorio.'});
     if(['/workers/','/vendor/','/fonts/','/audio/guide-es/','/audio/click-classic/'].some(prefix=>url.pathname.startsWith(prefix))){

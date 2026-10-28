@@ -99,14 +99,21 @@ así que no hay que escribir nombres:
 
 ### Canción nueva, sin secciones
 
-1. Sube primero los stems de la canción a su sesión multitrack en Alabanza. Aplicar
-   un mapa necesita esa sesión; el RPP solo aporta tiempos y nombres.
-2. En **Administración → REAPER** pulsa **Descargar proyecto + stems**. Si la canción
-   no tenía secciones, el RPP llega sin entradas, solo con `FIN AUDIO` en borrador.
-3. Abre el RPP y el asistente, y sigue los cuatro pasos. En el paso 2, mientras no
+1. En **Administración → REAPER** elige la canción. Si tiene stems, pulsa
+   **Descargar proyecto + stems**; si no tiene secuencia, pulsa **Descargar proyecto
+   (MP3)**: el RPP trae el MP3 final de la canción solo como referencia para marcar.
+   Si la canción no tenía secciones, el RPP llega sin entradas, solo con `FIN AUDIO`
+   en borrador.
+2. Abre el RPP y el asistente, y sigue los cuatro pasos. En el paso 2, mientras no
    haya secciones, la acción verde es **Añadir … aquí**. Después, en cada cambio
-   detén, elige el tipo en el grupo **Sección** y pulsa **A**.
-4. Sube el RPP y aplica el mapa (siguiente apartado).
+   detén, elige el tipo en el grupo **Sección** y pulsa **A**. Calibra el tempo y el
+   compás desde el UNO.
+3. Sube el RPP y aplica el mapa (siguiente apartado). En una canción sin secuencia,
+   el Live Director la toca con el **click digital** (tu tempo y compás) y el **pad
+   interno**, con las secciones e instrucciones que marcaste. El MP3 no suena ahí.
+
+Las secciones de REAPER mandan: si no coinciden con las del ChordPro, o la canción no
+tiene ChordPro, Alabanza lo avisa pero aplica igual y quedan como las de la canción.
 
 La **plantilla vacía** sirve para practicar o para un trabajo manual, pero no está
 vinculada a ninguna canción: Administración no la deja aplicar y el asistente no se

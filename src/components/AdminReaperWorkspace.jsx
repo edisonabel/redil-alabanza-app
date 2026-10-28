@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Archive, CheckCircle2, Clock3, Download, FileAudio2, FileUp, LoaderCircle, Music2, RefreshCw, Upload, XCircle } from 'lucide-react';
 import { formatReaperTime, parseReaperProject, reviewReaperProject } from '../utils/reaperProjectParser.js';
+import { resolveFetchableAudioUrl } from '../lib/audio-playback.js';
+import { isClickCarrierUrl } from '../utils/silentClickCarrier.js';
 import { buildPreparedReaperProject, getReaperDraftMarkers, measureReaperBlobDuration, readReaperSession, reaperMediaPath, reaperTrackCategory, reaperTrackName, safeReaperBaseName } from '../utils/reaperPreparation.js';
 
 const getSession = readReaperSession;
@@ -11,7 +13,12 @@ const formatSize = (bytes = 0) => {
   return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`;
 };
 const formatDate = (value) => value ? new Date(value).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' }) : '';
-const APPLY_BLOCKERS = new Set(['drafts', 'uno', 'end', 'invalid', 'tempo', 'audio-moved', 'no-media', 'unverified-media', 'trimmed', 'song', 'unbound', 'duplicate-anchor', 'duplicate-time', 'duplicate-name', 'duplicate-id', 'outside', 'tail', 'range', 'tempo-map', 'media-count', 'order', 'untimed-source']);
+const APPLY_BLOCKERS = new Set(['drafts', 'uno', 'end', 'invalid', 'tempo', 'audio-moved', 'no-media', 'unverified-media', 'trimmed', 'song', 'unbound', 'duplicate-anchor', 'duplicate-time', 'duplicate-name', 'duplicate-id', 'outside', 'tail', 'range', 'tempo-map', 'media-count']);
+// Las canciones sin stems se preparan con su MP3; la pista virtual de click no cuenta como stem.
+const stemLabel = (song) => {
+  const stems = (song.reaperSession?.tracks || []).filter((track) => !isClickCarrierUrl(track.url)).length;
+  return stems ? `${stems} stems` : String(song.mp3 || '').trim() ? 'MP3' : 'sin audio';
+};
 const isAnchor = (name) => /^(uno|fin audio)$/i.test(String(name || '').replace(/^\[BORRADOR\]\s*/i, '').trim());
 
 export default function AdminReaperWorkspace({ songs = [], isAdmin = false }) {
@@ -30,7 +37,14 @@ export default function AdminReaperWorkspace({ songs = [], isAdmin = false }) {
   const [packageReady, setPackageReady] = useState(false);
   const fileInputRef = useRef(null);
   const selectedSong = eligibleSongs.find((song) => String(song.id) === String(songId)) || eligibleSongs[0] || null;
-  const tracks = Array.isArray(selectedSong?.reaperSession?.tracks) ? selectedSong.reaperSession.tracks : [];
+  // La pista virtual de click no es un stem: una canción que solo la tiene se trata como sin stems.
+  const tracks = (Array.isArray(selectedSong?.reaperSession?.tracks) ? selectedSong.reaperSession.tracks : [])
+    .filter((track) => !isClickCarrierUrl(track.url));
+  // Sin stems, el proyecto lleva el MP3 final de la canción solo como referencia para marcar los tiempos.
+  const referenceTrack = !tracks.length && String(selectedSong?.mp3 || '').trim()
+    ? { id: 'referencia-mp3', name: 'Canción (referencia)', url: resolveFetchableAudioUrl(selectedSong.mp3, { preferSameOrigin: true }), sourceFileName: 'referencia.mp3' }
+    : null;
+  const packageTracks = tracks.length ? tracks : referenceTrack ? [referenceTrack] : [];
   const draftCount = useMemo(() => {
     try { return getReaperDraftMarkers(selectedSong || {}).markers.length; } catch { return 0; }
   }, [selectedSong]);
@@ -75,7 +89,7 @@ export default function AdminReaperWorkspace({ songs = [], isAdmin = false }) {
   }, [analysis?.markers, selectedSong?.id]);
 
   const downloadStemPackage = async () => {
-    if (!selectedSong || tracks.length === 0) return;
+    if (!selectedSong || packageTracks.length === 0) return;
     setBusy('zip');
     setFeedback(null);
     let totalBytes = 0;
@@ -112,14 +126,14 @@ export default function AdminReaperWorkspace({ songs = [], isAdmin = false }) {
       const JSZip = (await import('jszip')).default;
       const zip = new JSZip();
       const safeTitle = safeReaperBaseName(selectedSong.titulo);
-      const missing = tracks.filter((track) => !String(track.url || '').trim()).map(trackName);
+      const missing = packageTracks.filter((track) => !String(track.url || '').trim()).map(trackName);
       if (missing.length) throw new Error(`A estas pistas les falta el archivo original: ${missing.join(', ')}.`);
       const preparedTracks = [];
-      for (let index = 0; index < tracks.length; index += 1) {
-        const track = tracks[index];
-        setProgress(`Descargando ${index + 1} de ${tracks.length}: ${trackName(track)}`);
+      for (let index = 0; index < packageTracks.length; index += 1) {
+        const track = packageTracks[index];
+        setProgress(`Descargando ${index + 1} de ${packageTracks.length}: ${trackName(track)}`);
         const blob = await getFile(track.url, trackName(track));
-        setProgress(`Preparando ${index + 1} de ${tracks.length}: ${trackName(track)}`);
+        setProgress(`Preparando ${index + 1} de ${packageTracks.length}: ${trackName(track)}`);
         const durationSeconds = await measureReaperBlobDuration(blob, trackName(track));
         const mediaPath = reaperMediaPath(track, index);
         zip.file(`${safeTitle}/${mediaPath}`, blob, { binary: true });
@@ -142,7 +156,7 @@ export default function AdminReaperWorkspace({ songs = [], isAdmin = false }) {
       zip.file(`${safeTitle}/INSTRUCCIONES.md`, instructions);
       zip.file(`${safeTitle}/Guia-visual-REAPER.pdf`, visualGuide);
       zip.file(`${safeTitle}/Mapa-original.json`, JSON.stringify(manifest, null, 2));
-      setProgress(`Empaquetando el proyecto y sus ${tracks.length} pistas…`);
+      setProgress(`Empaquetando el proyecto y sus ${packageTracks.length} pistas…`);
       const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
       const objectUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -152,7 +166,7 @@ export default function AdminReaperWorkspace({ songs = [], isAdmin = false }) {
       link.click();
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
-      setFeedback({ kind: 'success', text: `Listo: RPP, ${tracks.length} stems, asistente y guía visual incluidos. Descomprime el ZIP y abre el RPP.${manifest.omittedMarkers.length ? ` Hay ${manifest.omittedMarkers.length} secciones sin tiempo válido; añádelas en REAPER.` : ''}` });
+      setFeedback({ kind: 'success', text: `Listo: RPP, ${tracks.length ? `${tracks.length} stems` : 'el MP3 de referencia'}, asistente y guía visual incluidos. Descomprime el ZIP y abre el RPP.${manifest.omittedMarkers.length ? ` Hay ${manifest.omittedMarkers.length} secciones sin tiempo válido; añádelas en REAPER.` : ''}` });
       setPackageReady(true);
       setWizardStep(2);
     } catch (error) {
@@ -279,13 +293,13 @@ export default function AdminReaperWorkspace({ songs = [], isAdmin = false }) {
             <label className="block">
               <span className="mb-1.5 block text-xs font-bold text-content">Canción del repertorio</span>
               <select value={selectedSong?.id || ''} onChange={(event) => { setSongId(event.target.value); setFeedback(null); setPackageReady(false); }} disabled={!eligibleSongs.length || Boolean(busy)} className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-semibold text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 disabled:opacity-60" aria-label="Canción para preparar en REAPER">
-                {eligibleSongs.length ? eligibleSongs.map((song) => <option key={song.id} value={song.id}>{song.titulo} · {song.reaperSession?.tracks?.length || 0} stems</option>) : <option value="">No hay canciones disponibles</option>}
+                {eligibleSongs.length ? eligibleSongs.map((song) => <option key={song.id} value={song.id}>{song.titulo} · {stemLabel(song)}</option>) : <option value="">No hay canciones disponibles</option>}
               </select>
             </label>
             <div className="flex items-end">
-              <button type="button" onClick={downloadStemPackage} disabled={!selectedSong || !tracks.length || Boolean(busy)} className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-bold text-white shadow-sm transition hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-50">
+              <button type="button" onClick={downloadStemPackage} disabled={!selectedSong || !packageTracks.length || Boolean(busy)} className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-bold text-white shadow-sm transition hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-50">
                 {busy === 'zip' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Archive className="h-4 w-4" />}
-                {busy === 'zip' ? 'Preparando proyecto…' : 'Descargar proyecto + stems'}
+                {busy === 'zip' ? 'Preparando proyecto…' : tracks.length || !referenceTrack ? 'Descargar proyecto + stems' : 'Descargar proyecto (MP3)'}
               </button>
             </div>
           </div>
