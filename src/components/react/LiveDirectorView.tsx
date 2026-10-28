@@ -2434,9 +2434,7 @@ export function LiveDirectorView({
     () =>
       `hide-scrollbar grid min-h-0 ${
         isUltraCompactLandscape ? 'gap-1' : isCompactLandscape ? 'gap-1.5' : 'gap-3'
-      } overflow-x-auto overflow-y-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.98),rgba(27,29,30,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${
-        isUltraCompactLandscape ? 'px-0.5 py-0.5' : isCompactLandscape ? 'px-1 py-0.5' : 'px-3 py-4'
-      }`,
+      } overflow-x-auto overflow-y-hidden p-0.5`,
     [isUltraCompactLandscape, isCompactLandscape],
   );
 
@@ -6611,15 +6609,8 @@ export function LiveDirectorView({
             </div>
           </div>
 
-          <div className={`rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.98),rgba(27,29,30,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isUltraCompactLandscape ? 'px-0.5 py-0.5' : isCompactLandscape ? 'px-1 py-0.5' : 'px-3 py-4'}`}>
+          <div className="p-0.5">
             <div className={`flex h-full flex-col ${isUltraCompactLandscape ? 'gap-0.75' : isCompactLandscape ? 'gap-1' : 'gap-4'}`}>
-              {!isCompactLandscape && (
-                <div className="flex items-center justify-center gap-1 pt-1 text-white/42">
-                  <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                  <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                  <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                </div>
-              )}
               <button
                 type="button"
                 onClick={handlePreviousSection}
@@ -6714,7 +6705,7 @@ export function LiveDirectorView({
             </div>
           </div>
 
-          <div className={`rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.98),rgba(27,29,30,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isUltraCompactLandscape ? 'px-0.5 py-0.5' : isCompactLandscape ? 'px-1 py-0.5' : 'px-3 py-4'}`}>
+          <div className="p-0.5">
             <div className={`relative flex h-full flex-col items-center border border-white/7 bg-[linear-gradient(180deg,rgba(34,35,37,0.92),rgba(26,27,29,0.94))] ${isUltraCompactLandscape ? 'rounded-[1.18rem] px-0.75 pb-0.75 pt-0.85' : isCompactLandscape ? 'rounded-[1.38rem] px-1.25 pb-1.25 pt-0.95' : 'rounded-[1.75rem] px-3 pb-4 pt-3'}`}>
               <div className={`flex items-center justify-center border border-white/8 bg-black/28 text-white/62 ${isUltraCompactLandscape ? 'mb-1 min-h-[1.75rem] min-w-[1.75rem] rounded-[0.95rem]' : isCompactLandscape ? 'mb-1.5 min-h-[2rem] min-w-[2rem] rounded-[1.05rem]' : 'mb-2 h-10 w-10 rounded-full'}`}>
                 <span className={`font-black tracking-[0.18em] ${isUltraCompactLandscape ? 'text-[0.54rem]' : isCompactLandscape ? 'text-[0.65rem]' : 'text-[0.82rem]'}`}>M</span>
