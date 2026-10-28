@@ -300,7 +300,7 @@ const normalizarChordPro = (rawValue) => {
     .trim();
 };
 
-const parseChordProSections = (rawChordpro = '') => {
+export const parseChordProSections = (rawChordpro = '') => {
   const content = String(rawChordpro || '').replace(/\r\n/g, '\n').trim();
   if (!content) return [];
 
@@ -583,6 +583,10 @@ const stripChordsFromLine = (line = '') => (
     .replace(/\s+/g, ' ')
     .trim()
 );
+
+// Letra completa de cada cue (sin acordes ni compases) para marcar sus tiempos viéndola.
+export const chordProCueLines = (cues = []) => (cues.length ? cues : [{ rawLines: [] }]).map((cue) => (cue.rawLines || [])
+  .map(stripChordsFromLine).filter((line) => /\p{L}/u.test(line)));
 
 const compactCuePreview = (rawLines = [], maxWords = 6) => {
   const sourceLines = Array.isArray(rawLines) ? rawLines : [];
@@ -1055,6 +1059,78 @@ const MarkerTimeInput = ({
   );
 };
 
+// Una sección del panel de tiempos, en orden cronológico: primero entra la música, luego la voz con la
+// primera estrofa (cue 1) y después cada estrofa siguiente. Cada fila muestra su letra completa, su tiempo
+// y su propio «Marcar»; la fila que toca marcar se resalta.
+export const ChordProMarkerCard = ({
+  marker, cueLines = [[]], canCapture = false, badge = null, style,
+  onStartCommit, onCaptureStart, onVocalCommit, onCaptureVocal, onCueCommit, onCaptureCue,
+  onCaptureNext, onClear, onNoteChange,
+}) => {
+  const cueCount = Math.max(1, cueLines.length);
+  const startSec = marker?.startSec ?? null;
+  const voiceAnchor = marker?.vocalStartSec ?? startSec;
+  const hasVoiceAnchor = voiceAnchor != null && Number.isFinite(Number(voiceAnchor));
+  const capturedCues = normalizeCueMarkerTimes(marker?.cueMarkers, voiceAnchor).slice(0, cueCount - 1);
+  // Lo que marca el botón «siguiente»: inicio (una sola estrofa) o el próximo cue sin tiempo.
+  const nextCue = !hasVoiceAnchor ? 1 : capturedCues.length + 2;
+  const allMarked = cueCount > 1 ? nextCue > cueCount : startSec != null;
+  const pending = cueCount > 1 ? (allMarked ? null : nextCue === 1 ? 'voice' : `cue-${nextCue - 2}`) : (startSec == null ? 'start' : null);
+  const row = (active) => `grid grid-cols-[minmax(0,1fr)_6.3rem_4.6rem] items-start gap-2 rounded-lg px-2 py-2 ${active ? 'bg-brand/10 ring-1 ring-brand/35' : ''}`;
+  const markButton = 'h-9 rounded-md border border-brand/25 px-2 text-[11px] font-semibold text-brand hover:bg-brand/10 disabled:cursor-not-allowed disabled:opacity-40';
+  const lyrics = (lines) => lines.length
+    ? <p className="mt-1 whitespace-pre-line text-[13px] leading-snug text-content">{lines.join('\n')}</p>
+    : <p className="mt-1 text-[12px] italic text-content-muted">Instrumental</p>;
+  return (
+    <div className="border-b border-l-2 border-border/50 bg-surface/35 px-2.5 py-2.5 scroll-mt-36" style={style}>
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="flex min-w-0 flex-1 items-center gap-2 text-sm font-semibold text-content">
+          <span className="h-2 w-2 shrink-0 rounded-full" style={getSectionDotStyle(marker?.sectionName)} aria-hidden="true" />
+          <span className="truncate">{marker?.sectionName}</span>
+          {badge}
+        </p>
+        <button type="button" onClick={onCaptureNext} disabled={!canCapture || allMarked} className="h-9 rounded-lg border border-brand/25 bg-brand/10 px-3 text-[11px] font-semibold text-brand hover:bg-brand/15 disabled:cursor-not-allowed disabled:opacity-50">
+          {allMarked ? 'Listo' : cueCount > 1 ? `Marcar cue ${nextCue}` : 'Marcar inicio'}
+        </button>
+        <button type="button" onClick={onClear} className="h-9 rounded-lg px-2.5 text-[11px] font-medium text-content-muted hover:bg-surface hover:text-content">Limpiar</button>
+      </div>
+      <div className="mt-2 grid gap-1">
+        <div className={row(pending === 'start')}>
+          <div className="min-w-0">
+            <p className="text-[12px] font-semibold text-content">Inicio de la sección</p>
+            <p className="text-[11px] text-content-muted">Entra la música</p>
+          </div>
+          <MarkerTimeInput value={startSec} onCommit={onStartCommit} ariaLabel={`Inicio de ${marker?.sectionName}`} />
+          <button type="button" onClick={onCaptureStart} disabled={!canCapture} className={markButton}>Marcar</button>
+        </div>
+        <div className={row(pending === 'voice')}>
+          <div className="min-w-0">
+            <p className="text-[12px] font-semibold text-content">{cueCount > 1 ? 'Cue 1 · entra la voz' : 'Entra la voz'} <span className="font-normal text-content-muted">· vacío = inicio</span></p>
+            {lyrics(cueLines[0] || [])}
+          </div>
+          <MarkerTimeInput value={marker?.vocalStartSec ?? null} onCommit={onVocalCommit} ariaLabel={`Entrada vocal de ${marker?.sectionName}`} />
+          <button type="button" onClick={onCaptureVocal} disabled={!canCapture} className={markButton}>Marcar</button>
+        </div>
+        {cueLines.slice(1).map((lines, cueIndex) => {
+          const locked = !hasVoiceAnchor || cueIndex > capturedCues.length;
+          return (
+            <div key={cueIndex} className={row(pending === `cue-${cueIndex}`)}>
+              <div className="min-w-0">
+                <p className="text-[12px] font-semibold text-content">Cue {cueIndex + 2}</p>
+                {lyrics(lines)}
+              </div>
+              <MarkerTimeInput value={capturedCues[cueIndex] ?? null} onCommit={(value) => onCueCommit(cueIndex, value)} disabled={locked} ariaLabel={`Tiempo del cue ${cueIndex + 2} en ${marker?.sectionName}`} />
+              <button type="button" onClick={() => onCaptureCue(cueIndex)} disabled={!canCapture || locked} className={markButton}>Marcar</button>
+            </div>
+          );
+        })}
+      </div>
+      <input type="text" value={marker?.note || ''} onChange={(event) => onNoteChange(event.target.value)} placeholder="Nota de sección"
+        className="mt-2 h-9 w-full min-w-0 rounded-lg border border-border bg-background px-3 text-sm text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20" />
+    </div>
+  );
+};
+
 export default function AdminRepertorio({ libraryScope = 'general', isAdmin = false, initialArea = 'songs' }) {
   const repertoireScope = libraryScope === 'sin_filtros' ? 'sin_filtros' : 'general';
   const [canciones, setCanciones] = useState([]);
@@ -1176,6 +1252,7 @@ export default function AdminRepertorio({ libraryScope = 'general', isAdmin = fa
       return {
         cueCount: cues.length,
         sectionStartPreview: compactCuePreview(cues[0]?.rawLines),
+        cueLines: chordProCueLines(cues),
         cueMarkerPreview: cues
           .slice(1)
           .map((cue, cueIndex) => ({
@@ -4754,50 +4831,15 @@ export default function AdminRepertorio({ libraryScope = 'general', isAdmin = fa
 
                   <div className="editor-column-scroll mt-3 min-h-0 flex-1 space-y-2.5 overflow-y-scroll pr-1">
                     {editorSectionMarkers.length > 0 ? editorSectionMarkers.map((marker, index) => {
-                      const cueDraft = cueDraftsEditor[index] || { cueCount: 1, sectionStartPreview: '', cueMarkerPreview: [] };
-                      const cueTransitionCount = Math.max(0, cueDraft.cueCount - 1);
-                      const voiceAnchor = marker?.vocalStartSec ?? marker?.startSec;
-                      const capturedCueMarkers = normalizeCueMarkerTimes(marker?.cueMarkers, voiceAnchor)
-                        .slice(0, cueTransitionCount);
-                      const hasVoiceAnchor = voiceAnchor != null && Number.isFinite(Number(voiceAnchor));
-                      const capturedCueCount = hasVoiceAnchor ? 1 + capturedCueMarkers.length : 0;
-                      const nextCueNumber = Math.min(cueDraft.cueCount, capturedCueCount + 1);
-                      const allCuesCaptured = cueDraft.cueCount > 1 && capturedCueCount >= cueDraft.cueCount;
-                      const hasMultipleCues = cueDraft.cueCount > 1;
-                      const groupedCuePreviews = hasMultipleCues
-                        ? cueDraft.cueMarkerPreview.map((preview, previewIndex) => ({
-                              ...preview,
-                              cueMarkerIndex: previewIndex,
-                            }))
-                        : [];
-
+                      const cueDraft = cueDraftsEditor[index] || { cueCount: 1, cueLines: [[]] };
                       return (
-                        <div
-                          id={`marker-card-${index}`}
-                          key={marker.id || `${marker.sectionName}-${index}`}
-                          className="border-b border-l-2 border-border/50 bg-surface/35 px-2.5 py-2.5 scroll-mt-36"
-                          style={getSectionCardStyle(marker.sectionName)}
-                        >
-                          <div className={`grid grid-cols-2 items-center gap-1.5 ${
-                            hasMultipleCues
-                              ? 'sm:grid-cols-[minmax(6.75rem,0.9fr)_minmax(0,1fr)_auto_auto]'
-                              : 'sm:grid-cols-[minmax(6.75rem,0.9fr)_6.3rem_minmax(0,1fr)_auto_auto]'
-                          }`}>
-                            <div className="min-w-0">
-                              <p className="flex min-w-0 items-center gap-2 truncate text-sm font-medium text-content">
-                                <span
-                                  className="h-2 w-2 shrink-0 rounded-full"
-                                  style={getSectionDotStyle(marker.sectionName)}
-                                  aria-hidden="true"
-                                />
-                                <span className="truncate">{marker.sectionName}</span>
-                              </p>
-                              {!hasMultipleCues && cueDraft.sectionStartPreview && (
-                                <p className="mt-0.5 truncate pl-4 text-[10px] text-content-muted">
-                                  {cueDraft.sectionStartPreview}
-                                </p>
-                              )}
-                              {marker._autoDetected && (
+                        <div id={`marker-card-${index}`} key={marker.id || `${marker.sectionName}-${index}`}>
+                          <ChordProMarkerCard
+                            marker={marker}
+                            cueLines={cueDraft.cueLines}
+                            canCapture={Boolean(editorChordproCancion?.mp3)}
+                            style={getSectionCardStyle(marker.sectionName)}
+                            badge={marker._autoDetected && (
                                 <span className={`mt-1 inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-normal ${marker._method === 'guide-cue'
                                   ? 'bg-emerald-950/70 text-emerald-400'
                                   : marker._method === 'whisper-match' && marker._confidence > 0.7
@@ -4831,140 +4873,22 @@ export default function AdminRepertorio({ libraryScope = 'general', isAdmin = fa
                                           : 'Sin match'}
                                 </span>
                               )}
-                            </div>
-                            {!hasMultipleCues && (
-                              <MarkerTimeInput
-                                value={marker.startSec}
-                                onCommit={(nextValue) => {
-                                  actualizarEditorSectionMarker(index, toManualMarkerPatch({
-                                    startSec: nextValue,
-                                    cueMarkers: normalizeCueMarkerTimes(marker?.cueMarkers, marker?.vocalStartSec ?? nextValue),
-                                  }));
-                                }}
-                                placeholder=""
-                              />
-                            )}
-                            <input
-                              type="text"
-                              value={marker.note || ''}
-                              onChange={(e) => {
-                                actualizarEditorSectionNote(index, e.target.value);
-                              }}
-                              placeholder="Nota de seccion"
-                              className="col-span-2 h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 sm:col-span-1"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => hasMultipleCues
-                                ? capturarSiguienteCueActual(index, cueDraft.cueCount)
-                                : capturarInicioMusicalActual(index)}
-                              disabled={!editorChordproCancion?.mp3 || (hasMultipleCues && allCuesCaptured)}
-                              className="inline-flex h-9 w-full items-center justify-center rounded-lg border border-brand/25 bg-brand/10 px-2.5 text-[11px] font-medium text-brand transition-colors hover:bg-brand/15 disabled:cursor-not-allowed disabled:border-border disabled:bg-background disabled:text-content-muted sm:w-auto"
-                            >
-                              {allCuesCaptured
-                                ? 'Cues listos'
-                                : cueDraft.cueCount > 1
-                                  ? `Marcar cue ${nextCueNumber}`
-                                  : 'Marcar inicio'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                actualizarEditorSectionMarker(index, toManualMarkerPatch({ startSec: null, vocalStartSec: null, cueMarkers: [] }));
-                              }}
-                              className="inline-flex h-9 w-full items-center justify-center rounded-lg px-2.5 text-[11px] font-medium text-content-muted transition-colors hover:bg-surface hover:text-content sm:w-auto"
-                            >
-                              Limpiar
-                            </button>
-                          </div>
-
-                          {!hasMultipleCues && (
-                            <div className="mt-2 grid grid-cols-[minmax(0,1fr)_6.3rem] items-center gap-2 border-t border-border/40 px-1 pt-2 sm:grid-cols-[minmax(0,1fr)_6.3rem_auto]">
-                              <p className="text-[12px] text-content-muted">
-                                <span className="font-medium text-content">Entrada de voz</span>
-                                <span className="ml-1">· vacía = inicio musical</span>
-                              </p>
-                              <MarkerTimeInput
-                                value={marker.vocalStartSec}
-                                onCommit={(nextValue) => actualizarEditorSectionMarker(index, toManualMarkerPatch({ vocalStartSec: nextValue }))}
-                                ariaLabel={`Entrada vocal de ${marker.sectionName}`}
-                              />
-                              <button
-                                type="button"
-                                onClick={() => capturarEntradaVocalActual(index)}
-                                disabled={!editorChordproCancion?.mp3}
-                                className="col-span-2 h-8 justify-self-end rounded-md border border-brand/20 px-2 text-[10px] font-medium text-brand hover:bg-brand/10 disabled:opacity-50 sm:col-span-1"
-                              >
-                                Marcar voz
-                              </button>
-                            </div>
-                          )}
-
-                          {hasMultipleCues && (
-                            <div className="mt-2 border-t border-border/50 px-1 pt-2.5">
-                              <div className="grid gap-1.5">
-                                {groupedCuePreviews.map((preview) => {
-                                  const cueMarkerIndex = preview.cueMarkerIndex;
-
-                                  return (
-                                    <div
-                                      key={`${marker.sectionKey || marker.id}-${preview.label}`}
-                                      className="grid grid-cols-[minmax(0,1fr)_6.3rem] items-center gap-2"
-                                    >
-                                      <p className="min-w-0 truncate text-[13px] text-content-muted">
-                                        <span className="font-medium text-content">{preview.label}</span>
-                                        {preview.text ? ` · ${preview.text}` : ''}
-                                      </p>
-                                      <MarkerTimeInput
-                                        value={capturedCueMarkers[cueMarkerIndex] ?? null}
-                                        onCommit={(nextValue) => actualizarCueMarkerIndividual(index, cueMarkerIndex, nextValue)}
-                                        disabled={!hasVoiceAnchor || cueMarkerIndex > capturedCueMarkers.length}
-                                        ariaLabel={`Tiempo de ${preview.label} en ${marker.sectionName}`}
-                                      />
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                              <div className="mt-2 grid grid-cols-[minmax(0,1fr)_6.3rem] items-center gap-2 border-t border-border/40 pt-2">
-                                <p className="text-[13px] text-content-muted">
-                                  <span className="font-medium text-content">Inicio musical</span>
-                                  <span className="ml-1">· salto de seccion</span>
-                                </p>
-                                <MarkerTimeInput
-                                  value={marker.startSec}
-                                  onCommit={(nextValue) => {
-                                    actualizarEditorSectionMarker(index, toManualMarkerPatch({
-                                      startSec: nextValue,
-                                      cueMarkers: normalizeCueMarkerTimes(marker?.cueMarkers, marker?.vocalStartSec ?? nextValue),
-                                    }));
-                                  }}
-                                  ariaLabel={`Inicio musical de ${marker.sectionName}`}
-                                />
-                              </div>
-                              <div className="mt-1 grid grid-cols-[minmax(0,1fr)_6.3rem] items-center gap-2 sm:grid-cols-[minmax(0,1fr)_6.3rem_auto]">
-                                <p className="min-w-0 text-[13px] text-content-muted">
-                                  <span className="font-medium text-content">Entrada de voz</span>
-                                  <span className="ml-1 block truncate text-[11px]">Vacía = inicio musical{cueDraft.sectionStartPreview ? ` · ${cueDraft.sectionStartPreview}` : ''}</span>
-                                </p>
-                                <MarkerTimeInput
-                                  value={marker.vocalStartSec}
-                                  onCommit={(nextValue) => actualizarEditorSectionMarker(index, toManualMarkerPatch({
-                                    vocalStartSec: nextValue,
-                                    cueMarkers: normalizeCueMarkerTimes(marker?.cueMarkers, nextValue ?? marker?.startSec),
-                                  }))}
-                                  ariaLabel={`Entrada vocal de ${marker.sectionName}`}
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => capturarEntradaVocalActual(index)}
-                                  disabled={!editorChordproCancion?.mp3}
-                                  className="col-span-2 h-8 justify-self-end rounded-md border border-brand/20 px-2 text-[10px] font-medium text-brand hover:bg-brand/10 disabled:opacity-50 sm:col-span-1"
-                                >
-                                  Marcar voz
-                                </button>
-                              </div>
-                            </div>
-                          )}
+                            onStartCommit={(nextValue) => actualizarEditorSectionMarker(index, toManualMarkerPatch({
+                              startSec: nextValue,
+                              cueMarkers: normalizeCueMarkerTimes(marker?.cueMarkers, marker?.vocalStartSec ?? nextValue),
+                            }))}
+                            onCaptureStart={() => capturarInicioMusicalActual(index)}
+                            onVocalCommit={(nextValue) => actualizarEditorSectionMarker(index, toManualMarkerPatch({
+                              vocalStartSec: nextValue,
+                              cueMarkers: normalizeCueMarkerTimes(marker?.cueMarkers, nextValue ?? marker?.startSec),
+                            }))}
+                            onCaptureVocal={() => capturarEntradaVocalActual(index)}
+                            onCueCommit={(cueMarkerIndex, nextValue) => actualizarCueMarkerIndividual(index, cueMarkerIndex, nextValue)}
+                            onCaptureCue={(cueMarkerIndex) => actualizarCueMarkerIndividual(index, cueMarkerIndex, toPreciseSeconds(editorAudioCurrentTimeRef.current))}
+                            onCaptureNext={() => cueDraft.cueCount > 1 ? capturarSiguienteCueActual(index, cueDraft.cueCount) : capturarInicioMusicalActual(index)}
+                            onClear={() => actualizarEditorSectionMarker(index, toManualMarkerPatch({ startSec: null, vocalStartSec: null, cueMarkers: [] }))}
+                            onNoteChange={(text) => actualizarEditorSectionNote(index, text)}
+                          />
                         </div>
                       );
                     }) : (
