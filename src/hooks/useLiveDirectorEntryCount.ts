@@ -6,6 +6,8 @@ type Options = {
   enabled: boolean; identity: string; ready: boolean; playing: boolean; bpm: number;
   meter?: {numerator:number;denominator:number} | null; unoSeconds?: number | null;
   getTime:()=>number; getGraph:()=>GuideAudioGraph|null; play:()=>Promise<void>; pause:()=>void;
+  /** Guía dinámica: nombre de la primera sección («Intro») en el primer tiempo; los números siguen después. */
+  getLeadCue?:()=>AudioBuffer|null;
 };
 type Pending = {reject:(error:Error)=>void; timer:ReturnType<typeof setInterval>; sources:AudioBufferSourceNode[]; gains:AudioNode[]};
 const abort = () => new DOMException('Conteo cancelado','AbortError');
@@ -65,11 +67,15 @@ export function useLiveDirectorEntryCount(options:Options) {
     }else setNotice('Conteo visual; no hay pista Click o Guide activa.');
     if(generation.current!==token)throw abort();
     const context=graph?.context,clock=()=>context?context.currentTime:performance.now()/1000;
-    const startAt=clock()+.1,endAt=startAt+plan.beats*plan.beatSeconds,sources:AudioBufferSourceNode[]=[],gains:AudioNode[]=[];
+    // Guía dinámica: primero el nombre de la sección («Intro») y, en tiempo, el «1, 2, 3, 4» completo.
+    const lead=graph&&buffers?o.getLeadCue?.()??null:null;
+    const leadAt=clock()+.1,leadSeconds=lead?Math.ceil((lead.duration+.1)/plan.beatSeconds)*plan.beatSeconds:0;
+    const startAt=leadAt+leadSeconds,endAt=startAt+plan.beats*plan.beatSeconds,sources:AudioBufferSourceNode[]=[],gains:AudioNode[]=[];
     let left:GainNode|undefined,right:GainNode|undefined,gain:GainNode|undefined;
     if(graph&&buffers){
       gain=graph.context.createGain();left=graph.context.createGain();right=graph.context.createGain();const merger=graph.context.createChannelMerger(2);
       gain.connect(left).connect(merger,0,0);gain.connect(right).connect(merger,0,1);merger.connect(graph.destination);gains.push(gain,left,right,merger);
+      if(lead){const source=graph.context.createBufferSource();source.buffer=lead;source.connect(gain);source.start(leadAt);sources.push(source);}
       for(let i=0;i<plan.beats;i++){
         const buffer=buffers.get(i+1)??buffers.get(0);if(!buffer)continue;
         const source=graph.context.createBufferSource();source.buffer=buffer;source.playbackRate.value=Math.max(1,buffer.duration/(plan.beatSeconds*.9));source.connect(gain);source.start(startAt+i*plan.beatSeconds);sources.push(source);
