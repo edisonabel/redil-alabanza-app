@@ -89,6 +89,7 @@ import {
   fetchLiveDirectorUploadPermission,
   requestLiveDirectorUploadTarget,
   saveLiveDirectorSectionOffset,
+  saveLiveDirectorGuideMode,
   saveLiveDirectorSongSession,
   uploadFileToLiveDirectorTarget,
 } from '../../utils/liveDirectorUploadClient';
@@ -596,6 +597,7 @@ const toResolvedSession = (
   sectionMarkers: session.sectionMarkers,
   instructionMarkers: session.instructionMarkers,
   reaperTiming: session.reaperTiming,
+  guideMode: session.guideMode,
   mode: session.mode,
   sessionLabel: session.songTitle || 'Saved Session',
   tracks: session.tracks.map((track) => ({
@@ -3694,12 +3696,47 @@ export function LiveDirectorView({
   entryCountCancelRef.current = entryCount.cancel;
   entryCountStartRef.current = entryCountEnabled ? entryCount.start : null;
   entryCountNeedsRef.current = entryCount.needsCount;
+  // Guía dinámica: la guía grabada se silencia y la voz automática anuncia cada sección al tocar de
+  // corrido (además de saltos, repeticiones e instrucciones). Se guarda en la canción.
+  const canUseDynamicGuide = experimentalTools && Boolean(guideTrack) && diagnostics?.engineRoute === 'streaming-worker';
+  const [guideModeChoice, setGuideModeChoice] = useState<{ songId: string; mode: 'recorded' | 'dynamic' } | null>(null);
+  const guideMode = guideModeChoice?.songId === songId ? guideModeChoice.mode : manualSession?.guideMode === 'dynamic' ? 'dynamic' : 'recorded';
+  const guideDynamic = canUseDynamicGuide && guideMode === 'dynamic';
+  const guideDynamicRef = useRef(guideDynamic); guideDynamicRef.current = guideDynamic;
+  const [showGuideChooser, setShowGuideChooser] = useState(false);
+  const [guideModeNotice, setGuideModeNotice] = useState('');
+  useEffect(() => { setShowGuideChooser(false); setGuideModeNotice(''); }, [songId]);
+  const chooseGuideMode = useCallback(async (mode: 'recorded' | 'dynamic') => {
+    setGuideModeChoice({ songId, mode });
+    setManualSession(previous => previous ? { ...previous, guideMode: mode === 'dynamic' ? 'dynamic' : undefined } : previous);
+    if (!hasPersistedSongContext || !canManagePersistedSongSession) {
+      setGuideModeNotice('Solo en este equipo: un administrador puede guardarlo en la canción.');
+      return;
+    }
+    try {
+      const saved = await enqueueSessionSave(() => saveLiveDirectorGuideMode({ songId, guideMode: mode }));
+      onSessionPersisted?.(saved);
+      setGuideModeNotice('Guardado en la canción.');
+    } catch (error) {
+      setGuideModeNotice(error instanceof Error ? `No se guardó en la canción: ${error.message}` : 'No se guardó en la canción.');
+    }
+  }, [songId, hasPersistedSongContext, canManagePersistedSongSession, enqueueSessionSave, onSessionPersisted]);
+  const openGuideChooser = useCallback(() => setShowGuideChooser(true), []);
+  const nextSectionCuePlan = (time: number) => {
+    const next = resolvedSections[getSectionIndexAtTime(time) + 1];
+    return next && next.startTime > time ? { id: `next:${next.id}`, boundary: next.startTime, name: next.name } : null;
+  };
   const dynamicGuide = useLiveDirectorDynamicGuide({
-    wanted: experimentalTools && Boolean(guideTrack) && diagnostics?.engineRoute === 'streaming-worker', ready: isReady, playing: isPlaying,
+    wanted: canUseDynamicGuide, ready: isReady, playing: isPlaying,
     busy: isSectionSeekBusy, resetKey: `${trackSignature}:${reloadKey}:${guideRetryKey}`, bpm, meter:shownMeter,
     getGraph: () => guideTrack ? selectedMultitrackEngine.getGuideAudioGraph?.(guideTrack.id) ?? null : null,
-    getTime: selectedMultitrackEngine.getCurrentTimeSnapshot, getPlan: time => { const plan = sectionJump.getCuePlan(time); return plan && /^(jump|repeat):/.test(plan.id) ? plan : arrangementEntries ? arrangement.getCuePlan() : null; },
+    getTime: selectedMultitrackEngine.getCurrentTimeSnapshot, getPlan: time => {
+      const plan = sectionJump.getCuePlan(time);
+      if (plan && /^(jump|repeat):/.test(plan.id)) return plan;
+      return (arrangementEntries ? arrangement.getCuePlan() : null) ?? (guideDynamicRef.current ? nextSectionCuePlan(time) : null);
+    },
     getInstructions: () => guideInstructions,
+    muteRecorded: guideDynamic,
   });
   const applyArrangement = useCallback(async (entries: ArrangementEntry[] | null) => {
     if (isPlaying || isSectionSeekBusy || isCongregationFading) throw new Error('Pausa la canción antes de aplicar.');
@@ -6012,7 +6049,11 @@ export function LiveDirectorView({
                       onMute={stableCallbacks.onMute}
                       onSolo={stableCallbacks.onSolo}
                       onToggleOutputRoute={stableCallbacks.onToggleOutputRoute}
-                      onOpenSettings={canUseGeneratedClick && track.id === clickTrack?.id ? openClickMixer : undefined}
+                      onOpenSettings={canUseDynamicGuide && track.id === guideTrack?.id ? openGuideChooser : canUseGeneratedClick && track.id === clickTrack?.id ? openClickMixer : undefined}
+                      {...(canUseDynamicGuide && track.id === guideTrack?.id ? {
+                        settingsLabel: 'Elegir guía', settingsTitle: guideDynamic ? 'Guía dinámica: voz automática en cada sección' : 'Guía grabada · cambiar a guía dinámica',
+                        settingsShortcut: '', settingsBadge: guideDynamic ? 'AUTO' : undefined,
+                      } : {})}
                     />
                   </div>
                 );
@@ -7260,6 +7301,36 @@ export function LiveDirectorView({
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showGuideChooser && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/58 px-5 backdrop-blur-[6px]"
+          role="dialog" aria-modal="true" aria-labelledby="live-director-guide-title" data-live-director-guide-chooser={guideMode}
+          onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); setShowGuideChooser(false); } }}>
+          <div className="w-full max-w-md rounded-[1.6rem] border border-white/12 bg-[linear-gradient(180deg,rgba(22,24,26,0.98),rgba(16,18,20,0.98))] px-6 py-6 shadow-[0_32px_72px_rgba(0,0,0,0.42)]">
+            <h3 id="live-director-guide-title" className="text-[1.2rem] font-semibold tracking-tight text-white">Guía de esta canción</h3>
+            <div className="mt-4 grid gap-2" role="radiogroup" aria-label="Tipo de guía">
+              {([
+                ['recorded', 'Guía grabada', 'Suena la pista Guide. La voz automática solo habla al saltar de sección y en las instrucciones.'],
+                ['dynamic', 'Guía dinámica', 'Silencia la pista Guide. La voz automática anuncia cada sección antes de que entre y dice las instrucciones.'],
+              ] as const).map(([mode, title, detail]) => (
+                <button key={mode} type="button" role="radio" aria-checked={guideMode === mode} autoFocus={guideMode === mode}
+                  onClick={() => { void chooseGuideMode(mode); }}
+                  className={`ui-pressable-soft rounded-[1rem] border px-4 py-3 text-left ${guideMode === mode ? 'border-cyan-300/50 bg-cyan-300/12' : 'border-white/12 bg-white/4 hover:bg-white/8'}`}>
+                  <span className="block text-[0.95rem] font-semibold text-white">{title}</span>
+                  <span className="mt-0.5 block text-[0.8rem] leading-snug text-white/60">{detail}</span>
+                </button>
+              ))}
+            </div>
+            <p role="status" className="mt-3 min-h-[1.25rem] text-[0.78rem] text-white/55">
+              {dynamicGuide.status === 'loading' ? 'Preparando la voz automática…' : dynamicGuide.status === 'error' ? `La voz automática no está disponible: ${dynamicGuide.error}` : guideModeNotice}
+            </p>
+            <button type="button" onClick={() => setShowGuideChooser(false)}
+              className="ui-pressable-soft mt-2 w-full rounded-[1rem] border border-white/12 bg-white/4 px-4 py-3 text-[0.92rem] font-semibold text-white/86 hover:bg-white/8">
+              Cerrar
+            </button>
           </div>
         </div>
       )}

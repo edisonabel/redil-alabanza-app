@@ -171,6 +171,22 @@ export async function saveLiveDirectorSectionOffset(params: {
   return readJsonResponse(response);
 }
 
+/** Guarda en la canción si usa la guía grabada o la guía dinámica (voz automática en cada sección). */
+export async function saveLiveDirectorGuideMode(params: {
+  songId: string;
+  guideMode: 'recorded' | 'dynamic';
+}): Promise<LiveDirectorPersistedSession> {
+  const response = await fetchWithSessionRetry('/api/live-director-song-session', {
+    method: 'PATCH',
+    credentials: 'same-origin',
+    cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+
+  return readJsonResponse(response);
+}
+
 export async function fetchLiveDirectorSongSession(
   songId: string,
 ): Promise<LiveDirectorPersistedSession | null> {

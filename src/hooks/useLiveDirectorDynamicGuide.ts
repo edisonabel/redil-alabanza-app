@@ -7,12 +7,15 @@ type Options = {
   getTime: () => number; getPlan: (time: number) => GuideCuePlan | null;
   /** RPP instructions in song time; spoken apart from section cues. */
   getInstructions?: () => ReadonlyArray<GuideInstructionCue>;
+  /** Guía dinámica: la guía grabada queda en silencio mientras la voz automática está lista. */
+  muteRecorded?: boolean;
 };
 export function useLiveDirectorDynamicGuide(options: Options) {
   const latest = useRef(options); latest.current = options;
   const [status, setStatus] = useState<'off' | 'loading' | 'ready' | 'error'>('off');
   const [error, setError] = useState('');
   const playerRef = useRef<DynamicGuidePlayer | null>(null);
+  const graphRef = useRef<GuideAudioGraph | null>(null);
   // Only re-render when the upcoming instruction changes, not on every 25 ms tick.
   const [nextInstruction, setNextInstruction] = useState<GuideInstructionCue | null>(null);
   useEffect(() => {
@@ -20,7 +23,7 @@ export function useLiveDirectorDynamicGuide(options: Options) {
     const graph = latest.current.getGraph();
     if (!graph) { setError('Esta sesión necesita una pista Guide separada y el motor streaming.'); setStatus('error'); return; }
     const controller = new AbortController();
-    const player = new DynamicGuidePlayer(graph); playerRef.current = player;
+    const player = new DynamicGuidePlayer(graph); playerRef.current = player; graphRef.current = graph;
     let cancelled = false, timer: ReturnType<typeof setInterval> | undefined;
     setStatus('loading'); setError('');
     void player.load(controller.signal).then(() => {
@@ -41,9 +44,13 @@ export function useLiveDirectorDynamicGuide(options: Options) {
     });
     return () => {
       cancelled = true; controller.abort(); clearInterval(timer); player.dispose();
-      if (playerRef.current === player) playerRef.current = null;
+      if (playerRef.current === player) { playerRef.current = null; graphRef.current = null; }
     };
   }, [options.wanted, options.ready, options.resetKey]);
+  // Al cerrarse, el reproductor devuelve la guía grabada; aquí se vuelve a aplicar el modo elegido.
+  useEffect(() => {
+    if (status === 'ready') graphRef.current?.setOverride(Boolean(options.muteRecorded));
+  }, [status, options.muteRecorded]);
   return {
     status, error, nextInstruction, getDiagnostics: () => playerRef.current?.events || [],
     speak: (name: string) => playerRef.current?.speakNow(name) ?? false,

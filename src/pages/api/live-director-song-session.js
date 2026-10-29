@@ -300,6 +300,8 @@ export const POST = async ({ request, cookies }) => {
     const sameStems = Boolean(currentSession) && tracks.every((track) => currentSession.tracks.some((current) => current.url === track.url));
     const reaperMap = sameStems ? Object.fromEntries(['sectionMarkers', 'instructionMarkers', 'reaperTiming']
       .filter((key) => currentSession[key]).map((key) => [key, currentSession[key]])) : {};
+    // El modo de guía es de la canción, no de los archivos: se conserva al guardar la mezcla.
+    if (currentSession?.guideMode) reaperMap.guideMode = currentSession.guideMode;
 
     const persistedSession = {
       version: 1,
@@ -381,13 +383,24 @@ export const PATCH = async ({ request, cookies }) => {
     const body = await request.json().catch(() => ({}));
     const songId = String(body?.songId || '').trim();
     const rawOffset = Number(body?.sectionOffsetSeconds);
+    // Cambio parcial: desfase de secciones y/o modo de guía («recorded» o «dynamic»).
+    const hasOffset = body?.sectionOffsetSeconds !== undefined;
+    const hasGuideMode = body?.guideMode !== undefined;
 
     if (!songId) {
       return jsonResponse({ error: 'Se requiere songId.' }, 400);
     }
 
-    if (!Number.isFinite(rawOffset)) {
+    if (!hasOffset && !hasGuideMode) {
+      return jsonResponse({ error: 'No hay cambios para guardar.' }, 400);
+    }
+
+    if (hasOffset && !Number.isFinite(rawOffset)) {
       return jsonResponse({ error: 'sectionOffsetSeconds debe ser un numero valido.' }, 400);
+    }
+
+    if (hasGuideMode && !['recorded', 'dynamic'].includes(body.guideMode)) {
+      return jsonResponse({ error: 'guideMode debe ser recorded o dynamic.' }, 400);
     }
 
     const songRow = await fetchSongRow(songId, createSupabaseUserClient(getServerAuthTokens(cookies).accessToken));
@@ -406,12 +419,15 @@ export const PATCH = async ({ request, cookies }) => {
     const r2Context = createR2Context();
     const folder = currentSession.folder || buildLiveDirectorSongFolder(songId, String(songRow.titulo || ''));
     const manifestUrl = `${r2Context.publicBaseUrl}/${folder}/manifest.json`;
+    const { guideMode: _previousGuideMode, ...sessionWithoutGuideMode } = currentSession;
+    const guideMode = hasGuideMode ? body.guideMode : currentSession.guideMode;
     const persistedSession = {
-      ...currentSession,
+      ...sessionWithoutGuideMode,
       version: 1,
       songId,
       songTitle: String(songRow.titulo || ''),
-      sectionOffsetSeconds: Math.round(rawOffset * 4) / 4,
+      sectionOffsetSeconds: hasOffset ? Math.round(rawOffset * 4) / 4 : currentSession.sectionOffsetSeconds,
+      ...(guideMode === 'dynamic' ? { guideMode: 'dynamic' } : {}),
       folder,
       manifestUrl,
       updatedAt: new Date().toISOString(),

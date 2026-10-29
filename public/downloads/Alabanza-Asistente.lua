@@ -170,7 +170,8 @@ end
 local function occurrence(name, label)
   name, label = name:lower(), label:lower()
   if name == label then return 1 end
-  if name:sub(1, #label + 1) == label..' ' then return tonumber(name:sub(#label + 2):match('^(%d+)$')) end
+  -- «Coro 2» y «Coro2» son la misma sección.
+  if name:sub(1, #label) == label then return tonumber(name:sub(#label + 1):match('^ ?(%d+)$')) end
 end
 local function next_name(kind, except_id)
   local highest = 0

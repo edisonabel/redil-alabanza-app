@@ -68,7 +68,8 @@ try {
   assert.ok(result.muted.left < .001 && result.muted.right < .001);
   assert.deepEqual(result.cancelled, { left: 0, right: 0 }); assert.deepEqual(result.late, { left: 0, right: 0 });
   assert.deepEqual(result.resolved, ['coro-1', 'verso-2', 'pre-coro', 'outro', 'repetir', null]);
-  assert.ok(result.events.some(event => event.key === 'coro-4' && event.status === 'late'));
+  // Todos los coros dicen «Coro»: «Coro 4» usa la voz del coro, sin número.
+  assert.ok(result.events.some(event => event.key === 'coro' && event.status === 'late'));
   assert.equal(result.overrideAfterDispose, false);
   assert.equal(result.ducks.filter(duck => 'start' in duck).length, 8, 'Every scheduled navigation voice gets its own recorded-guide window');
   assert.ok(result.ducks.filter(duck => 'start' in duck).every(duck => duck.end > duck.start && duck.start >= duck.scheduledAt));
