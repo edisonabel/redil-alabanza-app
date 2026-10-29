@@ -44,11 +44,13 @@ try {
   for (const [name, result] of Object.entries(results)) {
     const sorted = [...result.active].sort((a, b) => a.start - b.start);
     assert.ok(sorted.length >= 6, `${name}: nombre, conteo de 4 y la orden (${sorted.length} voces)`);
-    for (let i = 1; i < sorted.length; i++) {
-      assert.ok(sorted[i].start >= sorted[i - 1].end + 0.05, `${name}: voces encimadas ${JSON.stringify(sorted[i - 1])} y ${JSON.stringify(sorted[i])}`);
-    }
-    // La orden es la voz más larga: se corrió antes del anuncio en vez de encimarse en 4,5 s.
+    // La orden es la voz más larga: se corrió antes del anuncio en vez de encimarse en 4,5 s. Los números
+    // del conteo suenan enteros, a su velocidad: el silencio final de uno puede pisar el ataque del siguiente.
     const cueVoice = [...result.active].sort((a, b) => b.seconds - a.seconds)[0];
+    for (const other of sorted.filter(voice => voice !== cueVoice)) {
+      assert.ok(other.start >= cueVoice.end + 0.05 || other.end + 0.05 <= cueVoice.start, `${name}: la orden se encima ${JSON.stringify(cueVoice)} y ${JSON.stringify(other)}`);
+    }
+    for (let i = 1; i < sorted.length; i++) assert.ok(sorted[i].start >= sorted[i - 1].start + 0.4, `${name}: cada voz entra después de la anterior`);
     assert.ok(cueVoice.end <= sorted.find(voice => voice !== cueVoice).start, `${name}: la orden quedó antes del «Coro»: ${JSON.stringify(cueVoice)}`);
     assert.equal(result.collisions, 0, `${name}: la orden encontró lugar`);
   }

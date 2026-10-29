@@ -2,6 +2,7 @@ import {entryCountPlan} from '../utils/liveDirectorEntryCount';
 import { guideVoiceLead, resolveGuideCue, type GuideCuePlan, type GuideInstructionCue } from '../utils/liveDirectorGuideCues';
 import type { TrackOutputRoute } from '../utils/liveDirectorTrackRouting';
 import { loadCueBuffer } from '../utils/cueAudioLibrary';
+import { guideCountForBoundary, guideCountPulse, type GuideCountSeries } from '../utils/liveDirectorGuideCounts';
 export type GuideAudioGraph = {
   context: AudioContext; destination: AudioNode;
   readState: () => { gain: number; route: TrackOutputRoute };
@@ -33,6 +34,9 @@ export class DynamicGuidePlayer {
   // Ventanas (tiempo de audio) ya ocupadas por voces. El anuncio de sección con su conteo va pegado al
   // compás y manda; las órdenes buscan un hueco antes, o justo después, para no encimarse nunca.
   private windows: Array<{ kind: 'section' | 'cue'; start: number; end: number; source?: AudioBufferSourceNode; key?: string; latest?: number; boundary?: number }> = [];
+  // Conteos de la guía grabada (tiempo de canción): la voz cuenta donde contaba ella, al pulso de la canción.
+  private counts: GuideCountSeries[] = [];
+  private attacks = new WeakMap<AudioBuffer, number>();
   private cueTime: number | null = null;
   private cueWall = 0;
   public events: Array<{ key: string; status: 'scheduled' | 'late' | 'missing' | 'cancelled' | 'collision'; audioTime: number; boundary?: number }> = [];
@@ -44,6 +48,21 @@ export class DynamicGuidePlayer {
     this.gain.connect(this.right).connect(this.merger, 0, 1);
     this.merger.connect(graph.destination);
     this.syncMix();
+  }
+  setGuideCounts(series: GuideCountSeries[]) {
+    this.counts = series; this.planKey = '';
+  }
+  /** Segundos de silencio antes de la palabra: el ataque, no el comienzo del archivo, cae en el tiempo. */
+  private attack(buffer: AudioBuffer): number {
+    let seconds = this.attacks.get(buffer);
+    if (seconds === undefined) {
+      const data = buffer.getChannelData(0);
+      let peak = 0; for (let i = 0; i < data.length; i++) peak = Math.max(peak, Math.abs(data[i]));
+      let index = 0; while (index < data.length && Math.abs(data[index]) < peak * .1) index++;
+      seconds = index < data.length ? index / buffer.sampleRate : 0;
+      this.attacks.set(buffer, seconds);
+    }
+    return seconds;
   }
   private record(key: string, status: 'scheduled' | 'late' | 'missing' | 'cancelled' | 'collision', boundary?: number) {
     this.events.push({ key, status, audioTime: this.graph.context.currentTime, boundary });
@@ -187,24 +206,26 @@ export class DynamicGuidePlayer {
       this.stopSource(); this.planKey = ''; this.played.clear();
     }
     this.lastTime = songTime; this.lastWall = wall;
-    const key = plan ? `${plan.id}:${plan.boundary}:${plan.name}:${plan.countIn?`${bpm}:${meter?.numerator??4}/${meter?.denominator??4}`:'voice'}` : '';
+    const key = plan ? `${plan.id}:${plan.boundary}:${plan.name}:${plan.countIn?`${bpm}:${meter?.numerator??4}/${meter?.denominator??4}:${this.counts.length}`:'voice'}` : '';
     if (key !== this.planKey) { this.stopSource(); this.planKey = key; }
     if (!plan || this.played.has(key)) return;
     const cueKey=resolveGuideCue(plan.name,this.available),buffer=cueKey?this.buffers.get(cueKey):undefined;
     const context=this.graph.context,boundaryAudioTime=context.currentTime+plan.boundary-songTime;
-    const count=plan.countIn?entryCountPlan(bpm,meter,null):null;
-    const canCount=count&&Array.from({length:count.beats},(_,i)=>this.buffers.has(String(i+1))).every(Boolean);
+    // Donde contaba la guía grabada, en esos mismos tiempos; si no, un compás al pulso con que ella cuenta
+    // (o al tempo). Cada número suena entero, a su velocidad, con el ataque sobre el tiempo.
+    const count=plan.countIn?entryCountPlan(bpm,meter,null):null,detected=plan.countIn?guideCountForBoundary(this.counts,plan.boundary):null;
+    const step=guideCountPulse(this.counts)??count?.beatSeconds;
+    const countTimes=detected?detected.onsets:count&&step?Array.from({length:count.beats},(_,i)=>plan.boundary-(count.beats-i)*step):null;
+    const canCount=countTimes&&countTimes.every((_,i)=>this.buffers.has(String(i+1)));
     const voices:Array<{key:string;buffer:AudioBuffer;when:number;rate:number}>=[];
-    if(canCount&&count){
-      const start=boundaryAudioTime-count.beats*count.beatSeconds;
+    if(canCount&&countTimes){
+      const numbers=countTimes.map((time,i)=>{const buffer=this.buffers.get(String(i+1))!;return {key:String(i+1),buffer,when:context.currentTime+time-songTime-this.attack(buffer),rate:1};});
+      const start=numbers[0].when;
       if(start>=context.currentTime+.12){
         const nameStart=buffer?start-buffer.duration-.15:start;
         if(nameStart-context.currentTime>8)return;
         if(buffer&&cueKey&&nameStart>=context.currentTime+.12)voices.push({key:cueKey,buffer,when:nameStart,rate:1});
-        for(let i=0;i<count.beats;i++){
-          const number=this.buffers.get(String(i+1))!;
-          voices.push({key:String(i+1),buffer:number,when:start+i*count.beatSeconds,rate:Math.max(1,number.duration/(count.beatSeconds*.85))});
-        }
+        voices.push(...numbers);
       }else{
         // Never start an incomplete count. The existing destination-name cue
         // can still replace a misleading recorded phrase when there is time.
@@ -230,12 +251,15 @@ export class DynamicGuidePlayer {
       if(this.disposed||generation!==this.cueGeneration)return;
       if(first.when<context.currentTime+.02){this.stopSource();this.record(plan.countIn?'count-in':cueKey!,'late',plan.boundary);return;}
       this.reserveSection(first.when,voiceEndAudioTime);
-      for(const voice of voices){
+      voices.forEach((voice,index)=>{
         const source=context.createBufferSource();source.buffer=voice.buffer;source.playbackRate.value=voice.rate;
         source.connect(this.gain);this.sources.add(source);
         source.onended=()=>{source.disconnect();this.sources.delete(source);};
         source.start(voice.when);this.record(voice.key,'scheduled',plan.boundary);
-      }
+        // Solo en un tempo muy rápido (el siguiente entra antes de la mitad de este) se corta donde entra el otro;
+        // la cola de un número sobre el ataque del siguiente suena natural.
+        const next=voices[index+1];if(next&&next.when<voice.when+voice.buffer.duration*.6/voice.rate)source.stop(next.when);
+      });
     }).catch(()=>{
       if(this.disposed||generation!==this.cueGeneration)return;
       this.stopSource();this.record(plan.countIn?'count-in':cueKey!,'late',plan.boundary);

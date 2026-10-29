@@ -3682,11 +3682,17 @@ export function LiveDirectorView({
   const clickTrack = activeEngineTracks.find(track => /\b(click|metronomo|metronome)\b/i.test(`${track.id} ${track.name}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '')));
   const canUseGeneratedClick = experimentalTools && !isManualTempoMode && Boolean(clickTrack) && diagnostics?.engineRoute === 'streaming-worker';
   const guideTrack = activeEngineTracks.find(track => /\b(guide|guia)\b/i.test(`${track.id} ${track.name}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '')));
+  const canUseDynamicGuide = experimentalTools && Boolean(guideTrack) && diagnostics?.engineRoute === 'streaming-worker';
+  const [guideModeChoice, setGuideModeChoice] = useState<{ songId: string; mode: 'recorded' | 'dynamic' } | null>(null);
+  const guideMode = guideModeChoice?.songId === songId ? guideModeChoice.mode : manualSession?.guideMode === 'dynamic' ? 'dynamic' : 'recorded';
+  const guideDynamic = canUseDynamicGuide && guideMode === 'dynamic';
+  const guideDynamicRef = useRef(guideDynamic); guideDynamicRef.current = guideDynamic;
   // Conteo de entrada solo en canciones con mapa de REAPER: sin él, la guía subida ya trae su
-  // propio conteo y uno añadido se oiría dos veces.
-  const entryCountEnabled = experimentalTools && !isManualTempoMode && Boolean(reaperTransport);
+  // propio conteo y uno añadido se oiría dos veces. Con la guía dinámica esa guía está en silencio.
+  const entryCountEnabled = experimentalTools && !isManualTempoMode && (Boolean(reaperTransport) || guideDynamic);
   // Guía dinámica: el conteo de entrada dice primero la sección con la que arranca la canción («Intro»).
   const entryLeadCueRef = useRef<() => AudioBuffer | null>(() => null);
+  const entryCountOverrideRef = useRef<() => 'play' | { beats: number; beatSeconds: number; startFrom: number } | null>(() => null);
   const entryCount = useLiveDirectorEntryCount({
     enabled: entryCountEnabled,
     identity: `${transportIdentity}:${reloadKey}`, ready: currentSessionPrepared, playing: isPlaying,
@@ -3695,17 +3701,14 @@ export function LiveDirectorView({
     getGraph: () => (guideTrack || clickTrack) ? selectedMultitrackEngine.getGuideAudioGraph?.((guideTrack || clickTrack)!.id) ?? null : null,
     play, pause,
     getLeadCue: () => entryLeadCueRef.current(),
+    getCountOverride: () => entryCountOverrideRef.current(),
+    seekTo: time => seekTo(time, { forceFreshStart: true }),
   });
   entryCountCancelRef.current = entryCount.cancel;
   entryCountStartRef.current = entryCountEnabled ? entryCount.start : null;
   entryCountNeedsRef.current = entryCount.needsCount;
   // Guía dinámica: la guía grabada se silencia y la voz automática anuncia cada sección al tocar de
   // corrido (además de saltos, repeticiones e instrucciones). Se guarda en la canción.
-  const canUseDynamicGuide = experimentalTools && Boolean(guideTrack) && diagnostics?.engineRoute === 'streaming-worker';
-  const [guideModeChoice, setGuideModeChoice] = useState<{ songId: string; mode: 'recorded' | 'dynamic' } | null>(null);
-  const guideMode = guideModeChoice?.songId === songId ? guideModeChoice.mode : manualSession?.guideMode === 'dynamic' ? 'dynamic' : 'recorded';
-  const guideDynamic = canUseDynamicGuide && guideMode === 'dynamic';
-  const guideDynamicRef = useRef(guideDynamic); guideDynamicRef.current = guideDynamic;
   const [showGuideChooser, setShowGuideChooser] = useState(false);
   const [guideModeNotice, setGuideModeNotice] = useState('');
   useEffect(() => { setShowGuideChooser(false); setGuideModeNotice(''); }, [songId]);
@@ -3744,7 +3747,17 @@ export function LiveDirectorView({
     },
     getInstructions: () => guideInstructions,
     muteRecorded: guideDynamic,
+    guideUrl: guideTrack?.url ?? null,
   });
+  // Guía dinámica con los conteos de la guía grabada: si la canción cuenta apenas empieza (no da tiempo de
+  // decirlo sonando), se cuenta en la pausa a ese pulso y entra donde entraba la guía; si no, la voz cuenta sola.
+  entryCountOverrideRef.current = () => {
+    const series = guideDynamicRef.current ? dynamicGuide.guideCounts : null;
+    if (!series?.length) return null;
+    const time = selectedMultitrackEngine.getCurrentTimeSnapshot();
+    const head = series.find(item => item.onsets[0] >= time - .05 && item.onsets[0] < time + .6);
+    return head ? { beats: head.onsets.length, beatSeconds: head.spacing, startFrom: head.entry } : 'play';
+  };
   entryLeadCueRef.current = () => {
     if (!guideDynamicRef.current) return null;
     const from = Math.max(selectedMultitrackEngine.getCurrentTimeSnapshot(), reaperTransport?.clickGrid?.originSeconds ?? 0);

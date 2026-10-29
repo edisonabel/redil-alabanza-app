@@ -8,6 +8,13 @@ type Options = {
   getTime:()=>number; getGraph:()=>GuideAudioGraph|null; play:()=>Promise<void>; pause:()=>void;
   /** Guía dinámica: nombre de la primera sección («Intro») en el primer tiempo; los números siguen después. */
   getLeadCue?:()=>AudioBuffer|null;
+  /**
+   * Guía dinámica con los conteos de la guía grabada: 'play' arranca sin conteo agregado (la voz cuenta
+   * en tiempo); un conteo es el que la guía hace al comienzo, que ya no da tiempo de decir sonando: se
+   * cuenta en la pausa a ese pulso y la canción entra en `startFrom`.
+   */
+  getCountOverride?:()=>'play'|{beats:number;beatSeconds:number;startFrom:number}|null;
+  seekTo?:(time:number)=>Promise<unknown>;
 };
 type Pending = {reject:(error:Error)=>void; timer:ReturnType<typeof setInterval>; sources:AudioBufferSourceNode[]; gains:AudioNode[]};
 const abort = () => new DOMException('Conteo cancelado','AbortError');
@@ -51,7 +58,9 @@ export function useLiveDirectorEntryCount(options:Options) {
     },25);return()=>clearInterval(timer);
   },[]);
   const start=useCallback(async()=>{
-    cancel();const token=generation.current,o=latest.current,plan=entryCountPlan(o.bpm,o.meter,o.unoSeconds);
+    cancel();const token=generation.current,o=latest.current,override=o.getCountOverride?.()??null;
+    const plan=override==='play'?{beats:0,beatSeconds:0,entrySeconds:null,recorded:true}
+      :override?{beats:override.beats,beatSeconds:override.beatSeconds,entrySeconds:null,recorded:false}:entryCountPlan(o.bpm,o.meter,o.unoSeconds);
     setNotice(''); pendingIdentity.current=o.identity;
     if(!plan)throw new Error('Configura el tempo para dar la entrada.');
     if(plan.recorded){
@@ -61,6 +70,10 @@ export function useLiveDirectorEntryCount(options:Options) {
       return;
     }
     preparing.current=true;setPending(true);setBeat(null);
+    if(override&&override!=='play'&&o.seekTo){
+      try{await o.seekTo(override.startFrom);}catch{/* entra desde donde está */}
+      if(generation.current!==token)throw abort();
+    }
     const graph=o.getGraph();let buffers:Map<number,AudioBuffer>|null=null;
     if(graph){
       try{await graph.context.resume();buffers=await load(graph);}catch{setNotice('Conteo visual; guía no disponible.');}
@@ -78,7 +91,7 @@ export function useLiveDirectorEntryCount(options:Options) {
       if(lead){const source=graph.context.createBufferSource();source.buffer=lead;source.connect(gain);source.start(leadAt);sources.push(source);}
       for(let i=0;i<plan.beats;i++){
         const buffer=buffers.get(i+1)??buffers.get(0);if(!buffer)continue;
-        const source=graph.context.createBufferSource();source.buffer=buffer;source.playbackRate.value=Math.max(1,buffer.duration/(plan.beatSeconds*.9));source.connect(gain);source.start(startAt+i*plan.beatSeconds);sources.push(source);
+        const source=graph.context.createBufferSource();source.buffer=buffer;source.connect(gain);source.start(startAt+i*plan.beatSeconds);sources.push(source);
       }
     }
     await new Promise<void>((resolve,reject)=>{
@@ -95,5 +108,5 @@ export function useLiveDirectorEntryCount(options:Options) {
       job.current={reject,timer:setInterval(tick,10),sources,gains};tick();
     });
   },[cancel,load]);
-  return {beat,pending,notice,cancel,start,needsCount:()=>{const o=latest.current;return o.enabled&&!!entryCountPlan(o.bpm,o.meter,o.unoSeconds)&&o.getTime()<.1;}};
+  return {beat,pending,notice,cancel,start,needsCount:()=>{const o=latest.current;return o.enabled&&(!!o.getCountOverride?.()||!!entryCountPlan(o.bpm,o.meter,o.unoSeconds))&&o.getTime()<.1;}};
 }

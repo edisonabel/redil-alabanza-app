@@ -2760,6 +2760,35 @@ class ProducerTrackPipeline {
     await this.ensureReady();
     this.assertCurrentSeekOperation(operationToken, safeSeekSerial);
 
+    // The seek-ready watch exists before the retained batch is drained. A stem
+    // whose head is silence can hold more than the whole ring in one MP4Box
+    // batch (silent AAC frames are a few bytes); the drain then waits for ring
+    // space, and with no watch armed the destination never reported ready while
+    // nothing reads its ring yet.
+    const seekReadyPromise = new Promise((resolve, reject) => {
+      if (this.isDestroyed) {
+        reject(createAbortError('Producer pipeline destroyed before seek ready.'));
+        return;
+      }
+
+      this.pendingSeekReady = {
+        sessionId,
+        seekSerial: safeSeekSerial,
+        targetSample: safeTargetSample,
+        thresholdFrames: Math.max(
+          MIN_RING_WRITE_FRAMES,
+          Math.floor(this.getOutputSampleRate() * SEEK_READY_SECONDS),
+        ),
+        decodePrerollFrames: safeDecodePrerollFrames,
+        requireRealContentNearTarget: exactSampleSeek === true,
+        demuxerTargetSample,
+        resolve,
+        reject,
+      };
+    });
+    // A seek superseded before it returns leaves this promise without a caller.
+    seekReadyPromise.catch(() => {});
+
     const rebuiltFromHead = hardReset && safeTargetSample === 0;
     if (!rebuiltFromHead) {
       const seekTimeSeconds = demuxerTargetSample / this.getOutputSampleRate();
@@ -2786,30 +2815,8 @@ class ProducerTrackPipeline {
       this.assertCurrentSeekOperation(operationToken, safeSeekSerial);
     }
 
-    const seekReadyPromise = new Promise((resolve, reject) => {
-      if (this.isDestroyed) {
-        reject(createAbortError('Producer pipeline destroyed before seek ready.'));
-        return;
-      }
-
-      this.pendingSeekReady = {
-        sessionId,
-        seekSerial: safeSeekSerial,
-        targetSample: safeTargetSample,
-        thresholdFrames: Math.max(
-          MIN_RING_WRITE_FRAMES,
-          Math.floor(this.getOutputSampleRate() * SEEK_READY_SECONDS),
-        ),
-        decodePrerollFrames: safeDecodePrerollFrames,
-        requireRealContentNearTarget: exactSampleSeek === true,
-        demuxerTargetSample,
-        resolve,
-        reject,
-      };
-
-      this.startLookAhead(sessionId, safeSeekSerial);
-      this.postSeekReadyIfAvailable();
-    });
+    this.startLookAhead(sessionId, safeSeekSerial);
+    this.postSeekReadyIfAvailable();
 
     if (!exactSampleSeek) {
       return seekReadyPromise;
