@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Archive, CheckCircle2, Clock3, Download, FileAudio2, FileUp, LoaderCircle, Music2, RefreshCw, Upload, XCircle } from 'lucide-react';
-import { formatReaperTime, parseReaperProject, reviewReaperProject } from '../utils/reaperProjectParser.js';
+import { formatReaperTime, parseReaperProject, REAPER_AUDIO_CHECK_CODES, reviewReaperProject } from '../utils/reaperProjectParser.js';
 import { resolveFetchableAudioUrl } from '../lib/audio-playback.js';
 import { isClickCarrierUrl } from '../utils/silentClickCarrier.js';
 import { buildPreparedReaperProject, getReaperDraftMarkers, measureReaperBlobDuration, readReaperSession, reaperMediaPath, reaperTrackCategory, reaperTrackName, safeReaperBaseName } from '../utils/reaperPreparation.js';
@@ -18,6 +18,14 @@ const APPLY_BLOCKERS = new Set(['drafts', 'uno', 'end', 'invalid', 'tempo', 'aud
 const stemLabel = (song) => {
   const stems = (song.reaperSession?.tracks || []).filter((track) => !isClickCarrierUrl(track.url)).length;
   return stems ? `${stems} stems` : String(song.mp3 || '').trim() ? 'MP3' : 'sin audio';
+};
+// Bloqueos de verdad (faltan anclas, borradores, repetidos…) y avisos de audio que se pueden aceptar.
+const splitApplyIssues = (issues = []) => {
+  const blocking = (issues || []).filter((issue) => APPLY_BLOCKERS.has(issue.code));
+  return {
+    hardBlockers: blocking.filter((issue) => !REAPER_AUDIO_CHECK_CODES.has(issue.code)),
+    audioChecks: blocking.filter((issue) => REAPER_AUDIO_CHECK_CODES.has(issue.code)),
+  };
 };
 const isAnchor = (name) => /^(uno|fin audio)$/i.test(String(name || '').replace(/^\[BORRADOR\]\s*/i, '').trim());
 
@@ -223,9 +231,9 @@ export default function AdminReaperWorkspace({ songs = [], isAdmin = false }) {
 
   const applyProjectMap = async () => {
     if (!selectedSong || !analysis || !activeProjectKey || busy) return;
-    const blockers = (analysis.review?.issues || []).filter((issue) => APPLY_BLOCKERS.has(issue.code));
-    if (blockers.length) {
-      setFeedback({ kind: 'error', text: `Antes de aplicar, corrige en REAPER: ${blockers.map((issue) => issue.message).join(' ')}` });
+    const { hardBlockers, audioChecks } = splitApplyIssues(analysis.review?.issues);
+    if (hardBlockers.length) {
+      setFeedback({ kind: 'error', text: `Antes de aplicar, corrige en REAPER: ${hardBlockers.map((issue) => issue.message).join(' ')}` });
       return;
     }
     const sections = analysis.markers.filter((marker) => !isAnchor(marker.name));
@@ -239,7 +247,7 @@ export default function AdminReaperWorkspace({ songs = [], isAdmin = false }) {
       setFeedback({ kind: 'error', text: 'Para Digno y Santo, excluye Outro y conserva Final, como indicaste.' });
       return;
     }
-    const summary = `Aplicar ${chosen.length} secciones de ${selectedSong.titulo} al multitrack. Esto actualiza solo el mapa de la sesión multitrack; conserva las secciones originales, las letras y los arreglos de eventos.${isDigno ? '\n\nSe excluirá Outro y se conservará Final.' : ''}`;
+    const summary = `Aplicar ${chosen.length} secciones de ${selectedSong.titulo} al multitrack. Esto actualiza solo el mapa de la sesión multitrack; conserva las secciones originales, las letras y los arreglos de eventos.${isDigno ? '\n\nSe excluirá Outro y se conservará Final.' : ''}${audioChecks.length ? '\n\nLos audios del RPP no son exactamente los stems de la canción. Aplica igual solo si los tiempos que marcaste corresponden a esos stems.' : ''}`;
     if (!window.confirm(summary)) return;
     setBusy('apply');
     setFeedback(null);
@@ -248,7 +256,7 @@ export default function AdminReaperWorkspace({ songs = [], isAdmin = false }) {
         method: 'PUT',
         credentials: 'same-origin',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ songId: selectedSong.id, key: activeProjectKey, markerIds: chosen.map((marker) => marker.id) }),
+        body: JSON.stringify({ songId: selectedSong.id, key: activeProjectKey, markerIds: chosen.map((marker) => marker.id), force: audioChecks.length > 0 }),
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || 'No se pudo aplicar el mapa al multitrack.');
@@ -381,9 +389,9 @@ export default function AdminReaperWorkspace({ songs = [], isAdmin = false }) {
             {!!analysis.markers?.some((marker) => !isAnchor(marker.name)) && <div className="mt-4 rounded-xl border border-border bg-surface/75 p-3.5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div><p className="text-sm font-bold text-content">Secciones que se aplicarán al multitrack</p><p className="mt-1 text-xs leading-relaxed text-content-muted">Esta elección solo cambia la sesión multitrack de la canción. Las secciones originales, letras y arreglos de eventos quedan intactos.</p></div>
-                <button type="button" onClick={applyProjectMap} disabled={!activeProjectKey || Boolean(busy) || !analysis.markers.some((marker) => !isAnchor(marker.name) && !excludedMarkerIds.includes(marker.id)) || (analysis.review?.issues || []).some((issue) => APPLY_BLOCKERS.has(issue.code)) || appliedProjectKey === activeProjectKey} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-bold text-white shadow-sm transition hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-50">
+                <button type="button" onClick={applyProjectMap} disabled={!activeProjectKey || Boolean(busy) || !analysis.markers.some((marker) => !isAnchor(marker.name) && !excludedMarkerIds.includes(marker.id)) || splitApplyIssues(analysis.review?.issues).hardBlockers.length > 0 || appliedProjectKey === activeProjectKey} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-bold text-white shadow-sm transition hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-50">
                   {busy === 'apply' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : appliedProjectKey === activeProjectKey ? <CheckCircle2 className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
-                  {busy === 'apply' ? 'Aplicando mapa…' : appliedProjectKey === activeProjectKey ? 'Mapa aplicado' : 'Aplicar mapa al multitrack'}
+                  {busy === 'apply' ? 'Aplicando mapa…' : appliedProjectKey === activeProjectKey ? 'Mapa aplicado' : splitApplyIssues(analysis.review?.issues).audioChecks.length ? 'Aplicar de todas formas' : 'Aplicar mapa al multitrack'}
                 </button>
               </div>
               <div className="mt-3 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">{analysis.markers.filter((marker) => !isAnchor(marker.name)).map((marker) => {
@@ -402,7 +410,9 @@ export default function AdminReaperWorkspace({ songs = [], isAdmin = false }) {
                 </li>)}</ol>
               </div>}
               {/digno\s+y\s+santo/i.test(String(selectedSong?.titulo || '')) && <p className="mt-2 text-xs font-medium text-content-muted">Según tu indicación, <strong>Outro</strong> queda excluido y <strong>Final</strong> se conserva.</p>}
-              {(analysis.review?.issues || []).some((issue) => APPLY_BLOCKERS.has(issue.code)) && <p className="mt-2 text-xs font-semibold text-amber-700">El botón se habilitará cuando corrijas los avisos que afectan la integridad del mapa.</p>}
+              {splitApplyIssues(analysis.review?.issues).hardBlockers.length > 0
+                ? <p className="mt-2 text-xs font-semibold text-amber-700">El botón se habilitará cuando corrijas en REAPER: {splitApplyIssues(analysis.review?.issues).hardBlockers.map((issue) => issue.message).join(' ')}</p>
+                : splitApplyIssues(analysis.review?.issues).audioChecks.length > 0 && <p className="mt-2 text-xs font-medium text-amber-700">Los avisos de audio no impiden aplicar: si marcaste los tiempos sobre los mismos stems de la canción, pulsa «Aplicar de todas formas».</p>}
             </div>}
           </div>}
 

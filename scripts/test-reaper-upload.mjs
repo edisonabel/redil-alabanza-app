@@ -65,6 +65,16 @@ export class S3Client{constructor(config){globalThis.__reaperFixture.clientConfi
   assert.equal(reordered.status,200,JSON.stringify(await reordered.clone().json()));
   assert.deepEqual(globalThis.__reaperFixture.sessionUpdates.at(-1).sectionMarkers.map(marker=>marker.sectionName),['Intro 1','Verso 1'],'Quedan las secciones de REAPER');
   globalThis.__reaperFixture.song=song;
+  // Avisos de audio (un audio corrido): bloquean sin confirmar; con «force» se aplica igual. Un borrador
+  // sin confirmar sigue bloqueando aunque se confirme.
+  const applyWith=(body)=>PUT({request:new Request('https://fixture.invalid/api/admin-reaper-project',{method:'PUT',headers:{origin:'https://fixture.invalid','content-type':'application/json'},body:JSON.stringify({songId:'song-1',key:'live-director/reaper-projects/song-1/Mapa.RPP',markerIds:[1],...body})}),cookies:{get:()=>({value:'fixture-token'})}});
+  const confirmed=globalThis.__reaperFixture.stored;
+  globalThis.__reaperFixture.stored=confirmed.replace('      POSITION 0','      POSITION 1.5');
+  assert.equal((await applyWith({})).status,409,'Audio corrido sin confirmar: bloquea');
+  const forced=await applyWith({force:true});assert.equal(forced.status,200,JSON.stringify(await forced.clone().json()));
+  globalThis.__reaperFixture.stored=confirmed.replace('"Intro 1"','"[BORRADOR] Intro 1"').replace('      POSITION 0','      POSITION 1.5');
+  assert.equal((await applyWith({force:true})).status,409,'Un borrador sin confirmar no se salta con force');
+  globalThis.__reaperFixture.stored=confirmed;
  }finally{console.error=oldError}
- console.log('REAPER upload: authentication, admin role, origin, song binding, draft review, RPP storage, no catalog writes, apply with separate instructions and click-only sessions for songs without stems passed.');
+ console.log('REAPER upload: authentication, admin role, origin, song binding, draft review, RPP storage, no catalog writes, apply with separate instructions and click-only sessions for songs without stems and forced apply over audio warnings passed.');
 }finally{delete globalThis.__reaperFixture;await rm(dir,{recursive:true,force:true})}

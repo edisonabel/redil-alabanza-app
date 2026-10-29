@@ -7,7 +7,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { createClient } from '@supabase/supabase-js';
 import { getSupabaseServerEnv, getSupabaseServiceRoleKey, readEnv } from '../../lib/server/supabase-env.js';
-import { parseReaperProject, reviewReaperProject, safeReaperProjectName } from '../../utils/reaperProjectParser.js';
+import { parseReaperProject, REAPER_AUDIO_CHECK_CODES, reviewReaperProject, safeReaperProjectName } from '../../utils/reaperProjectParser.js';
 import { buildClickOnlySession, isClickOnlySession } from '../../utils/liveDirectorClickOnlySession.js';
 
 export const prerender = false;
@@ -208,7 +208,9 @@ export const PUT = async ({ request, cookies }) => {
     const project = parseReaperProject(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
     if (!project.songId || project.songId !== String(song.id)) return jsonResponse({ error: 'El RPP no está vinculado a esta canción.' }, 422);
     const review = reviewReaperProject(project, song);
-    const blockers = review.issues.filter((issue) => APPLY_BLOCKERS.has(issue.code));
+    // «force»: quien aplica confirmó que acepta los avisos de audio; los demás bloqueos siguen.
+    const force = payload?.force === true;
+    const blockers = review.issues.filter((issue) => APPLY_BLOCKERS.has(issue.code) && !(force && REAPER_AUDIO_CHECK_CODES.has(issue.code)));
     if (blockers.length) return jsonResponse({ error: `Corrige primero el RPP: ${blockers.map((issue) => issue.message).join(' ')}`, review }, 409);
 
     const chosen = project.markers.filter((marker) => !/^(uno|fin audio)$/i.test(normalizeProjectSectionName(marker.name)) && markerIds.includes(marker.id));
