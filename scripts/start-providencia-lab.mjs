@@ -90,10 +90,14 @@ const server=createServer(async(req,res)=>{
       return;
     }
     const carrierSeconds=readClickCarrierSeconds(url.pathname);
-    if(carrierSeconds!==null){
+    // Stems que generan las pruebas (p. ej. uno que empieza con 25 s de silencio), por rangos como R2.
+    const testMedia=/^\/lab-test-media\/([a-z0-9-]+\.m4a)$/.exec(url.pathname);
+    let testBytes=null;
+    if(testMedia){try{testBytes=await readFile(resolve(root,'.lab/test-media',testMedia[1]));}catch{res.writeHead(404);res.end();return;}}
+    if(carrierSeconds!==null||testBytes){
       // Igual que /api/live-director-click-carrier en Alabanza: silencio AAC servido por rangos.
-      const bytes=buildSilentAacMp4(carrierSeconds),range=/^bytes=(\d*)-(\d*)$/.exec(req.headers.range||'');
-      res.setHeader('Content-Type','audio/mp4');res.setHeader('Accept-Ranges','bytes');res.setHeader('ETag',`"click-carrier-v1-${carrierSeconds}"`);
+      const bytes=testBytes??buildSilentAacMp4(carrierSeconds),range=/^bytes=(\d*)-(\d*)$/.exec(req.headers.range||'');
+      res.setHeader('Content-Type','audio/mp4');res.setHeader('Accept-Ranges','bytes');res.setHeader('ETag',testBytes?`"lab-test-${bytes.length}"`:`"click-carrier-v1-${carrierSeconds}"`);
       if(!range){res.setHeader('Content-Length',bytes.length);res.writeHead(200);res.end(Buffer.from(bytes));return;}
       const start=range[1]===''?Math.max(0,bytes.length-Number(range[2])):Number(range[1]),end=range[1]===''||range[2]===''?bytes.length-1:Math.min(bytes.length-1,Number(range[2]));
       if(!(start<=end)||start>=bytes.length){res.setHeader('Content-Range',`bytes */${bytes.length}`);res.writeHead(416);res.end();return;}

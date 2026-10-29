@@ -110,7 +110,8 @@
     "test:live-click-only-ui": "node scripts/test-live-director-click-only-browser.mjs",
     "test:live-guide-mode-ui": "node scripts/test-live-director-guide-mode-browser.mjs",
     "test:live-guide-spacing": "node scripts/test-live-director-guide-spacing-browser.mjs",
-    "test:live-jump-count": "node scripts/test-live-director-jump-count.mjs"
+    "test:live-jump-count": "node scripts/test-live-director-jump-count.mjs",
+    "test:live-silent-head-switch": "node scripts/test-live-director-silent-head-switch-browser.mjs"
   },
   "dependencies": {
     "@astrojs/netlify": "8.2.1",
