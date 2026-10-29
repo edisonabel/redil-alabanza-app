@@ -108,6 +108,7 @@
     "test:live-rehearsal-download-ui": "node scripts/test-live-director-rehearsal-download-browser.mjs",
     "test:live-click-carrier": "node scripts/test-live-director-click-carrier.mjs",
     "test:live-click-only-ui": "node scripts/test-live-director-click-only-browser.mjs",
+    "test:live-guide-mode-ui": "node scripts/test-live-director-guide-mode-browser.mjs",
     "test:live-jump-count": "node scripts/test-live-director-jump-count.mjs"
   },
   "dependencies": {

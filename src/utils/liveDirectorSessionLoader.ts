@@ -14,6 +14,7 @@ export type LiveDirectorResolvedSession = {
   sectionMarkers?: LiveDirectorPersistedSession['sectionMarkers'];
   instructionMarkers?: LiveDirectorPersistedSession['instructionMarkers'];
   reaperTiming?: LiveDirectorPersistedSession['reaperTiming'];
+  guideMode?: LiveDirectorPersistedSession['guideMode'];
 };
 
 export type LiveDirectorMatchedStemFile = {

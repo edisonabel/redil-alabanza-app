@@ -33,6 +33,8 @@ export type LiveDirectorPersistedSession = {
   /** Spoken guide instructions (Sube intensidad, Hits…) from the RPP; never sections. */
   instructionMarkers?: LiveDirectorInstructionMarker[];
   reaperTiming?: { source: 'reaper-rpp'; projectName?: string; tempo: number; meter: string; unoSeconds: number | null; finAudioSeconds: number | null; appliedAt: string };
+  /** «dynamic»: la guía grabada se silencia y la voz automática anuncia cada sección. */
+  guideMode?: 'dynamic';
   folder: string;
   manifestUrl: string;
   updatedAt: string;
@@ -228,6 +230,7 @@ export const normalizePersistedLiveDirectorSession = (
     ...(timing?.source === 'reaper-rpp' && Number.isFinite(Number(timing.tempo)) && typeof timing.meter === 'string'
       ? { reaperTiming: { ...timing, tempo: Number(timing.tempo), appliedAt: String(timing.appliedAt || '') } }
       : {}),
+    ...(sessionRecord.guideMode === 'dynamic' ? { guideMode: 'dynamic' as const } : {}),
     folder:
       String(sessionRecord.folder || '').trim() || buildLiveDirectorSongFolder(songId, songTitle),
     manifestUrl: String(sessionRecord.manifestUrl || '').trim(),

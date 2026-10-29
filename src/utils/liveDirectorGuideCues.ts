@@ -1,5 +1,6 @@
 export type GuideCuePlan = { id: string; boundary: number; name: string; countIn?: boolean };
-const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+// «Coro2» se lee como «Coro 2»: el número pegado no cambia la sección.
+const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/([a-z])(\d)/g, '$1 $2').replace(/[^a-z0-9]+/g, ' ').trim();
 const aliases: Record<string, string> = {
   chorus: 'coro', verse: 'verso', bridge: 'puente', 'pre chorus': 'pre coro', 'post chorus': 'post coro',
   interlude: 'interludio', ending: 'ending', final: 'ending', outro: 'outro', estribillo: 'refrain',
@@ -15,8 +16,10 @@ export function resolveGuideCue(name: string, available: ReadonlySet<string>): s
     if (normalized === from || normalized.startsWith(from + ' ')) { normalized = to + normalized.slice(from.length); break; }
   }
   const key = normalized.replaceAll(' ', '-');
-  if (available.has(key)) return key;
   const base = key.replace(/-\d+$/, '');
+  // Todos los coros dicen «Coro», sin número.
+  if (base === 'coro' && available.has(base)) return base;
+  if (available.has(key)) return key;
   return available.has(base) ? base : null;
 }
 

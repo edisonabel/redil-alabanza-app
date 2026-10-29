@@ -37,7 +37,12 @@ for (const key of keys) {
 }
 for (const type of catalog) {
   assert.equal(resolveGuideCue(type.label, keys), type.key);
-  for (let n = 1; keys.has(`${type.key}-${n}`); n++) assert.equal(resolveGuideCue(`${type.label} ${n}`, keys), `${type.key}-${n}`);
+  // Todos los coros dicen «Coro»; el resto usa su voz numerada. «Coro2» pegado es «Coro 2».
+  for (let n = 1; keys.has(`${type.key}-${n}`); n++) {
+    const expected = type.key === 'coro' ? 'coro' : `${type.key}-${n}`;
+    assert.equal(resolveGuideCue(`${type.label} ${n}`, keys), expected);
+    assert.equal(resolveGuideCue(`${type.label}${n}`, keys), expected);
+  }
 }
 
 // Names produced by the real helper for every menu option (stubbed REAPER API).
@@ -57,7 +62,7 @@ for (const { key, names } of options) {
   names.forEach((name, index) => {
     const numbered = `${key}-${index + 1}`;
     // Appearance N uses its own recorded voice when one exists (Coro 2), else the type voice.
-    assert.equal(resolveGuideCue(name, keys), keys.has(numbered) && /\d$/.test(name) ? numbered : key, `${name} → ${key}`);
+    assert.equal(resolveGuideCue(name, keys), keys.has(numbered) && /\d$/.test(name) && key !== 'coro' ? numbered : key, `${name} → ${key}`);
     created.push(name);
   });
 }
