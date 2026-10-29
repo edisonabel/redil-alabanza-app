@@ -84,7 +84,7 @@ try {
   const chorus = page.locator('[data-live-section-index="2"]');
   await chorus.scrollIntoViewIfNeeded(); await chorus.click();
   await page.getByRole('button', { name: 'Armar salto', exact: true }).click();
-  await page.waitForFunction(() => window.__guideStarts.some(source => Math.abs(source.duration - .8427) < .00015), null, { timeout: 20000 });
+  await page.waitForFunction(() => window.__guideStarts.some(source => Math.abs(source.duration - .523) < .00015), null, { timeout: 20000 });
   await page.waitForFunction(start => window.__streamingEngineDumpOwner.getCurrentTime() >= start && window.__streamingEngineDumpOwner.getCurrentTime() < start + 6, markers[2].start, { timeout: 20000 });
   assert.equal(await guideOverride(), false);
   const restored = await page.evaluate(() => { const t = window.__streamingEngineDumpOwner.getTracks().find(t => t.id === 'guide'); return { volume: t.volume, muted: t.isMuted, route: t.outputRoute }; });

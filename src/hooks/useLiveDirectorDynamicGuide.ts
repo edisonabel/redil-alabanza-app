@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { DynamicGuidePlayer, type GuideAudioGraph } from '../services/DynamicGuidePlayer';
+import { loadGuideCounts, type GuideCountSeries } from '../utils/liveDirectorGuideCounts';
 import { nextGuideInstruction, type GuideCuePlan, type GuideInstructionCue } from '../utils/liveDirectorGuideCues';
 type Options = {
   wanted: boolean; ready: boolean; playing: boolean; busy: boolean; resetKey: string; bpm: number; meter?:{numerator:number;denominator:number}|null;
@@ -9,6 +10,8 @@ type Options = {
   getInstructions?: () => ReadonlyArray<GuideInstructionCue>;
   /** Guía dinámica: la guía grabada queda en silencio mientras la voz automática está lista. */
   muteRecorded?: boolean;
+  /** Pista Guide grabada: de ahí salen los tiempos en que cuenta antes de cada sección. */
+  guideUrl?: string | null;
 };
 export function useLiveDirectorDynamicGuide(options: Options) {
   const latest = useRef(options); latest.current = options;
@@ -18,6 +21,18 @@ export function useLiveDirectorDynamicGuide(options: Options) {
   const graphRef = useRef<GuideAudioGraph | null>(null);
   // Only re-render when the upcoming instruction changes, not on every 25 ms tick.
   const [nextInstruction, setNextInstruction] = useState<GuideInstructionCue | null>(null);
+  const [counts, setCounts] = useState<{ url: string; series: GuideCountSeries[] } | null>(null);
+  // Se analiza solo con la voz automática pedida; sin conteos detectados se cuenta al tempo.
+  useEffect(() => {
+    const url = options.guideUrl;
+    if (!options.wanted || !options.muteRecorded || !url) return;
+    if (counts?.url === url) return;
+    const controller = new AbortController();
+    void loadGuideCounts(url, controller.signal).then(series => setCounts({ url, series }), () => {});
+    return () => controller.abort();
+  }, [options.wanted, options.muteRecorded, options.guideUrl]);
+  const series = counts && counts.url === options.guideUrl ? counts.series : null;
+  useEffect(() => { if (status === 'ready') playerRef.current?.setGuideCounts(series ?? []); }, [status, series]);
   useEffect(() => {
     if (!options.wanted || !options.ready) { setStatus('off'); setError(''); return; }
     const graph = latest.current.getGraph();
@@ -55,5 +70,6 @@ export function useLiveDirectorDynamicGuide(options: Options) {
     status, error, nextInstruction, getDiagnostics: () => playerRef.current?.events || [],
     speak: (name: string) => playerRef.current?.speakNow(name) ?? false,
     cueBuffer: (name: string) => playerRef.current?.cueBuffer(name) ?? null,
+    guideCounts: series,
   };
 }
