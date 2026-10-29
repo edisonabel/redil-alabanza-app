@@ -154,6 +154,10 @@ export function reviewReaperProject(project, song) {
     scope: 'multitrack-only', appliedToPlayback: false };
 }
 
+// Comprobaciones de que los audios del RPP son los stems originales, sin mover. Avisan, pero quien
+// administra puede aplicar igual (proyecto propio o audios extra); el resto de bloqueos no se salta.
+export const REAPER_AUDIO_CHECK_CODES = new Set(['audio-moved', 'unverified-media', 'trimmed', 'tail', 'media-count', 'tempo-map', 'no-media']);
+
 export const safeReaperProjectName = (value = '') => {
   const cleaned = String(value || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-zA-Z0-9._ -]/g, '_').replace(/\s+/g, ' ').trim().replace(/^[. ]+|[. ]+$/g, '').slice(0, 120);
