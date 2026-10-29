@@ -54,5 +54,6 @@ export function useLiveDirectorDynamicGuide(options: Options) {
   return {
     status, error, nextInstruction, getDiagnostics: () => playerRef.current?.events || [],
     speak: (name: string) => playerRef.current?.speakNow(name) ?? false,
+    cueBuffer: (name: string) => playerRef.current?.cueBuffer(name) ?? null,
   };
 }

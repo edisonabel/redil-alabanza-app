@@ -30,9 +30,12 @@ export class DynamicGuidePlayer {
   // Instructions keep their own sources and memory: a section cue change never cancels them.
   private cueSources = new Set<AudioBufferSourceNode>();
   private spoken = new Set<string>();
+  // Ventanas (tiempo de audio) ya ocupadas por voces. El anuncio de sección con su conteo va pegado al
+  // compás y manda; las órdenes buscan un hueco antes, o justo después, para no encimarse nunca.
+  private windows: Array<{ kind: 'section' | 'cue'; start: number; end: number; source?: AudioBufferSourceNode; key?: string; latest?: number; boundary?: number }> = [];
   private cueTime: number | null = null;
   private cueWall = 0;
-  public events: Array<{ key: string; status: 'scheduled' | 'late' | 'missing' | 'cancelled'; audioTime: number; boundary?: number }> = [];
+  public events: Array<{ key: string; status: 'scheduled' | 'late' | 'missing' | 'cancelled' | 'collision'; audioTime: number; boundary?: number }> = [];
   constructor(private graph: GuideAudioGraph) {
     const context = graph.context;
     this.gain = context.createGain(); this.left = context.createGain(); this.right = context.createGain();
@@ -42,7 +45,7 @@ export class DynamicGuidePlayer {
     this.merger.connect(graph.destination);
     this.syncMix();
   }
-  private record(key: string, status: 'scheduled' | 'late' | 'missing' | 'cancelled', boundary?: number) {
+  private record(key: string, status: 'scheduled' | 'late' | 'missing' | 'cancelled' | 'collision', boundary?: number) {
     this.events.push({ key, status, audioTime: this.graph.context.currentTime, boundary });
     if (this.events.length > 64) this.events.shift();
   }
@@ -91,20 +94,55 @@ export class DynamicGuidePlayer {
       this.graph.clearRecordedGuideDuck();
       this.duckScheduled = false;
     }
+    this.windows = this.windows.filter(window => window.kind !== 'section');
   }
   private stopInstructions() {
     for (const source of this.cueSources) { try { source.stop(); } catch {} source.disconnect(); }
     this.cueSources.clear();
+    this.windows = this.windows.filter(window => window.kind !== 'cue');
   }
   private startVoice(key: string, when: number, boundary?: number) {
     const source = this.graph.context.createBufferSource(); source.buffer = this.buffers.get(key)!;
     source.connect(this.gain); this.cueSources.add(source);
     source.onended = () => { source.disconnect(); this.cueSources.delete(source); };
     source.start(when); this.record(key, 'scheduled', boundary);
+    return source;
+  }
+  /** Primer inicio libre para una voz: lo preferido o antes; si no cabe, después, sin pasar de `latest`. */
+  private freeSlot(duration: number, preferred: number, latest: number): number | null {
+    const now = this.graph.context.currentTime, earliest = now + .12, gap = .12;
+    this.windows = this.windows.filter(window => window.end > now);
+    const clash = (start: number) => this.windows.find(window => start < window.end + gap && start + duration + gap > window.start);
+    for (let start = preferred, tries = 0; start >= earliest && tries < 8; tries++) {
+      const busy = clash(start); if (!busy) return start;
+      start = busy.start - gap - duration;
+    }
+    for (let start = Math.max(earliest, preferred), tries = 0; start <= latest && tries < 8; tries++) {
+      const busy = clash(start); if (!busy) return start;
+      start = busy.end + gap;
+    }
+    return null;
+  }
+  private placeCue(key: string, preferred: number, latest: number, boundary?: number) {
+    const duration = this.buffers.get(key)!.duration, when = this.freeSlot(duration, preferred, latest);
+    if (when === null) { this.record(key, 'collision', boundary); return; }
+    const source = this.startVoice(key, when, boundary);
+    this.windows.push({ kind: 'cue', start: when, end: when + duration, source, key, latest, boundary });
+  }
+  /** Reserva el anuncio de sección y aparta las órdenes ya programadas que caen encima. */
+  private reserveSection(start: number, end: number) {
+    const gap = .12;
+    const displaced = this.windows.filter(window => window.kind === 'cue' && window.start < end + gap && window.end + gap > start);
+    this.windows = this.windows.filter(window => !displaced.includes(window));
+    this.windows.push({ kind: 'section', start, end });
+    for (const cue of displaced) {
+      if (cue.source) { try { cue.source.stop(); } catch {} cue.source.disconnect(); this.cueSources.delete(cue.source); }
+      if (cue.key) this.placeCue(cue.key, cue.start, cue.latest ?? cue.start, cue.boundary);
+    }
   }
   pause() {
     this.stopSource(); this.planKey = ''; this.lastTime = null; this.played.clear();
-    this.stopInstructions(); this.spoken.clear(); this.cueTime = null;
+    this.stopInstructions(); this.spoken.clear(); this.cueTime = null; this.windows = [];
   }
   /** Speaks each instruction before its point with the section-name lead, gain and route. */
   updateInstructions(cues: ReadonlyArray<GuideInstructionCue>, songTime: number, bpm: number) {
@@ -125,10 +163,16 @@ export class DynamicGuidePlayer {
       if (delay > 8) break;
       this.spoken.add(id);
       if (cue.startSec - songTime < voice + .3) { this.record(key, 'late', cue.startSec); continue; }
-      this.startVoice(key, context.currentTime + Math.max(.12, delay), cue.startSec);
+      // Puede correrse hasta medio segundo después de su punto si un anuncio de sección ocupa el hueco.
+      this.placeCue(key, context.currentTime + Math.max(.12, delay), context.currentTime + (cue.startSec - songTime) + .5, cue.startSec);
     }
   }
   /** Manual instruction from the live controls: speak it now. */
+  /** Audio ya cargado de un nombre de sección («Intro»), o null si no hay voz para él. */
+  cueBuffer(name: string): AudioBuffer | null {
+    const key = this.disposed ? null : resolveGuideCue(name, this.available);
+    return key ? this.buffers.get(key) ?? null : null;
+  }
   speakNow(name: string): boolean {
     const key = this.disposed ? null : resolveGuideCue(name, this.available);
     if (!key) return false;
@@ -185,6 +229,7 @@ export class DynamicGuidePlayer {
     void prepared.then(()=>{
       if(this.disposed||generation!==this.cueGeneration)return;
       if(first.when<context.currentTime+.02){this.stopSource();this.record(plan.countIn?'count-in':cueKey!,'late',plan.boundary);return;}
+      this.reserveSection(first.when,voiceEndAudioTime);
       for(const voice of voices){
         const source=context.createBufferSource();source.buffer=voice.buffer;source.playbackRate.value=voice.rate;
         source.connect(this.gain);this.sources.add(source);

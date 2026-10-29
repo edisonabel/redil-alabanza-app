@@ -3685,6 +3685,8 @@ export function LiveDirectorView({
   // Conteo de entrada solo en canciones con mapa de REAPER: sin él, la guía subida ya trae su
   // propio conteo y uno añadido se oiría dos veces.
   const entryCountEnabled = experimentalTools && !isManualTempoMode && Boolean(reaperTransport);
+  // Guía dinámica: el conteo de entrada dice primero la sección con la que arranca la canción («Intro»).
+  const entryLeadCueRef = useRef<() => AudioBuffer | null>(() => null);
   const entryCount = useLiveDirectorEntryCount({
     enabled: entryCountEnabled,
     identity: `${transportIdentity}:${reloadKey}`, ready: currentSessionPrepared, playing: isPlaying,
@@ -3692,6 +3694,7 @@ export function LiveDirectorView({
     getTime: selectedMultitrackEngine.getCurrentTimeSnapshot,
     getGraph: () => (guideTrack || clickTrack) ? selectedMultitrackEngine.getGuideAudioGraph?.((guideTrack || clickTrack)!.id) ?? null : null,
     play, pause,
+    getLeadCue: () => entryLeadCueRef.current(),
   });
   entryCountCancelRef.current = entryCount.cancel;
   entryCountStartRef.current = entryCountEnabled ? entryCount.start : null;
@@ -3722,9 +3725,13 @@ export function LiveDirectorView({
     }
   }, [songId, hasPersistedSongContext, canManagePersistedSongSession, enqueueSessionSave, onSessionPersisted]);
   const openGuideChooser = useCallback(() => setShowGuideChooser(true), []);
+  // Guía dinámica al tocar de corrido: nombre de la siguiente sección y «1, 2, 3, 4» en el compás anterior.
+  // Antes de la primera sección (la entrada de la canción) anuncia esa misma, también con conteo.
   const nextSectionCuePlan = (time: number) => {
+    const first = resolvedSections[0];
+    if (first && time < first.startTime) return { id: `entry:${first.id}`, boundary: first.startTime, name: first.name, countIn: true };
     const next = resolvedSections[getSectionIndexAtTime(time) + 1];
-    return next && next.startTime > time ? { id: `next:${next.id}`, boundary: next.startTime, name: next.name } : null;
+    return next && next.startTime > time ? { id: `next:${next.id}`, boundary: next.startTime, name: next.name, countIn: true } : null;
   };
   const dynamicGuide = useLiveDirectorDynamicGuide({
     wanted: canUseDynamicGuide, ready: isReady, playing: isPlaying,
@@ -3738,6 +3745,12 @@ export function LiveDirectorView({
     getInstructions: () => guideInstructions,
     muteRecorded: guideDynamic,
   });
+  entryLeadCueRef.current = () => {
+    if (!guideDynamicRef.current) return null;
+    const from = Math.max(selectedMultitrackEngine.getCurrentTimeSnapshot(), reaperTransport?.clickGrid?.originSeconds ?? 0);
+    const section = resolvedSections.find(item => item.endTime > from);
+    return section ? dynamicGuide.cueBuffer(section.name) : null;
+  };
   const applyArrangement = useCallback(async (entries: ArrangementEntry[] | null) => {
     if (isPlaying || isSectionSeekBusy || isCongregationFading) throw new Error('Pausa la canción antes de aplicar.');
     if (diagnostics?.engineRoute !== 'streaming-worker') throw new Error('Este motor no permite probar arreglos.');
