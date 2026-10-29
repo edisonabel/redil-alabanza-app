@@ -1333,7 +1333,9 @@ export function LiveDirectorView({
       `${clamp(baseRem * layoutScale, minRem, maxRem).toFixed(3)}rem`,
     [layoutScale],
   );
-  const isToolbarCompactLandscape = viewportWidth > 0 && viewportWidth < 760;
+  // Teléfono en horizontal: barra en una fila de anchos fijos. La cuadrícula por porcentajes del escritorio
+  // no alcanza para LIVE, Canciones, Editar y Stems en 22 % y los encimaba sobre el transporte.
+  const isToolbarCompactLandscape = (viewportWidth > 0 && viewportWidth < 760) || isUltraCompactLandscape;
   const headerMinWidth = useMemo(
     () => (
       isUltraCompactLandscape
@@ -2418,14 +2420,49 @@ export function LiveDirectorView({
   // Precompute the mixer scroll container style so it isn't re-created on
   // every tick of the visual clock. The grid template only actually changes
   // when the track count or the landscape breakpoint changes.
+  // Canales que no caben: el ancho se reparte para que siempre se vean canales enteros (nunca uno partido
+  // contra la columna lateral), el desplazamiento se detiene en el borde de un canal y un degradado en el
+  // borde avisa que hay más.
+  const [mixerFit, setMixerFit] = useState({ width: 0, left: false, right: false });
+  // El mezclador se monta y desmonta con la vista elegida: se mide el nodo que esté montado.
+  const [mixerNode, setMixerNode] = useState<HTMLDivElement | null>(null);
+  const attachMixerScroll = useCallback((node: HTMLDivElement | null) => { mixerScrollRef.current = node; setMixerNode(node); }, []);
+  useEffect(() => {
+    const node = mixerNode;
+    if (!node) return undefined;
+    let frame = 0;
+    const measure = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const width = node.clientWidth, left = node.scrollLeft > 2, right = node.scrollLeft + width < node.scrollWidth - 2;
+        setMixerFit(previous => previous.width === width && previous.left === left && previous.right === right ? previous : { width, left, right });
+      });
+    };
+    measure();
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null;
+    observer?.observe(node);
+    node.addEventListener('scroll', measure, { passive: true });
+    return () => { cancelAnimationFrame(frame); observer?.disconnect(); node.removeEventListener('scroll', measure); };
+  }, [mixerNode, mixerView.length]);
   const mixerScrollStyle = useMemo(
-    () => ({
-      gridTemplateColumns: `repeat(${Math.max(1, mixerView.length)}, minmax(${isUltraCompactLandscape ? '6.7rem' : isCompactLandscape ? '7.45rem' : '8.5rem'}, 1fr))`,
-      touchAction: 'pan-x pinch-zoom' as const,
-      overscrollBehaviorX: 'contain' as const,
-      WebkitOverflowScrolling: 'touch' as const,
-    }),
-    [mixerView.length, isUltraCompactLandscape, isCompactLandscape],
+    () => {
+      const minimum = (isUltraCompactLandscape ? 6.7 : isCompactLandscape ? 7.45 : 8.5) * 16;
+      const gap = isUltraCompactLandscape ? 4 : isCompactLandscape ? 6 : 12, inner = mixerFit.width - 4;
+      const fits = inner > 0 ? Math.max(1, Math.floor((inner + gap) / (minimum + gap))) : 0;
+      const column = fits && mixerView.length > fits ? `${((inner - gap * (fits - 1)) / fits).toFixed(2)}px` : `minmax(${minimum / 16}rem, 1fr)`;
+      const fade = mixerFit.left && mixerFit.right ? 'linear-gradient(to right, transparent, #000 1.25rem, #000 calc(100% - 1.25rem), transparent)'
+        : mixerFit.right ? 'linear-gradient(to right, #000 calc(100% - 1.25rem), transparent)'
+          : mixerFit.left ? 'linear-gradient(to right, transparent, #000 1.25rem)' : undefined;
+      return {
+        gridTemplateColumns: `repeat(${Math.max(1, mixerView.length)}, ${column})`,
+        touchAction: 'pan-x pinch-zoom' as const,
+        overscrollBehaviorX: 'contain' as const,
+        WebkitOverflowScrolling: 'touch' as const,
+        scrollSnapType: 'x proximity' as const,
+        maskImage: fade, WebkitMaskImage: fade,
+      };
+    },
+    [mixerView.length, isUltraCompactLandscape, isCompactLandscape, mixerFit],
   );
 
   // Memoize the mixer scroll container's Tailwind className. The string only
@@ -2437,7 +2474,7 @@ export function LiveDirectorView({
     () =>
       `hide-scrollbar grid min-h-0 ${
         isUltraCompactLandscape ? 'gap-1' : isCompactLandscape ? 'gap-1.5' : 'gap-3'
-      } overflow-x-auto overflow-y-hidden p-0.5`,
+      } overflow-x-auto overflow-y-hidden p-0.5 [&>*]:snap-start`,
     [isUltraCompactLandscape, isCompactLandscape],
   );
 
@@ -6023,7 +6060,7 @@ export function LiveDirectorView({
   );
   const mixerSurface = (
 <div
-              ref={mixerScrollRef}
+              ref={attachMixerScroll}
               data-live-director-mixer-scroll="true"
               onPointerDown={handleMixerPointerDown}
               onPointerMove={handleMixerPointerMove}
@@ -6161,7 +6198,7 @@ export function LiveDirectorView({
           >
             <div
               data-live-director-control="status-group"
-              className={`flex min-w-0 items-stretch ${isToolbarCompactLandscape ? (isUltraCompactLandscape ? 'gap-1' : 'gap-1.5') : 'justify-start gap-1.5 pr-2'}`}
+              className={`flex items-stretch ${isToolbarCompactLandscape ? `shrink-0 ${isUltraCompactLandscape ? 'gap-1' : 'gap-1.5'}` : 'min-w-0 justify-start gap-1.5 pr-2'}`}
             >
               <button
                 type="button"
@@ -6256,7 +6293,7 @@ export function LiveDirectorView({
             {!isToolbarCompactLandscape && <div aria-hidden="true" />}
 
             <div
-              className={`flex shrink-0 items-stretch ${isToolbarCompactLandscape ? (isUltraCompactLandscape ? 'gap-1' : 'gap-1.5') : 'w-full justify-center gap-3'}`}
+              className={`flex items-stretch ${isToolbarCompactLandscape ? `min-w-0 flex-1 justify-center ${isUltraCompactLandscape ? 'gap-1' : 'gap-1.5'}` : 'w-full shrink-0 justify-center gap-3'}`}
               data-live-director-control="transport-group"
             >
               <button
@@ -6344,7 +6381,7 @@ export function LiveDirectorView({
 
             {!isToolbarCompactLandscape && <div aria-hidden="true" />}
 
-            <div className={`flex items-stretch gap-1.5 ${showLiveBroadcastControl ? (isUltraCompactLandscape ? 'gap-1' : 'gap-1.5') : ''} ${isToolbarCompactLandscape ? '' : 'justify-end'}`}>
+            <div data-live-director-control="tools-group" className={`flex items-stretch ${isUltraCompactLandscape ? 'gap-1' : 'gap-1.5'} ${isToolbarCompactLandscape ? 'shrink-0' : 'justify-end'}`}>
               {showLiveBroadcastControl && (
                 <button
                   type="button"
@@ -6395,15 +6432,15 @@ export function LiveDirectorView({
                 aria-label={showPhoneSongStrip ? 'Ocultar canciones' : 'Mostrar canciones'} aria-pressed={showPhoneSongStrip}
                 onClick={() => setShowPhoneSongStrip(previous => !previous)}
                 className={`${CONTROL_CARD} h-11 shrink-0 flex-col px-1.5 font-semibold ${showPhoneSongStrip ? 'border-cyan-300/32 bg-cyan-300/10 text-cyan-100' : 'text-white/75 hover:bg-white/5'}`}
-                style={{ width: scaleRem(4.35, 3.75) }}><ListMusic className="h-3.5 w-3.5" /><span className="mt-0.5 text-[0.46rem] tracking-[0.12em]">CANCIONES</span></button>}
+                style={{ width: scaleRem(4.35, 3.75) }}><ListMusic className="h-3.5 w-3.5" /><span className="mt-0.5 text-[0.46rem] tracking-[0.12em] text-white/52">CANCIONES</span></button>}
               {/* El motivo va en el contenedor: Safari no muestra el título de un botón deshabilitado. */}
-              {experimentalTools && !isManualTempoMode && <span className="flex flex-1" style={{ minWidth: '4rem' }} data-live-director-edit-reason={editSongUnavailableReason ?? undefined}
+              {experimentalTools && !isManualTempoMode && <span className={`flex ${isToolbarCompactLandscape ? 'shrink-0' : 'flex-1'}`} style={isToolbarCompactLandscape ? { width: scaleRem(isUltraCompactLandscape ? 4.35 : 4.95, 3.75) } : { minWidth: '4rem' }} data-live-director-edit-reason={editSongUnavailableReason ?? undefined}
                 title={editSongUnavailableReason ?? `${arrangementEntries ? 'Editar arreglo de prueba' : 'Editar canción'} · Shift+E`}><button type="button" data-live-director-control="edit-song" aria-keyshortcuts="Shift+E"
                 aria-label="Editar canción" aria-describedby={editSongUnavailableReason ? 'live-director-edit-reason' : undefined}
                 disabled={editSongUnavailableReason !== null}
                 onClick={() => { setShowArrangementEditor(true); setSurfaceView('sections'); }}
-                className={`${CONTROL_CARD} group relative w-full flex-col px-3 text-xs font-semibold tracking-[0.12em] disabled:pointer-events-none disabled:opacity-30 ${arrangementEntries ? 'border-cyan-200/40 text-cyan-100' : 'text-white/75 hover:bg-white/5'}`}
-                ><Pencil size={isUltraCompactLandscape ? 14 : 18}/><span className="mt-1 text-[0.58rem]">EDITAR</span><KeyboardHint>⇧ E</KeyboardHint></button>
+                className={`${CONTROL_CARD} group relative w-full flex-col font-semibold disabled:pointer-events-none disabled:opacity-30 ${isUltraCompactLandscape ? 'h-11 px-1.5' : isToolbarCompactLandscape ? 'h-12 px-2' : 'px-3'} ${arrangementEntries ? 'border-cyan-200/40 text-cyan-100' : 'text-white/75 hover:bg-white/5'}`}
+                ><Pencil className={isUltraCompactLandscape ? 'h-3.5 w-3.5' : isToolbarCompactLandscape ? 'h-4 w-4' : 'h-5 w-5'}/><span className={`${isUltraCompactLandscape ? 'mt-0.5 text-[0.46rem]' : 'mt-1 text-[0.58rem]'} tracking-[0.18em] text-white/52`}>EDITAR</span><KeyboardHint>⇧ E</KeyboardHint></button>
                 {editSongUnavailableReason && <span id="live-director-edit-reason" className="sr-only">{editSongUnavailableReason}</span>}</span>}
               <button
                 type="button"
