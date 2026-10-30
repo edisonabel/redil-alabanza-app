@@ -54,6 +54,8 @@ import { LiveDirectorGroupMixer, type SavedMixGroups } from './live-director/Liv
 import { LiveDirectorClickMixer } from './live-director/LiveDirectorClickMixer';
 import type { GeneratedClickSettings } from '../../utils/liveDirectorGeneratedClick';
 import { ChannelStrip, FaderThumb, PrecisionFaderSurface } from './live-director/ChannelStrip';
+import PadPlayerPanel from './live-director/PadPlayerPanel';
+import { PAD_KITS, findPadKit, padKeyForSongKey, padUrlFor, readDevicePadKit, writeDevicePadKit, type PadKey } from '../../utils/padKits';
 import { EnsayoQueueAddCard, EnsayoQueueCard, EnsayoQueueSaveCard } from './live-director/EnsayoQueueCard';
 import { SongTransitionControl } from './live-director/SongTransitionControl';
 import { isClickCarrierUrl } from '../../utils/silentClickCarrier.js';
@@ -90,6 +92,7 @@ import {
   requestLiveDirectorUploadTarget,
   saveLiveDirectorSectionOffset,
   saveLiveDirectorGuideMode,
+  saveLiveDirectorPadKit,
   saveLiveDirectorSongSession,
   uploadFileToLiveDirectorTarget,
 } from '../../utils/liveDirectorUploadClient';
@@ -104,7 +107,6 @@ import {
   type LiveDirectorOutputLayout,
   type TrackOutputRoute,
 } from '../../utils/liveDirectorTrackRouting';
-import { getPadUrlForSongKey } from '../../utils/padAudio';
 import { extractCoverArtFromMp3 } from '../../utils/mp3CoverArt';
 import { supportsPreparedSectionJump } from '../../utils/liveDirectorEnginePolicy';
 import {
@@ -291,6 +293,7 @@ const IOS_SAFARI_WEB_MAX_ACTIVE_TRACKS = 4;
 const SAFARI_WEB_MAX_ACTIVE_TRACKS = 9;
 const WEB_ENGINE_MAX_ACTIVE_TRACKS = 11;
 const INTERNAL_PAD_TRACK_ID = '__internal-pad__';
+const DEFAULT_DEVICE_PAD_KIT = findPadKit(null).id;
 const MANUAL_CLICK_TRACK_ID = '__manual-click__';
 const DISABLE_BACKWARD_SEEK_WHILE_PLAYING = true;
 const LIVE_DIRECTOR_COMBINED_MIN_HEIGHT = 900;
@@ -598,6 +601,7 @@ const toResolvedSession = (
   instructionMarkers: session.instructionMarkers,
   reaperTiming: session.reaperTiming,
   guideMode: session.guideMode,
+  padKitId: session.padKitId,
   mode: session.mode,
   sessionLabel: session.songTitle || 'Saved Session',
   tracks: session.tracks.map((track) => ({
@@ -1271,20 +1275,38 @@ export function LiveDirectorView({
     0,
     1,
   );
-  const resolvedPadUrl = useMemo(() => getPadUrlForSongKey(songKey), [songKey]);
+  // Kits de pads: el de la canción (si tiene uno guardado) o el elegido en este equipo. Con LINK el pad
+  // sigue la tonalidad de cada canción; tocar otra tonalidad en el Pad Player lo suelta.
+  const [devicePadKitId, setDevicePadKitId] = useState(DEFAULT_DEVICE_PAD_KIT);
+  useEffect(() => { setDevicePadKitId(readDevicePadKit()); }, []);
+  const [padKitChoice, setPadKitChoice] = useState<{ songId: string; kitId: string | null } | null>(null);
+  const songPadKitId = padKitChoice?.songId === songId ? padKitChoice.kitId : manualSession?.padKitId ?? null;
+  const activePadKit = findPadKit(songPadKitId ?? devicePadKitId);
+  const [padLinked, setPadLinked] = useState(true);
+  const [padManualKey, setPadManualKey] = useState<PadKey | null>(null);
+  const songPadKey = useMemo(() => padKeyForSongKey(songKey), [songKey]);
+  const selectedPadKey = padLinked ? songPadKey : padManualKey ?? songPadKey;
+  const resolvedPadUrl = useMemo(() => padUrlFor(activePadKit.id, selectedPadKey), [activePadKit.id, selectedPadKey]);
+  const [showPadPlayer, setShowPadPlayer] = useState(false);
+  // Mantener PAD abre el Pad Player; el toque corto sigue prendiendo y apagando el pad.
+  const padHoldRef = useRef<{ timer: ReturnType<typeof setTimeout> | null; opened: boolean }>({ timer: null, opened: false });
+  const [padPlayerNotice, setPadPlayerNotice] = useState('');
   const shouldUseNativePadBridge = Boolean(isIOSNativeEngineSurface && isEnsayoMode && resolvedPadUrl);
   const setPadActiveFromGesture = useCallback((
     nextValue: boolean | ((previous: boolean) => boolean),
+    // El Pad Player enciende el pad ya en la tonalidad tocada (el estado cambia después del render).
+    startUrl?: string | null,
   ) => {
     const resolvedNextValue = typeof nextValue === 'function'
       ? nextValue(isPadActive)
       : nextValue;
+    const gestureUrl = startUrl ?? resolvedPadUrl;
 
-    if (resolvedNextValue && !isIOSNativeEngineSurface && resolvedPadUrl) {
+    if (resolvedNextValue && !isIOSNativeEngineSurface && gestureUrl) {
       // Start while WebKit still recognizes the tap/key as a user gesture.
-      padGestureStartUrlRef.current = resolvedPadUrl;
+      padGestureStartUrlRef.current = gestureUrl;
       void independentPadPlayerRef.current?.switchTo(
-        resolvedPadUrl,
+        gestureUrl,
         effectiveInternalPadVolume,
       ).then((result) => {
         if (result.status === 'failed') {
@@ -3765,6 +3787,36 @@ export function LiveDirectorView({
     }
   }, [songId, hasPersistedSongContext, canManagePersistedSongSession, enqueueSessionSave, onSessionPersisted]);
   const openGuideChooser = useCallback(() => setShowGuideChooser(true), []);
+  const openPadPlayer = useCallback(() => { setPadPlayerNotice(''); setShowPadPlayer(true); }, []);
+  const chooseDevicePadKit = useCallback((kitId: string) => {
+    setDevicePadKitId(kitId); writeDevicePadKit(kitId);
+    setPadPlayerNotice(songPadKitId ? 'Esta canción tiene su propio kit: el del equipo suena en las demás.' : 'Kit del equipo guardado en este dispositivo.');
+  }, [songPadKitId]);
+  const chooseSongPadKit = useCallback(async (kitId: string | null) => {
+    setPadKitChoice({ songId, kitId });
+    setManualSession(previous => previous ? { ...previous, padKitId: kitId ?? undefined } : previous);
+    if (!hasPersistedSongContext || !canManagePersistedSongSession) {
+      setPadPlayerNotice('Solo en este equipo: un administrador puede guardarlo en la canción.');
+      return;
+    }
+    try {
+      const saved = await enqueueSessionSave(() => saveLiveDirectorPadKit({ songId, padKitId: kitId }));
+      onSessionPersisted?.(saved);
+      setPadPlayerNotice(kitId ? 'Guardado en la canción.' : 'La canción vuelve a usar el kit del equipo.');
+    } catch (error) {
+      setPadPlayerNotice(error instanceof Error ? `No se guardó en la canción: ${error.message}` : 'No se guardó en la canción.');
+    }
+  }, [songId, hasPersistedSongContext, canManagePersistedSongSession, enqueueSessionSave, onSessionPersisted]);
+  const pressPadKey = useCallback((key: PadKey) => {
+    if (isPadActive && selectedPadKey === key) { setPadActiveFromGesture(false); return; }
+    // La tonalidad de la canción vuelve a enlazar; cualquier otra queda a mano.
+    if (key === songPadKey) { setPadLinked(true); setPadManualKey(null); } else { setPadLinked(false); setPadManualKey(key); }
+    if (!isPadActive) setPadActiveFromGesture(true, padUrlFor(activePadKit.id, key));
+  }, [isPadActive, selectedPadKey, songPadKey, activePadKit.id, setPadActiveFromGesture]);
+  const togglePadLink = useCallback(() => {
+    setPadLinked(previous => !previous);
+    setPadManualKey(previous => previous ?? songPadKey);
+  }, [songPadKey]);
   // Guía dinámica al tocar de corrido: nombre de la siguiente sección y «1, 2, 3, 4» en el compás anterior.
   // Antes de la primera sección (la entrada de la canción) anuncia esa misma, también con conteo.
   const nextSectionCuePlan = (time: number) => {
@@ -5194,6 +5246,12 @@ export function LiveDirectorView({
           return;
         }
 
+        if (event.code === 'KeyP' && event.shiftKey && !isIOSNativeEngineSurface) {
+          event.preventDefault();
+          setShowPadPlayer(previous => !previous);
+          return;
+        }
+
         if (event.code === 'KeyP' && resolvedPadUrl) {
           event.preventDefault();
           setPadActiveFromGesture((previous) => !previous);
@@ -6112,10 +6170,12 @@ export function LiveDirectorView({
                       onMute={stableCallbacks.onMute}
                       onSolo={stableCallbacks.onSolo}
                       onToggleOutputRoute={stableCallbacks.onToggleOutputRoute}
-                      onOpenSettings={canUseDynamicGuide && track.id === guideTrack?.id ? openGuideChooser : canUseGeneratedClick && track.id === clickTrack?.id ? openClickMixer : undefined}
+                      onOpenSettings={canUseDynamicGuide && track.id === guideTrack?.id ? openGuideChooser : canUseGeneratedClick && track.id === clickTrack?.id ? openClickMixer : isInternalPadTrack && !isIOSNativeEngineSurface ? openPadPlayer : undefined}
                       {...(canUseDynamicGuide && track.id === guideTrack?.id ? {
                         settingsLabel: 'Elegir guía', settingsTitle: guideDynamic ? 'Guía dinámica: voz automática en cada sección' : 'Guía grabada · cambiar a guía dinámica',
                         settingsShortcut: '', settingsBadge: guideDynamic ? 'AUTO' : undefined,
+                      } : isInternalPadTrack ? {
+                        settingsLabel: 'Abrir Pad Player', settingsTitle: `Pad Player · ${activePadKit.name} (Shift+P)`, settingsShortcut: 'Shift+P',
                       } : {})}
                     />
                   </div>
@@ -6264,7 +6324,18 @@ export function LiveDirectorView({
 
               <button
                 type="button"
+                onPointerDown={() => {
+                  if (isIOSNativeEngineSurface) return;
+                  const hold = padHoldRef.current;
+                  hold.opened = false;
+                  if (hold.timer) clearTimeout(hold.timer);
+                  hold.timer = setTimeout(() => { hold.timer = null; hold.opened = true; setPadPlayerNotice(''); setShowPadPlayer(true); }, 550);
+                }}
+                onPointerUp={() => { const hold = padHoldRef.current; if (hold.timer) { clearTimeout(hold.timer); hold.timer = null; } }}
+                onPointerLeave={() => { const hold = padHoldRef.current; if (hold.timer) { clearTimeout(hold.timer); hold.timer = null; } }}
+                onContextMenu={event => event.preventDefault()}
                 onClick={() => {
+                  if (padHoldRef.current.opened) { padHoldRef.current.opened = false; return; }
                   if (!resolvedPadUrl) return;
                   setPadActiveFromGesture((previous) => !previous);
                 }}
@@ -6280,7 +6351,7 @@ export function LiveDirectorView({
                   : { flex: '0 0 24%', width: '24%' }}
                 aria-label={isPadActive ? `Stop pad for ${songKey}` : `Play pad for ${songKey}`}
                 aria-keyshortcuts="P"
-                title={resolvedPadUrl ? `${isPadActive ? 'Apagar' : 'Activar'} pad (P)` : 'Pad no disponible'}
+                title={resolvedPadUrl ? `${isPadActive ? 'Apagar' : 'Activar'} pad (P) · mantener para el Pad Player (Shift+P)` : 'Pad no disponible'}
               >
                 <span>PAD</span>
                 <span className={`${isUltraCompactLandscape ? 'mt-0.5 text-[0.48rem]' : 'mt-1 text-[0.62rem]'} tracking-[0.2em] text-white/46`}>
@@ -7366,6 +7437,13 @@ export function LiveDirectorView({
             </div>
           </div>
         </div>
+      )}
+
+      {showPadPlayer && (
+        <PadPlayerPanel kits={PAD_KITS} activeKit={activePadKit} deviceKitId={devicePadKitId} songKitId={songPadKitId}
+          songTitle={songTitle} linked={padLinked} songKey={songPadKey} selectedKey={selectedPadKey} playing={isPadActive}
+          notice={padPlayerNotice} onChooseDeviceKit={chooseDevicePadKit} onChooseSongKit={kitId => { void chooseSongPadKit(kitId); }}
+          onToggleLink={togglePadLink} onPressKey={pressPadKey} onClose={() => setShowPadPlayer(false)} />
       )}
 
       {showGuideChooser && (

@@ -302,6 +302,7 @@ export const POST = async ({ request, cookies }) => {
       .filter((key) => currentSession[key]).map((key) => [key, currentSession[key]])) : {};
     // El modo de guía es de la canción, no de los archivos: se conserva al guardar la mezcla.
     if (currentSession?.guideMode) reaperMap.guideMode = currentSession.guideMode;
+    if (currentSession?.padKitId) reaperMap.padKitId = currentSession.padKitId;
 
     const persistedSession = {
       version: 1,
@@ -383,15 +384,16 @@ export const PATCH = async ({ request, cookies }) => {
     const body = await request.json().catch(() => ({}));
     const songId = String(body?.songId || '').trim();
     const rawOffset = Number(body?.sectionOffsetSeconds);
-    // Cambio parcial: desfase de secciones y/o modo de guía («recorded» o «dynamic»).
+    // Cambio parcial: desfase de secciones, modo de guía («recorded» o «dynamic») y/o kit de pads (null = el del equipo).
     const hasOffset = body?.sectionOffsetSeconds !== undefined;
     const hasGuideMode = body?.guideMode !== undefined;
+    const hasPadKit = body?.padKitId !== undefined;
 
     if (!songId) {
       return jsonResponse({ error: 'Se requiere songId.' }, 400);
     }
 
-    if (!hasOffset && !hasGuideMode) {
+    if (!hasOffset && !hasGuideMode && !hasPadKit) {
       return jsonResponse({ error: 'No hay cambios para guardar.' }, 400);
     }
 
@@ -401,6 +403,10 @@ export const PATCH = async ({ request, cookies }) => {
 
     if (hasGuideMode && !['recorded', 'dynamic'].includes(body.guideMode)) {
       return jsonResponse({ error: 'guideMode debe ser recorded o dynamic.' }, 400);
+    }
+
+    if (hasPadKit && body.padKitId !== null && !/^[a-z0-9-]{1,40}$/.test(String(body.padKitId))) {
+      return jsonResponse({ error: 'padKitId no es válido.' }, 400);
     }
 
     const songRow = await fetchSongRow(songId, createSupabaseUserClient(getServerAuthTokens(cookies).accessToken));
@@ -419,8 +425,9 @@ export const PATCH = async ({ request, cookies }) => {
     const r2Context = createR2Context();
     const folder = currentSession.folder || buildLiveDirectorSongFolder(songId, String(songRow.titulo || ''));
     const manifestUrl = `${r2Context.publicBaseUrl}/${folder}/manifest.json`;
-    const { guideMode: _previousGuideMode, ...sessionWithoutGuideMode } = currentSession;
+    const { guideMode: _previousGuideMode, padKitId: _previousPadKit, ...sessionWithoutGuideMode } = currentSession;
     const guideMode = hasGuideMode ? body.guideMode : currentSession.guideMode;
+    const padKitId = hasPadKit ? body.padKitId : currentSession.padKitId;
     const persistedSession = {
       ...sessionWithoutGuideMode,
       version: 1,
@@ -428,6 +435,7 @@ export const PATCH = async ({ request, cookies }) => {
       songTitle: String(songRow.titulo || ''),
       sectionOffsetSeconds: hasOffset ? Math.round(rawOffset * 4) / 4 : currentSession.sectionOffsetSeconds,
       ...(guideMode === 'dynamic' ? { guideMode: 'dynamic' } : {}),
+      ...(padKitId ? { padKitId } : {}),
       folder,
       manifestUrl,
       updatedAt: new Date().toISOString(),

@@ -215,4 +215,41 @@ assert.equal(gainAudioA.volume, 1, 'iOS gain path does not depend on media-eleme
 assert.equal(gainAudioB.volume, 1, 'both iOS media elements stay at physical volume 1');
 gainPlayer.dispose();
 
+// Pads de 90 s: antes del final, el mismo pad arranca desde el comienzo en el otro canal y se cruzan en
+// 3 s; el pad nunca pasa por el borde del archivo, donde AAC no empalma exacto.
+const loopAudioA = new FakeAudio('loop-A');
+const loopAudioB = new FakeAudio('loop-B');
+loopAudioA.duration = 90; loopAudioB.duration = 90;
+const loopClock = new FakeClock();
+const loopPlayer = new IndependentPadPlayer({
+  audioElements: [loopAudioA, loopAudioB],
+  outputMode: 'direct',
+  transitionMs: 5_000,
+  scheduler: loopClock.scheduler,
+});
+await loopPlayer.switchTo('https://pads.test/kit/C.m4a', 0.6);
+loopClock.advance(5_300);
+const [loopFirst, loopSecond] = loopAudioA.src ? [loopAudioA, loopAudioB] : [loopAudioB, loopAudioA];
+loopFirst.currentTime = 60;
+loopClock.advance(600);
+await Promise.resolve();
+assert.equal(loadedChannels(loopPlayer).length, 1, 'Lejos del final no hay cruce');
+loopFirst.currentTime = 86.8;
+loopClock.advance(300);
+await new Promise((resolve) => setTimeout(resolve, 0));
+assert.equal(loopSecond.src, 'https://pads.test/kit/C.m4a', 'El mismo pad arranca en el otro canal');
+assert.equal(loopSecond.paused, false);
+assert.equal(loopSecond.currentTime, 0, 'Desde el comienzo del archivo');
+loopClock.advance(1_500);
+assert.equal(audibleChannels(loopPlayer).length, 2, 'Se cruzan los dos canales');
+loopClock.advance(1_800);
+assert.equal(loadedChannels(loopPlayer).length, 1, 'Termina el cruce y se suelta el canal que salía');
+assert.equal(loopFirst.src, '', 'El canal que salía queda descargado antes de llegar a su borde');
+assert.ok(Math.abs(loopPlayer.snapshot().channels.find((channel) => channel.url).level - 0.6) < 0.001, 'Mismo volumen después del cruce');
+// Pedir el mismo pad (otro render) reutiliza el canal activo, no el que se fue.
+await loopPlayer.switchTo('https://pads.test/kit/C.m4a', 0.6);
+assert.equal(loopSecond.paused, false);
+loopPlayer.dispose();
+assert.equal(loopClock.timers.size, 0, 'Al cerrar no queda la vigilancia del bucle');
+
 console.log('Independent pad player lifecycle tests passed.');
