@@ -2,6 +2,13 @@ const DEFAULT_TRANSITION_MS = 5_000;
 const VOLUME_CHANGE_MS = 120;
 const SILENCE_EPSILON = 0.0001;
 const WATCHDOG_GRACE_MS = 150;
+// Bucle por fundido: unos segundos antes del final, el mismo pad arranca desde el comienzo en el otro canal y
+// se cruzan. El borde de un archivo AAC nunca empalma exacto (el códec no reconstruye igual el primer y el
+// último cuadro), así que el pad nunca pasa por él; `loop` del elemento queda solo de respaldo.
+const LOOP_CHECK_MS = 250;
+const LOOP_HANDOFF_LEAD_S = 3.6;
+const LOOP_HANDOFF_MS = 3_000;
+const LOOP_MIN_DURATION_S = 20;
 
 export type IndependentPadOutputMode = 'auto' | 'gain' | 'direct';
 
@@ -118,6 +125,8 @@ export class IndependentPadPlayer {
   private transition: PadTransition | null = null;
   private frameId: number | null = null;
   private watchdogId: number | null = null;
+  private loopWatchId: number | null = null;
+  private loopHandoffPending = false;
   private readonly resolvedOutputMode: 'gain' | 'direct' | 'hard-cut';
   private readonly handleVisibilityChange = () => {
     if (typeof document === 'undefined') return;
@@ -251,7 +260,9 @@ export class IndependentPadPlayer {
       return { status: 'started' };
     }
 
-    const reusedIndex = this.channels.findIndex((channel) => channel.url === url);
+    const reusedIndex = this.activeIndex !== null && this.channels[this.activeIndex].url === url
+      ? this.activeIndex
+      : this.channels.findIndex((channel) => channel.url === url);
     if (reusedIndex !== -1) {
       const index = reusedIndex as 0 | 1;
       const channel = this.channels[index];
@@ -271,6 +282,7 @@ export class IndependentPadPlayer {
           : [0, this.desiredVolume],
         wasPlaying ? VOLUME_CHANGE_MS : this.transitionMs,
       );
+      this.watchLoop();
       return { status: wasPlaying ? 'reused' : 'started' };
     }
 
@@ -295,7 +307,43 @@ export class IndependentPadPlayer {
         : [0, this.desiredVolume],
       this.transitionMs,
     );
+    this.watchLoop();
     return { status: 'started' };
+  }
+
+  private watchLoop() {
+    if (this.loopWatchId !== null || this.disposed || this.resolvedOutputMode === 'hard-cut') return;
+    this.loopWatchId = this.scheduler.setTimer(() => {
+      this.loopWatchId = null;
+      if (this.disposed || !this.desiredUrl) return;
+      void this.maybeLoopHandoff();
+      this.watchLoop();
+    }, LOOP_CHECK_MS);
+  }
+
+  private async maybeLoopHandoff() {
+    if (this.loopHandoffPending || this.transition || this.activeIndex === null) return;
+    const outgoing = this.channels[this.activeIndex], url = outgoing.url;
+    const duration = Number(outgoing.audio.duration);
+    if (!url || url !== this.desiredUrl || outgoing.audio.paused || !Number.isFinite(duration) || duration < LOOP_MIN_DURATION_S) return;
+    if (duration - outgoing.audio.currentTime > LOOP_HANDOFF_LEAD_S) return;
+    const incomingIndex: 0 | 1 = this.activeIndex === 0 ? 1 : 0, incoming = this.channels[incomingIndex];
+    const commandGeneration = this.commandGeneration;
+    this.loopHandoffPending = true;
+    try {
+      this.releaseChannel(incoming);
+      this.loadChannel(incoming, url);
+      const playResult = await this.playChannel(incoming, url, commandGeneration);
+      // Sin poder arrancar el otro canal (o con otro pedido en curso), sigue el bucle del elemento.
+      if (playResult.status !== 'started' || !this.isCurrentCommand(commandGeneration, url)) {
+        if (playResult.status === 'failed') this.releaseChannel(incoming);
+        return;
+      }
+      this.activeIndex = incomingIndex;
+      this.startTransition(incomingIndex === 0 ? [this.desiredVolume, 0] : [0, this.desiredVolume], LOOP_HANDOFF_MS);
+    } finally {
+      this.loopHandoffPending = false;
+    }
   }
 
   setVolume(volume: number) {
@@ -330,6 +378,7 @@ export class IndependentPadPlayer {
       document.removeEventListener('visibilitychange', this.handleVisibilityChange);
     }
     this.cancelTransition();
+    if (this.loopWatchId !== null) { this.scheduler.clearTimer(this.loopWatchId); this.loopWatchId = null; }
     this.releaseAll();
     const context = this.audioContext;
     this.audioContext = null;

@@ -187,6 +187,22 @@ export async function saveLiveDirectorGuideMode(params: {
   return readJsonResponse(response);
 }
 
+/** Guarda en la canción su kit de pads; null vuelve al kit del equipo. */
+export async function saveLiveDirectorPadKit(params: {
+  songId: string;
+  padKitId: string | null;
+}): Promise<LiveDirectorPersistedSession> {
+  const response = await fetchWithSessionRetry('/api/live-director-song-session', {
+    method: 'PATCH',
+    credentials: 'same-origin',
+    cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+
+  return readJsonResponse(response);
+}
+
 export async function fetchLiveDirectorSongSession(
   songId: string,
 ): Promise<LiveDirectorPersistedSession | null> {

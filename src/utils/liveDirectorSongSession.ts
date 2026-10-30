@@ -35,6 +35,8 @@ export type LiveDirectorPersistedSession = {
   reaperTiming?: { source: 'reaper-rpp'; projectName?: string; tempo: number; meter: string; unoSeconds: number | null; finAudioSeconds: number | null; appliedAt: string };
   /** «dynamic»: la guía grabada se silencia y la voz automática anuncia cada sección. */
   guideMode?: 'dynamic';
+  /** Kit de pads propio de la canción (src/utils/padKits.ts); sin él suena el kit del equipo. */
+  padKitId?: string;
   folder: string;
   manifestUrl: string;
   updatedAt: string;
@@ -231,6 +233,7 @@ export const normalizePersistedLiveDirectorSession = (
       ? { reaperTiming: { ...timing, tempo: Number(timing.tempo), appliedAt: String(timing.appliedAt || '') } }
       : {}),
     ...(sessionRecord.guideMode === 'dynamic' ? { guideMode: 'dynamic' as const } : {}),
+    ...(typeof sessionRecord.padKitId === 'string' && /^[a-z0-9-]{1,40}$/.test(sessionRecord.padKitId) ? { padKitId: sessionRecord.padKitId } : {}),
     folder:
       String(sessionRecord.folder || '').trim() || buildLiveDirectorSongFolder(songId, songTitle),
     manifestUrl: String(sessionRecord.manifestUrl || '').trim(),

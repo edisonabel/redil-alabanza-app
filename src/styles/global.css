@@ -151,6 +151,27 @@ html[data-live-director-active='true'] #layout-notification-bell {
   animation-delay: calc(var(--track-breath-delay) - 80ms);
 }
 
+/* Pad Player: la tonalidad que suena respira lento, como el pad. */
+.pad-player-wave span {
+  display: block;
+  width: 0.2rem;
+  border-radius: 999px;
+  background: rgb(165 243 252 / 0.85);
+  transform-origin: bottom;
+  animation: pad-player-breath 2.4s ease-in-out infinite;
+}
+.pad-player-wave span:nth-child(1) { height: 0.35rem; animation-delay: -0.6s; }
+.pad-player-wave span:nth-child(2) { height: 0.7rem; animation-delay: -1.2s; }
+.pad-player-wave span:nth-child(3) { height: 0.5rem; animation-delay: -1.8s; }
+.pad-player-wave span:nth-child(4) { height: 0.6rem; animation-delay: -0.3s; }
+@keyframes pad-player-breath {
+  0%, 100% { transform: scaleY(0.45); opacity: 0.55; }
+  50% { transform: scaleY(1); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pad-player-wave span { animation: none; }
+}
+
 .active-chord-section,
 .is-active-section {
   outline: 2px solid rgb(103 210 242 / 0.45);
