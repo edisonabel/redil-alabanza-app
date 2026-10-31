@@ -30,6 +30,7 @@ local SECTION_TYPES = {
   {label='Baja intensidad', cue='baja-intensidad', numbered=false},
   {label='Estribillo', cue='refrain', numbered=false},
   {label='Exhortación', cue='exhortation', numbered=false},
+  {label='Tag', cue='repetir', numbered=true},
   {label='Repetir', cue='repetir', numbered=false},
   {label='Outro', cue='outro', numbered=false},
   {label='Final', cue='ending', numbered=false},
@@ -183,7 +184,11 @@ local function next_name(kind, except_id)
   return kind.label
 end
 local function known(name)
-  for _, kind in ipairs(SECTION_TYPES) do if occurrence(name, kind.label) then return true end end
+  -- «Coro Final» suena con la voz de su tipo (Coro).
+  local without_final = name:gsub('%s+[Ff][Ii][Nn][Aa][Ll]$', '')
+  for _, kind in ipairs(SECTION_TYPES) do
+    if occurrence(name, kind.label) or occurrence(without_final, kind.label) then return true end
+  end
   return false
 end
 local function type_of(name)

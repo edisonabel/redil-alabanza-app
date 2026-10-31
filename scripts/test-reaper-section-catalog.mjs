@@ -98,4 +98,11 @@ const session = normalizePersistedLiveDirectorSession({
 const sections = resolveLiveDirectorSessionSections(session, []);
 assert.equal(sections.length, created.length);
 for (const section of sections) assert.ok(resolveGuideCue(section.name, keys), `${section.name} reaches no voice in Live Director`);
+// Tag está en el menú con su número (la voz en español de la biblioteca es «Repetir (Tag)») y Coro Final
+// dice «Coro», sin aviso de voz en el asistente; «Final» sola sigue siendo el final.
+assert.ok(sectionTypes.some(type => type.label === 'Tag' && type.key === 'repetir' && type.numbered), 'Tag en el menú de REAPER');
+for (const [name, voice] of [['Tag', 'repetir'], ['Tag 1', 'repetir'], ['tag 2', 'repetir'], ['Tag2', 'repetir'], ['Coro Final', 'coro'], ['coro final', 'coro'], ['Verso Final', 'verso'], ['Final', 'ending']]) {
+  assert.equal(resolveGuideCue(name, keys), voice, name);
+}
+assert.match(helper, /without_final/, 'El asistente reconoce «Coro Final»');
 console.log(`REAPER menus: ${sectionTypes.length} sections (${created.length} numbered names) and ${instructionTypes.length} instructions, all resolve to guide voices through RPP and Live Director.`);

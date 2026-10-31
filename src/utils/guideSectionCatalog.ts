@@ -36,13 +36,17 @@ export function buildGuideSectionCatalog(manifest: ReadonlyArray<GuideManifestAs
     const index = ORDER[kindOf(asset)].indexOf(asset.key);
     return (kindOf(asset) === 'instruction' ? 1000 : 0) + (index >= 0 ? index : 500);
   };
-  return [...bases].sort((a, b) => rank(a) - rank(b) || a.label.localeCompare(b.label, 'es')).map(asset => {
+  const types = [...bases].sort((a, b) => rank(a) - rank(b) || a.label.localeCompare(b.label, 'es')).map(asset => {
     const type: GuideSectionType = {
       key: asset.key, label: LABELS[asset.key] || asset.label, numbered: keys.has(`${asset.key}-1`), kind: kindOf(asset),
     };
     if (resolveGuideCue(type.label, keys) !== type.key) throw new Error(`“${type.label}” no llega a la voz ${type.key}.`);
     return type;
   });
+  // Tag: la voz en español de la biblioteca es «Repetir (Tag)»; en el menú va con el nombre que usa la banda.
+  const repeat = types.findIndex(type => type.key === 'repetir');
+  if (repeat >= 0 && resolveGuideCue('Tag', keys) === 'repetir') types.splice(repeat, 0, { key: 'repetir', label: 'Tag', numbered: true, kind: 'section' });
+  return types;
 }
 
 export const REAPER_CATALOG_BEGIN = '-- BEGIN ALABANZA_SECCIONES';

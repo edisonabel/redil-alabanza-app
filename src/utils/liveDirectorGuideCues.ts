@@ -16,7 +16,8 @@ export function resolveGuideCue(name: string, available: ReadonlySet<string>): s
     if (normalized === from || normalized.startsWith(from + ' ')) { normalized = to + normalized.slice(from.length); break; }
   }
   const key = normalized.replaceAll(' ', '-');
-  const base = key.replace(/-\d+$/, '');
+  // «Coro Final» es un coro: dice «Coro» (no hay voz para el apellido).
+  const base = key.replace(/-\d+$/, '').replace(/-final$/, '');
   // Todos los coros dicen «Coro», sin número.
   if (base === 'coro' && available.has(base)) return base;
   if (available.has(key)) return key;
