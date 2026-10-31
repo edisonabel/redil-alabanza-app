@@ -50,8 +50,9 @@ export function writeDevicePadKit(id: string) {
 }
 
 // El pad entra solo con la secuencia, muy suave. Quien lo apaga lo deja apagado en este equipo.
-const AUTO_KEY = 'live-director:pad-auto', VOLUME_KEY = 'live-director:pad-volume';
-export const DEFAULT_PAD_VOLUME = 0.12;
+const AUTO_KEY = 'live-director:pad-auto', VOLUME_KEY = 'live-director:pad-volume:v2';
+// Apenas sobre la primera raya del fader.
+export const DEFAULT_PAD_VOLUME = 0.06;
 export function readPadAuto(): boolean {
   try { return localStorage.getItem(AUTO_KEY) !== 'off'; } catch { return true; }
 }

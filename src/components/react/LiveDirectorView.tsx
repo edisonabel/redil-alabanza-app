@@ -6198,7 +6198,7 @@ export function LiveDirectorView({
                         settingsLabel: 'Elegir guía', settingsTitle: guideDynamic ? 'Guía dinámica: voz automática en cada sección' : 'Guía grabada · cambiar a guía dinámica',
                         settingsShortcut: '', settingsBadge: guideDynamic ? 'AUTO' : undefined,
                       } : isInternalPadTrack ? {
-                        settingsLabel: 'Abrir Pad Player', settingsTitle: `Pad Player · ${activePadKit.name} (Shift+P)`, settingsShortcut: 'Shift+P', settingsBadge: padAutoEnabled ? 'AUTO' : undefined,
+                        settingsLabel: 'Abrir Pad Player', settingsTitle: `Pad Player · ${activePadKit.name} (Shift+P)`, settingsShortcut: 'Shift+P',
                       } : {})}
                     />
                   </div>

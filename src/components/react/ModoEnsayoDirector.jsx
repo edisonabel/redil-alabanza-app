@@ -385,7 +385,6 @@ export default function ModoEnsayoDirector({
   const [activeSongIndex, setActiveSongIndex] = useState(0);
   const [autoPlayRequest, setAutoPlayRequest] = useState(null);
   const [downloadStatus, setDownloadStatus] = useState({ active: false, progress: 0, total: 0, done: false });
-  const [padVolume, setPadVolume] = useState(0.42);
   const [sessionOverrides, setSessionOverrides] = useState({});
   const [mixPermission, setMixPermission] = useState({ eventId: '', allowed: false });
   const canSaveEventMix = mixPermission.eventId === eventId && mixPermission.allowed;
@@ -1224,8 +1223,6 @@ export default function ModoEnsayoDirector({
         liveBroadcastState={broadcastState}
         onToggleLiveBroadcast={toggleBroadcasting}
         sessionPreparationPending={isActiveEventMixLoading}
-        internalPadVolume={padVolume}
-        onInternalPadVolumeChange={setPadVolume}
         onPlaybackSnapshot={handlePlaybackSnapshot}
         onSessionPersisted={handleSessionPersisted}
         onEventMixChange={hasEventMixContext && !activeSongIsManual && activeSongHasSequence ? handleEventMixChange : undefined}
