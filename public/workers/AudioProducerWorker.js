@@ -2064,7 +2064,7 @@ class ProducerTrackPipeline {
     this.preWarmedDecoderConfig = null;
     this.preWarmedNextFileStart = 0;
     this.preWarmedDurationSeconds = undefined;
-    this.initializationChunk = null;
+    this.initializationChunks = [];
     this.seekStandbyDemuxerPromise = null;
     this.nextFetchChunkBytes = null;
     this.readyWatchdogId = 0;
@@ -2129,7 +2129,7 @@ class ProducerTrackPipeline {
     this.preWarmedDecoderConfig = null;
     this.preWarmedNextFileStart = 0;
     this.preWarmedDurationSeconds = undefined;
-    this.initializationChunk = null;
+    this.initializationChunks = [];
     this.seekStandbyDemuxerPromise = null;
     this.ready = false;
     this.normalReadyPosted = false;
@@ -2169,6 +2169,26 @@ class ProducerTrackPipeline {
     this.decoder = null;
   }
 
+  // Every chunk read until the MP4 index is complete. The index of a long song
+  // (about 5.7 min or more) does not fit in the first 64 KB, and in a file that
+  // is not faststart it is not even contiguous with the head.
+  rememberInitializationChunk(chunk) {
+    if (
+      !this.track.retainExtractedSamples ||
+      this.demuxer?.trackReady ||
+      chunk.bytes.byteLength === 0 ||
+      this.initializationChunks.some((known) => known.byteStart === chunk.byteStart)
+    ) {
+      return;
+    }
+    this.initializationChunks.push({
+      bytes: chunk.bytes.slice(),
+      byteStart: chunk.byteStart,
+      nextByteStart: chunk.nextByteStart,
+      endOfFile: chunk.endOfFile,
+    });
+  }
+
   async ensureReady(headersOnly = false) {
     this.assertAlive();
     this.assertSupportedFormat(null);
@@ -2178,30 +2198,17 @@ class ProducerTrackPipeline {
       const canReuseInitializationChunk =
         !this.demuxer &&
         this.nextFileStart === 0 &&
-        this.initializationChunk &&
-        this.initializationChunk.bytes;
+        this.initializationChunks.length > 0;
       const chunk = canReuseInitializationChunk
         ? {
-          ...this.initializationChunk,
-          bytes: this.initializationChunk.bytes.slice(),
+          ...this.initializationChunks[0],
+          bytes: this.initializationChunks[0].bytes.slice(),
         }
         : await this.fetcher.fetchChunk(this.nextFileStart);
       this.assertAlive();
       this.assertSupportedFormat(chunk.bytes, chunk.byteStart);
 
-      if (
-        this.track.retainExtractedSamples &&
-        !this.initializationChunk &&
-        chunk.byteStart === 0 &&
-        chunk.bytes.byteLength > 0
-      ) {
-        this.initializationChunk = {
-          bytes: chunk.bytes.slice(),
-          byteStart: chunk.byteStart,
-          nextByteStart: chunk.nextByteStart,
-          endOfFile: chunk.endOfFile,
-        };
-      }
+      this.rememberInitializationChunk(chunk);
 
       if (!this.demuxer) {
         const mp4box = await loadMp4Box();
@@ -2314,18 +2321,7 @@ class ProducerTrackPipeline {
     const chunk = await this.fetcher.fetchChunk(0);
     this.assertAlive();
     this.assertSupportedFormat(chunk.bytes, chunk.byteStart);
-    if (
-      this.track.retainExtractedSamples &&
-      !this.initializationChunk &&
-      chunk.bytes.byteLength > 0
-    ) {
-      this.initializationChunk = {
-        bytes: chunk.bytes.slice(),
-        byteStart: chunk.byteStart,
-        nextByteStart: chunk.nextByteStart,
-        endOfFile: chunk.endOfFile,
-      };
-    }
+    this.rememberInitializationChunk(chunk);
 
     if (!this.demuxer) {
       const mp4box = await loadMp4Box();
@@ -2893,29 +2889,30 @@ class ProducerTrackPipeline {
   }
 
   ensureExactSeekStandbyDemuxer() {
-    if (this.seekStandbyDemuxerPromise || !this.initializationChunk) {
+    if (this.seekStandbyDemuxerPromise || !this.initializationChunks.length || !this.demuxer?.trackReady) {
       return this.seekStandbyDemuxerPromise;
     }
 
-    const initializationChunk = {
-      ...this.initializationChunk,
-      bytes: this.initializationChunk.bytes.slice(),
-    };
+    const initializationChunks = this.initializationChunks.map((chunk) => ({ ...chunk, bytes: chunk.bytes.slice() }));
     this.seekStandbyDemuxerPromise = (async () => {
       const mp4box = await loadMp4Box();
       this.assertAlive();
       const demuxer = new Mp4TrackDemuxer(mp4box, this.track, {
         retainExtractedSamples: true,
       });
-      const result = demuxer.append(initializationChunk.bytes, initializationChunk.byteStart);
+      let result = null, decoderConfig = null;
+      for (const chunk of initializationChunks) {
+        result = demuxer.append(chunk.bytes, chunk.byteStart);
+        decoderConfig = result.decoderConfig || decoderConfig;
+      }
       if (!demuxer.trackReady) {
         throw new Error(`Unable to prewarm exact-seek MP4 index for ${this.track.url}`);
       }
 
       return {
         demuxer,
-        decoderConfig: result.decoderConfig || this.decoderConfig,
-        nextFileStart: this.resolveNextFileStart(result, initializationChunk),
+        decoderConfig: decoderConfig || this.decoderConfig,
+        nextFileStart: this.resolveNextFileStart(result, initializationChunks[initializationChunks.length - 1]),
       };
     })().catch((error) => {
       this.seekStandbyDemuxerPromise = null;
@@ -2936,9 +2933,21 @@ class ProducerTrackPipeline {
       return;
     }
 
-    const standby = await standbyPromise;
+    let standby = null;
+    try {
+      standby = await standbyPromise;
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      // The prewarm is only a speed-up: a failure must not take the session down.
+      console.warn('[AudioProducer] Exact-seek prewarm failed; rebuilding the demuxer.', error);
+    }
     this.assertAlive();
     this.seekStandbyDemuxerPromise = null;
+    if (!standby) {
+      this.resetDemuxerForHardSeek();
+      await this.ensureReady(true);
+      return;
+    }
     const previousDemuxer = this.demuxer;
     this.demuxer = standby.demuxer;
     this.decoderConfig = standby.decoderConfig || this.decoderConfig;

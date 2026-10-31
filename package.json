@@ -113,7 +113,8 @@
     "test:live-jump-count": "node scripts/test-live-director-jump-count.mjs",
     "test:live-guide-counts": "node scripts/test-live-director-guide-counts.mjs",
     "test:live-silent-head-switch": "node scripts/test-live-director-silent-head-switch-browser.mjs",
-    "test:live-pad-player-ui": "node scripts/test-live-director-pad-player-browser.mjs"
+    "test:live-pad-player-ui": "node scripts/test-live-director-pad-player-browser.mjs",
+    "test:live-long-index-seek": "node scripts/test-live-director-long-index-seek-browser.mjs"
   },
   "dependencies": {
     "@astrojs/netlify": "8.2.1",
