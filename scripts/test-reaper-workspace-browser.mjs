@@ -70,7 +70,10 @@ try{
  await page.evaluate(()=>[...document.querySelectorAll('button')].find(button=>button.textContent.includes('Ya guardé mi RPP'))?.click());
  const upload=await page.$('input[type=file]');
  await upload.uploadFile(resolve('.lab/results/reaper-prepared-fixture.RPP'));
- await page.waitForFunction(()=>document.body.textContent.includes('Hay puntos por revisar'));
+ // Si no se puede aplicar, lo dice y da el motivo (aquí, los marcadores sin confirmar del borrador).
+ await page.waitForFunction(()=>document.body.textContent.includes('Todavía no se puede aplicar'));
+ const blocked=await page.$eval('[data-reaper-apply-blocked]',el=>el.textContent);
+ assert.match(blocked,/No se puede aplicar porque:/);assert.match(blocked,/marcadores por confirmar/);
  await page.click('summary');
  assert.equal(await page.$$eval('tbody tr',rows=>rows.length),2);
  await page.screenshot({path:'.lab/results/reaper-preparation-desktop.png',fullPage:false});

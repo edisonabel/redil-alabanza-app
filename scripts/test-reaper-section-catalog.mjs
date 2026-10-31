@@ -104,5 +104,8 @@ assert.ok(sectionTypes.some(type => type.label === 'Tag' && type.key === 'repeti
 for (const [name, voice] of [['Tag', 'repetir'], ['Tag 1', 'repetir'], ['tag 2', 'repetir'], ['Tag2', 'repetir'], ['Coro Final', 'coro'], ['coro final', 'coro'], ['Verso Final', 'verso'], ['Final', 'ending']]) {
   assert.equal(resolveGuideCue(name, keys), voice, name);
 }
-assert.match(helper, /without_final/, 'El asistente reconoce «Coro Final»');
+// Nombres ya guardados en canciones, escritos de otras formas.
+for (const [name, voice] of [['Verso 1a', 'verso-1'], ['Verso 1b', 'verso-1'], ['Verso 2a', 'verso-2'], ['Verso 2b', 'verso-2'], ['Repeticion', 'repetir'], ['Repetición', 'repetir'],
+  ['Puente b', 'puente'], ['Puente c', 'puente'], ['Verso 1 y 2', 'verso-1'], ['Coro A 1', 'coro'], ['Coro B 3', 'coro'], ['Estrofa 1', 'verso-1'], ['Estrofa 3', 'verso-3'],
+  ['Sube intensidad', 'build'], ['A capella', 'a-capella'], ['Hits', 'hits']]) assert.equal(resolveGuideCue(name, keys), voice, name);
 console.log(`REAPER menus: ${sectionTypes.length} sections (${created.length} numbered names) and ${instructionTypes.length} instructions, all resolve to guide voices through RPP and Live Director.`);

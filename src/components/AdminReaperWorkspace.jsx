@@ -233,7 +233,7 @@ export default function AdminReaperWorkspace({ songs = [], isAdmin = false }) {
     if (!selectedSong || !analysis || !activeProjectKey || busy) return;
     const { hardBlockers, audioChecks } = splitApplyIssues(analysis.review?.issues);
     if (hardBlockers.length) {
-      setFeedback({ kind: 'error', text: `Antes de aplicar, corrige en REAPER: ${hardBlockers.map((issue) => issue.message).join(' ')}` });
+      setFeedback({ kind: 'error', text: `No se puede aplicar porque: ${hardBlockers.map((issue) => issue.message).join(' ')}` });
       return;
     }
     const sections = analysis.markers.filter((marker) => !isAnchor(marker.name));
@@ -372,7 +372,7 @@ export default function AdminReaperWorkspace({ songs = [], isAdmin = false }) {
             </div>
             {analysis.review && <div className="mt-3 space-y-3">
               <p className={`rounded-lg border px-3 py-2 text-xs font-semibold ${analysis.review.status === 'checks-passed' ? 'border-emerald-500/25 bg-emerald-500/10 text-content' : 'border-amber-500/25 bg-amber-500/10 text-content'}`} role="status">
-                {analysis.review.appliedToPlayback ? 'Mapa aplicado a la sesión multitrack.' : analysis.review.status === 'checks-passed' ? 'Comprobaciones estructurales correctas. Revisa el mapa y aplícalo cuando esté listo.' : 'Hay puntos por revisar en REAPER.'}
+                {analysis.review.appliedToPlayback ? 'Mapa aplicado a la sesión multitrack.' : analysis.review.status === 'checks-passed' ? 'El RPP está correcto. Aplícalo cuando quieras.' : splitApplyIssues(analysis.review.issues).hardBlockers.length ? 'Todavía no se puede aplicar: abajo está el motivo.' : 'Se puede aplicar. Hay avisos por si quieres revisarlos.'}
               </p>
               {!!analysis.review.issues.length && <ul className="list-disc space-y-1 pl-5 text-xs leading-relaxed text-content-muted">{analysis.review.issues.map((issue, index) => <li key={`${issue.code}-${index}`}>{issue.message}</li>)}</ul>}
               {!!analysis.review.comparisons.length && <details className="rounded-lg border border-border bg-surface/70 p-3">
@@ -411,8 +411,16 @@ export default function AdminReaperWorkspace({ songs = [], isAdmin = false }) {
               </div>}
               {/digno\s+y\s+santo/i.test(String(selectedSong?.titulo || '')) && <p className="mt-2 text-xs font-medium text-content-muted">Según tu indicación, <strong>Outro</strong> queda excluido y <strong>Final</strong> se conserva.</p>}
               {splitApplyIssues(analysis.review?.issues).hardBlockers.length > 0
-                ? <p className="mt-2 text-xs font-semibold text-amber-700">El botón se habilitará cuando corrijas en REAPER: {splitApplyIssues(analysis.review?.issues).hardBlockers.map((issue) => issue.message).join(' ')}</p>
-                : splitApplyIssues(analysis.review?.issues).audioChecks.length > 0 && <p className="mt-2 text-xs font-medium text-amber-700">Los avisos de audio no impiden aplicar: si marcaste los tiempos sobre los mismos stems de la canción, pulsa «Aplicar de todas formas».</p>}
+                ? <div data-reaper-apply-blocked="true" role="alert" className="mt-3 rounded-lg border border-red-500/35 bg-red-500/10 px-3 py-2 text-xs text-content">
+                    <p className="font-bold">No se puede aplicar porque:</p>
+                    <ul className="mt-1 list-disc space-y-1 pl-4 leading-relaxed">{splitApplyIssues(analysis.review?.issues).hardBlockers.map((issue, index) => <li key={`${issue.code}-${index}`}>{issue.message}</li>)}</ul>
+                    <p className="mt-1.5 text-content-muted">Corrígelo en REAPER, guarda y vuelve a subir el RPP.</p>
+                  </div>
+                : !analysis.markers.some((marker) => !isAnchor(marker.name) && !excludedMarkerIds.includes(marker.id))
+                  ? <p role="alert" className="mt-2 text-xs font-semibold text-red-600">No se puede aplicar porque no hay ninguna sección marcada.</p>
+                  : appliedProjectKey === activeProjectKey
+                    ? <p className="mt-2 text-xs font-medium text-emerald-700">Este RPP ya está aplicado. Para cambiar algo, corrígelo en REAPER y sube el RPP de nuevo.</p>
+                    : splitApplyIssues(analysis.review?.issues).audioChecks.length > 0 && <p className="mt-2 text-xs font-medium text-amber-700">Los avisos de audio no impiden aplicar: si marcaste los tiempos sobre los mismos stems de la canción, pulsa «Aplicar de todas formas».</p>}
             </div>}
           </div>}
 

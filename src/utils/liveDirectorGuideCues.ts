@@ -4,14 +4,20 @@ const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u0
 const aliases: Record<string, string> = {
   chorus: 'coro', verse: 'verso', bridge: 'puente', 'pre chorus': 'pre coro', 'post chorus': 'post coro',
   interlude: 'interludio', ending: 'ending', final: 'ending', outro: 'outro', estribillo: 'refrain',
-  exhortacion: 'exhortation', precoro: 'pre coro', postcoro: 'post coro', tag: 'repetir', repetir: 'repetir', 'ultima vez': 'last time', sostener: 'hold', breakdown: 'baja intensidad',
+  exhortacion: 'exhortation', precoro: 'pre coro', postcoro: 'post coro', tag: 'repetir', repetir: 'repetir', repeticion: 'repetir', estrofa: 'verso', 'ultima vez': 'last time', sostener: 'hold', breakdown: 'baja intensidad',
   // Spanish names of the instruction voices (Guide Cues).
   'sube intensidad': 'build', pausa: 'break', corte: 'break', 'entra bateria': 'drums in', 'toda la banda': 'all in',
   'sube tono': 'key change up', 'baja tono': 'key change down', suave: 'softly', 'a capela': 'a capella',
   'final grande': 'big ending', teclado: 'keys', bajo: 'bass', bateria: 'drums', guitarra: 'guitar',
 };
+// Formas de escribir que nombran la misma sección: «Verso 1a» y «Verso 1 y 2» son Verso 1; «Coro A 1» es
+// Coro 1; «Puente b» es Puente.
+const tidySectionForm = (value: string) => value
+  .replace(/\b(\d+)[a-z]\b/g, '$1')
+  .replace(/\b(\d+)(?: y)? \d+$/, '$1')
+  .replace(/ [a-z](?= \d+$|$)/, '');
 export function resolveGuideCue(name: string, available: ReadonlySet<string>): string | null {
-  let normalized = normalize(name);
+  let normalized = tidySectionForm(normalize(name));
   for (const [from, to] of Object.entries(aliases).sort((a, b) => b[0].length - a[0].length)) {
     if (normalized === from || normalized.startsWith(from + ' ')) { normalized = to + normalized.slice(from.length); break; }
   }
