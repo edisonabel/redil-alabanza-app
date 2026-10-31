@@ -24,6 +24,8 @@ await page.route('https://stems.alabanzaredilestadio.com/pads/**', route => {
     ...(range ? { 'content-range': `bytes ${start}-${end}/${body.length}` } : {}) } });
 });
 try {
+  // La pantalla de ensayo no le impone otro volumen al pad: lo decide el mezclador.
+  assert.doesNotMatch(readFileSync('src/components/react/ModoEnsayoDirector.jsx', 'utf8'), /internalPadVolume/);
   assert.ok(existsSync('.lab/pad-kits/motion-pads-2/E.m4a'), 'Arma primero el kit: node scripts/build-pad-kit.mjs <carpeta> motion-pads-2');
   await page.goto(`${LAB}/`);
   await page.waitForFunction(() => window.__streamingEngineDumpOwner?.getTracks().length > 0 && !document.querySelector('[data-live-director-control="play-pause"]')?.disabled, null, { timeout: 120000 });
@@ -101,7 +103,9 @@ try {
   assert.ok(await pressed(false), 'Antes de tocar, el pad está apagado');
   await play.click();
   await isOn();
-  assert.equal(await desktop.getByRole('button', { name: 'Abrir Pad Player' }).first().getAttribute('data-channel-settings-badge'), 'AUTO');
+  assert.equal(await desktop.getByRole('button', { name: 'Abrir Pad Player' }).first().getAttribute('data-channel-settings-badge'), null, 'El canal dice solo «Pad tonal»: AUTO está en el Pad Player');
+  const padFader = desktop.getByRole('slider', { name: 'Volume for Pad tonal' }).first();
+  assert.ok(Math.abs(Number(await padFader.getAttribute('aria-valuenow')) - 6) <= 1 || Math.abs(Number(await padFader.getAttribute('aria-valuenow')) - 0.06) <= 0.01, `Volumen inicial muy bajo: ${await padFader.getAttribute('aria-valuenow')}`);
   await play.click();
   assert.ok(await pressed(true), 'Pausar la secuencia no corta el pad');
   await desktop.locator('[data-live-director-control="pad"]').click();
