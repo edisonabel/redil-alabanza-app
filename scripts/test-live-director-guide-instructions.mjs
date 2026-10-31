@@ -42,7 +42,8 @@ const sectionVoice = started.at(-1);
 player.updateInstructions([{ id: 'c1', name: 'Sube intensidad', startSec: 10 }], 0, 120);
 const instructionVoice = started.at(-1);
 assert.notEqual(instructionVoice, sectionVoice);
-assert.equal(instructionVoice.when, sectionVoice.when, 'Instruction uses the section-name lead');
+// Caería junto al nombre de la sección: se adelanta para no encimarse.
+assert.ok(instructionVoice.when + 1.2 < sectionVoice.when, `Instruction moves ahead of the section name: ${instructionVoice.when} / ${sectionVoice.when}`);
 assert.equal(instructionVoice.target, player.gain, 'Instruction goes through the same guide gain and route');
 assert.equal(ducks.length, 1, 'Instructions do not open a recorded-guide duck window');
 
