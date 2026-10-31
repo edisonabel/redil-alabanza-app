@@ -94,6 +94,39 @@ try {
   await desktop.keyboard.press('Shift+P');
   assert.equal(await desktop.getByRole('dialog', { name: 'Pad Player' }).count(), 0);
 
+  // Pad automático: entra solo con la secuencia, a volumen muy bajo. Apagarlo se recuerda; AUTO lo devuelve.
+  const pressed = target => desktop.locator('[data-live-director-control="pad"]').getAttribute('aria-pressed') .then(value => value === String(target));
+  const play = desktop.locator('[data-live-director-control="play-pause"]');
+  const isOn = () => desktop.waitForFunction(() => document.querySelector('[data-live-director-control="pad"]')?.getAttribute('aria-pressed') === 'true', null, { timeout: 8000 });
+  assert.ok(await pressed(false), 'Antes de tocar, el pad está apagado');
+  await play.click();
+  await isOn();
+  assert.equal(await desktop.getByRole('button', { name: 'Abrir Pad Player' }).first().getAttribute('data-channel-settings-badge'), 'AUTO');
+  await play.click();
+  assert.ok(await pressed(true), 'Pausar la secuencia no corta el pad');
+  await desktop.locator('[data-live-director-control="pad"]').click();
+  assert.ok(await pressed(false));
+  assert.equal(await desktop.evaluate(() => localStorage.getItem('live-director:pad-auto')), 'off');
+  await play.click();
+  await desktop.waitForTimeout(800);
+  assert.ok(await pressed(false), 'Apagado queda apagado al volver a tocar');
+  await play.click();
+  await desktop.reload();
+  await desktop.waitForFunction(() => window.__streamingEngineDumpOwner?.getTracks().length > 0 && !document.querySelector('[data-live-director-control="play-pause"]')?.disabled, null, { timeout: 120000 });
+  await play.click();
+  await desktop.waitForTimeout(800);
+  assert.ok(await pressed(false), 'También después de recargar');
+  await play.click();
+  await desktop.getByRole('button', { name: 'Abrir Pad Player' }).first().click();
+  const panel = desktop.getByRole('dialog', { name: 'Pad Player' }), auto = panel.locator('[data-pad-player-control="auto"]');
+  assert.equal(await auto.getAttribute('aria-pressed'), 'false');
+  await auto.click();
+  assert.equal(await auto.getAttribute('aria-pressed'), 'true');
+  await desktop.keyboard.press('Escape');
+  await play.click();
+  await isOn();
+  await play.click();
+
   assert.deepEqual(errors, []);
   console.log('pad player: kit del equipo y de la canción, LINK, tonalidad a mano, Shift+P y mantener PAD passed');
 } catch (error) { await page.screenshot({ path: '.lab/results/pad-player-failure.png' }); throw error; }

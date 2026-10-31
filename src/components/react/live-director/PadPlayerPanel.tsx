@@ -19,6 +19,8 @@ type Props = {
   selectedKey: PadKey | null;
   playing: boolean;
   notice: string;
+  autoEnabled: boolean;
+  onToggleAuto: () => void;
   onChooseDeviceKit: (id: string) => void;
   onChooseSongKit: (id: string | null) => void;
   onToggleLink: () => void;
@@ -99,6 +101,11 @@ function PadPlayerPanel(props: Props) {
             <span>LINK</span>
             {linked && songKey && <span className="truncate font-medium normal-case tracking-normal text-emerald-200/60">· {songKey}</span>}
           </button>
+          <button type="button" onClick={props.onToggleAuto} aria-pressed={props.autoEnabled} data-pad-player-control="auto"
+            title={props.autoEnabled ? 'El pad entra solo y muy suave al tocar la secuencia' : 'El pad solo suena si lo prendes'}
+            className={`ui-pressable-soft flex w-16 shrink-0 items-center justify-center rounded-[1rem] border text-[0.72rem] font-semibold tracking-[0.14em] ${props.autoEnabled
+              ? 'border-cyan-300/40 bg-cyan-300/[0.12] text-cyan-100'
+              : 'border-white/10 bg-black/30 text-white/40 hover:text-white/65'}`}>AUTO</button>
           <button type="button" onClick={props.onClose} aria-label="Cerrar Pad Player"
             className="ui-pressable-soft flex w-12 shrink-0 items-center justify-center rounded-[1rem] border border-white/10 bg-black/30 text-white/70 hover:text-white">
             <X className="h-5 w-5" />
