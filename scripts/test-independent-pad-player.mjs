@@ -252,4 +252,23 @@ assert.equal(loopSecond.paused, false);
 loopPlayer.dispose();
 assert.equal(loopClock.timers.size, 0, 'Al cerrar no queda la vigilancia del bucle');
 
+// Cruce de potencia constante: a la mitad, los dos pads suman la misma potencia (sin bajón) y la entrada
+// arranca sin esquina. Lo que cambia poco (mover el fader) sigue siendo inmediato.
+const curveAudioA = new FakeAudio('curve-A');
+const curveAudioB = new FakeAudio('curve-B');
+const curveClock = new FakeClock();
+const curvePlayer = new IndependentPadPlayer({ audioElements: [curveAudioA, curveAudioB], outputMode: 'direct', transitionMs: 6_000, scheduler: curveClock.scheduler });
+await curvePlayer.switchTo('https://pads.test/kit/C.m4a', 0.5);
+curveClock.advance(1_000);
+const earlyLevel = audibleChannels(curvePlayer)[0].level;
+assert.ok(earlyLevel > 0.5 * (1 / 6) && earlyLevel < 0.5, `La entrada sube suave: ${earlyLevel}`);
+curveClock.advance(5_300);
+await curvePlayer.switchTo('https://pads.test/kit/G.m4a', 0.5);
+curveClock.advance(3_000);
+const mid = curvePlayer.snapshot().channels.map((channel) => channel.level);
+assert.ok(Math.abs((mid[0] ** 2 + mid[1] ** 2) - 0.25) < 0.01, `Sin bajón a la mitad del cruce: ${mid}`);
+curveClock.advance(3_300);
+assert.equal(loadedChannels(curvePlayer).length, 1);
+curvePlayer.dispose();
+
 console.log('Independent pad player lifecycle tests passed.');

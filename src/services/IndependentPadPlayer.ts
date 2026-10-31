@@ -72,6 +72,17 @@ const clamp = (value: number, minimum = 0, maximum = 1) => (
   Math.min(maximum, Math.max(minimum, Number.isFinite(value) ? value : minimum))
 );
 
+// Fundidos de potencia constante: dos pads distintos sumados no bajan a la mitad del cruce, y una entrada
+// o salida sola se siente como una respiración, sin esquina al empezar ni al terminar.
+const EQUAL_POWER_MIN_MS = 500;
+const CURVE_POINTS = 48;
+const fadeLevel = (start: number, target: number, progress: number, durationMs: number) => {
+  if (durationMs < EQUAL_POWER_MIN_MS) return start + ((target - start) * progress);
+  return target >= start
+    ? start + ((target - start) * Math.sin(progress * Math.PI / 2))
+    : target + ((start - target) * Math.cos(progress * Math.PI / 2));
+};
+
 const defaultScheduler = (): PadScheduler => ({
   now: () => performance.now(),
   requestFrame: (callback) => window.requestAnimationFrame(callback),
@@ -498,7 +509,21 @@ export class IndependentPadPlayer {
         if (!gainParam) continue;
         gainParam.cancelScheduledValues(audioTime);
         gainParam.setValueAtTime(channel.level, audioTime);
-        gainParam.linearRampToValueAtTime(safeTargets[index], audioTime + safeDurationMs / 1000);
+        let curved = false;
+        if (safeDurationMs >= EQUAL_POWER_MIN_MS && typeof gainParam.setValueCurveAtTime === 'function') {
+          const curve = new Float32Array(CURVE_POINTS);
+          for (let point = 0; point < CURVE_POINTS; point += 1) {
+            curve[point] = fadeLevel(channel.level, safeTargets[index], point / (CURVE_POINTS - 1), safeDurationMs);
+          }
+          try {
+            // Apenas después del valor fijo: una curva no puede empezar en el mismo instante que otro evento.
+            gainParam.setValueCurveAtTime(curve, audioTime + 0.005, safeDurationMs / 1000);
+            curved = true;
+          } catch {
+            // Sin curva, la rampa lineal sigue llegando al mismo nivel.
+          }
+        }
+        if (!curved) gainParam.linearRampToValueAtTime(safeTargets[index], audioTime + safeDurationMs / 1000);
       }
     } else {
       const tick = () => {
@@ -528,7 +553,7 @@ export class IndependentPadPlayer {
     for (let index = 0; index < this.channels.length; index += 1) {
       const start = activeTransition.startLevels[index];
       const target = activeTransition.targetLevels[index];
-      const level = start + ((target - start) * progress);
+      const level = fadeLevel(start, target, progress, activeTransition.durationMs);
       this.channels[index].level = clamp(level);
       if (this.resolvedOutputMode !== 'gain') {
         this.applyLevel(this.channels[index], level);

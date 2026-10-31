@@ -125,8 +125,8 @@ const requireEventAccess = async (userId: string, eventId: string, write = false
   let access;
   try { access = await getLiveDirectorEventAccess(serviceRoleClient, userId, eventId); }
   catch { throw new ApiSecurityError('No se pudo validar el acceso al evento.', 503); }
-  if (!access.canRead || (write && !access.canWrite)) {
-    throw new ApiSecurityError(write ? 'Solo el director musical de este evento y el administrador pueden guardar cambios.' : 'Debes estar asignado a este evento.', 403);
+  if (!access.canRead || (write && !access.canWriteMix)) {
+    throw new ApiSecurityError(write ? 'Solo el líder de alabanza y el director musical de este evento, o un administrador, pueden guardar los volúmenes.' : 'Debes estar asignado a este evento.', 403);
   }
   return access;
 };
@@ -216,7 +216,7 @@ export const GET: APIRoute = async ({ cookies, url }) => {
       if (!isUuid(eventId)) throw new ApiSecurityError('Evento inválido.', 400);
       const { user } = await getAuthenticatedDatabase(cookies);
       const access = await requireEventAccess(user.id, eventId);
-      return json({ canEdit: access.canWrite });
+      return json({ canEdit: access.canWriteMix });
     }
     const { eventId, songId } = readContext(url.searchParams);
     const { user, database } = await getAuthenticatedDatabase(cookies);
@@ -224,7 +224,7 @@ export const GET: APIRoute = async ({ cookies, url }) => {
       requireEventAccess(user.id, eventId),
       requireEventPlaylistSong(database, eventId, songId),
     ]);
-    return json({ mix: await readMix(eventId, songId), canEdit: access.canWrite });
+    return json({ mix: await readMix(eventId, songId), canEdit: access.canWriteMix });
   } catch (error) {
     console.error('[live-director-event-mix] GET failed:', error);
     return securityErrorResponse(error);

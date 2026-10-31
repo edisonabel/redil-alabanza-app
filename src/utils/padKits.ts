@@ -48,3 +48,22 @@ export function readDevicePadKit(): string {
 export function writeDevicePadKit(id: string) {
   try { localStorage.setItem(DEVICE_KIT_KEY, id); } catch { /* sin almacenamiento: vale para esta sesión */ }
 }
+
+// El pad entra solo con la secuencia, muy suave. Quien lo apaga lo deja apagado en este equipo.
+const AUTO_KEY = 'live-director:pad-auto', VOLUME_KEY = 'live-director:pad-volume';
+export const DEFAULT_PAD_VOLUME = 0.12;
+export function readPadAuto(): boolean {
+  try { return localStorage.getItem(AUTO_KEY) !== 'off'; } catch { return true; }
+}
+export function writePadAuto(enabled: boolean) {
+  try { localStorage.setItem(AUTO_KEY, enabled ? 'on' : 'off'); } catch { /* vale para esta sesión */ }
+}
+export function readPadVolume(): number {
+  try {
+    const raw = localStorage.getItem(VOLUME_KEY), value = raw === null ? Number.NaN : Number(raw);
+    return Number.isFinite(value) && value >= 0 && value <= 1 ? value : DEFAULT_PAD_VOLUME;
+  } catch { return DEFAULT_PAD_VOLUME; }
+}
+export function writePadVolume(volume: number) {
+  try { localStorage.setItem(VOLUME_KEY, String(volume)); } catch { /* vale para esta sesión */ }
+}

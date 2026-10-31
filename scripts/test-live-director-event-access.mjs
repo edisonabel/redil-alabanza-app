@@ -35,7 +35,14 @@ async function put(endpoint, payload) { return endpoint.PUT({ cookies: {}, url: 
 const mixPayload = { evento_id: EVENT, cancion_id: SONG, mix: { tracks: [{ id: 'drums', volume: .7, enabled: true }] } };
 const saved = await (await get(arrangement)).json(); assert.equal(saved.canEdit, true);
 const payload = { evento_id: EVENT, cancion_id: SONG, revision: '', arrangement: { version: 1, entries: [{ id: 'a', sectionId: 'coro' }, { id: 'b', sectionId: 'coro' }], sourceSignature: saved.sourceSignature } };
-for (const role of ['bateria', 'lider_alabanza', 'gestor_secuencias', 'lider_vocal']) {
+// El líder de alabanza del evento guarda volúmenes, no arreglos.
+state.role = 'lider_alabanza';
+assert.equal((await (await get(mix, EVENT, true)).json()).canEdit, true, 'Líder guarda volúmenes');
+assert.equal((await put(mix, mixPayload)).status, 200, 'Líder guarda volúmenes');
+assert.equal((await (await get(arrangement)).json()).canEdit, false, 'Líder no edita arreglos');
+assert.equal((await put(arrangement, payload)).status, 403, 'Líder no edita arreglos');
+state.assigned = false; assert.equal((await put(mix, mixPayload)).status, 403, 'Líder no asignado a este evento'); state.assigned = true;
+for (const role of ['bateria', 'gestor_secuencias', 'lider_vocal']) {
   state.role = role;
   assert.equal((await (await get(arrangement)).json()).canEdit, false, role);
   assert.equal((await (await get(mix, EVENT, true)).json()).canEdit, false, role);
