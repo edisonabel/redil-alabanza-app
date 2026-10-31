@@ -89,6 +89,7 @@ export function reviewReaperProject(project, song) {
   const add = (code, message) => issues.push({ code, message });
   const sections = project.markers.filter((marker) => !special(marker.name));
   const drafts = project.markers.filter((marker) => marker.draft);
+  // REAPER manda: el borrador solo sirve para mostrar qué cambió; que difiera no es un problema.
   const original = getReaperDraftMarkers(song);
   const remaining = [...original.markers];
   const comparisons = sections.map((marker) => {
@@ -117,7 +118,7 @@ export function reviewReaperProject(project, song) {
     else if (Math.abs(source.durationSeconds - item.length) > 0.05) add('trimmed', `Se recortó o amplió “${item.track || item.source}” respecto al audio original.`);
   }
   if (project.songId && project.songId !== String(song.id)) add('song', 'Este proyecto fue preparado para otra canción.');
-  if (!project.songId) add('unbound', 'Proyecto externo: comprueba que corresponde a esta canción.');
+  if (!project.songId) add('unbound', 'Este RPP no viene del proyecto que descarga Alabanza, así que no se sabe de qué canción es. Descarga el proyecto de esta canción y marca las secciones ahí.');
   for (const name of ['uno', 'fin audio']) {
     if (project.markers.filter((marker) => identity(marker.name) === name).length > 1) add('duplicate-anchor', `Hay más de un marcador ${name.toUpperCase()}.`);
   }
@@ -138,7 +139,6 @@ export function reviewReaperProject(project, song) {
   const audioEnd = Math.max(0, ...project.items.map((item) => item.position + item.length));
   if (end && audioEnd && Math.abs(end.timeSeconds - audioEnd) > 0.05) add('tail', 'FIN AUDIO no coincide con el final de los ítems; revisa la cola y evita recortar el audio.');
   if (end && uno && uno.timeSeconds >= end.timeSeconds) add('range', 'UNO debe estar antes de FIN AUDIO.');
-  if (remaining.length) add('removed', `Se quitaron o renombraron ${remaining.length} secciones respecto al borrador; revisa que sea intencional.`);
   const missingUntimed = original.omitted.filter((name) => !sections.some((marker) => identity(marker.name) === identity(name)));
   if (missingUntimed.length) add('untimed-source', `Faltan secciones que no tenían tiempo válido: ${missingUntimed.join(', ')}.`);
   const firstTempo = project.tempoMap[0];
@@ -146,8 +146,6 @@ export function reviewReaperProject(project, song) {
   if (variableTempo) add('tempo-map', 'Hay cambios internos de tempo o compás. Se conservan en el RPP, pero Live Director todavía no importa ese mapa variable.');
   const session = readReaperSession(song.multitrack_session);
   if (project.items.length && session?.tracks?.length && project.items.length !== session.tracks.length) add('media-count', 'La cantidad de audios del RPP difiere de los stems de la canción.');
-  const knownOrder = sections.map((marker) => original.markers.findIndex((row) => identity(row.name) === identity(marker.name))).filter((index) => index >= 0);
-  if (knownOrder.some((index, i) => i > 0 && index < knownOrder[i - 1])) add('order', 'El orden de las secciones cambió respecto al borrador. Comprueba las entradas.');
   return { status: issues.length ? 'needs-review' : 'checks-passed', issues, comparisons,
     confirmedSections: sections.filter((marker) => !marker.draft).length, draftCount: drafts.length,
     unoSeconds: uno?.timeSeconds ?? null, endSeconds: end?.timeSeconds ?? null,

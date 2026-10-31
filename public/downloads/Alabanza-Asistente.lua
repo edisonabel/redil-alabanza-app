@@ -183,11 +183,23 @@ local function next_name(kind, except_id)
   if kind.numbered or highest > 0 then return kind.label..' '..(highest + 1) end
   return kind.label
 end
+-- Otras formas de escribir que Live Director entiende y dice con la voz de su tipo: Coro Final, Verso 1a,
+-- Verso 1 y 2, Coro A 1, Puente b, Estrofa 1, Repetición.
+local function spoken_form(name)
+  local form = name:lower()
+  form = form:gsub('%s+final$', '')
+  form = form:gsub('(%d)%a$', '%1')
+  form = form:gsub('(%d)%s+y%s+%d+$', '%1')
+  form = form:gsub('%s%a(%s%d+)$', '%1')
+  form = form:gsub('%s%a$', '')
+  form = form:gsub('^estrofa', 'verso')
+  form = form:gsub('^repetici.-n$', 'repetir')
+  return form
+end
 local function known(name)
-  -- «Coro Final» suena con la voz de su tipo (Coro).
-  local without_final = name:gsub('%s+[Ff][Ii][Nn][Aa][Ll]$', '')
+  local form = spoken_form(name)
   for _, kind in ipairs(SECTION_TYPES) do
-    if occurrence(name, kind.label) or occurrence(without_final, kind.label) then return true end
+    if occurrence(name, kind.label) or occurrence(form, kind.label) then return true end
   end
   return false
 end
@@ -491,7 +503,7 @@ if ALABANZA_TEST then
   return {sections=sections,instructions=instructions,go=go,select=select_index,select_cue=select_cue,confirm=confirm,
     add=add_section,choose=choose_type,preview=preview,add_cue=add_cue,choose_cue=choose_cue,remove_cue=remove_cue,
     rename=rename,calibrate=calibrate,special=special,summary=summary,progress=progress,save=save,url=alabanza_url,
-    transport=transport,audio_end=go_audio_end,types=SECTION_TYPES,cues=INSTRUCTION_TYPES,status=function() return status end,
+    known=known,transport=transport,audio_end=go_audio_end,types=SECTION_TYPES,cues=INSTRUCTION_TYPES,status=function() return status end,
     step=function(n) if n then view = n end; return view end,
     primary=function() local rows = sections(); return primary_action(summary(), rows[locate(rows)]) end}
 end

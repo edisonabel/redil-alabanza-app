@@ -38,6 +38,11 @@ reaper={
   SetMediaItemInfo_Value=function(item,key,value) if key=='C_BEATATTACHMODE' then item.beat=value elseif key=='C_AUTOSTRETCH' then item.stretch=value else error('Unexpected media mutation') end end,
 }
 local assistant=dofile('public/downloads/Alabanza-Asistente.lua')
+-- Nombres que Live Director dice con la voz de su tipo: el asistente no avisa que falte la voz.
+for _,name in ipairs({'Tag 1','tag 2','Coro Final','Verso 1a','Verso 2b','Verso 1 y 2','Coro A 1','Coro B 3','Puente b','Estrofa 1','Repeticion','Repetición','Final'}) do
+  assert(assistant.known(name),name..' debería tener voz')
+end
+assert(not assistant.known('Pregón'),'Un nombre desconocido sigue avisando')
 assert(assistant.step()==1 and assistant.primary()=='Marcar UNO aquí','Opens on the first unfinished step with its main action')
 assistant.confirm();assert(markers[1].name=='Intro 1' and markers[1].pos==12.123456789,'Confirmation must keep precise cursor')
 assistant.go(1);assert(cursor==32,'Navigate to next draft')
