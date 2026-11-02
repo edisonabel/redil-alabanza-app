@@ -29,6 +29,7 @@ import {
   stagePendingLiveDirectorEventMix,
 } from '../../utils/liveDirectorEventMix';
 import { getPadUrlForSongKey } from '../../utils/padAudio';
+import { applyEventKey, clearEventKey, discardUnfinishedEventKey, isEventKeyFresh, isTransposableTrack, parseSongKey, readEventKey, requestEventKeyUpload, saveEventKey } from '../../utils/liveDirectorEventKey';
 import {
   isNativeLiveDirectorEngineAvailable,
   NativeLiveDirectorEngine,
@@ -452,13 +453,16 @@ export default function ModoEnsayoDirector({
   const activeEventMix = activePersistedSongId
     ? eventMixOverrides[activePersistedSongId] || null
     : null;
+  // Tono de esta canción en este evento (copia transportada; la original no se toca).
+  const [eventKeys, setEventKeys] = useState({});
+  const eventKeyState = activePersistedSongId ? eventKeys[activePersistedSongId] : null;
+  const activeEventKey = eventKeyState?.key || null;
+  const activeSourceSession = useMemo(() => resolveSongSession(activeSong, activeSongSessionSource), [activeSong, activeSongSessionSource]);
   const activeSongSession = useMemo(
-    () => applyLiveDirectorEventMix(
-      resolveSongSession(activeSong, activeSongSessionSource),
-      activeEventMix,
-    ),
-    [activeEventMix, activeSong, activePersistedSongId, activeSongSessionSource],
+    () => applyEventKey(applyLiveDirectorEventMix(activeSourceSession, activeEventMix), activeEventKey),
+    [activeEventMix, activeSourceSession, activeEventKey],
   );
+  const activeKeyApplied = isEventKeyFresh(activeSourceSession, activeEventKey);
   const activeSongHasSequence = hasPlayableLiveDirectorSession(activeSongSession);
   const activeSongMeter = useMemo(() => (
     String(activeSong?.meter || activeSong?.metrica || '').trim()
@@ -527,6 +531,43 @@ export default function ModoEnsayoDirector({
   }, [broadcastState, downloadStatus.active, downloadStatus.done, downloadStatus.progress, downloadStatus.total]);
 
   const hasEventMixContext = Boolean(String(eventId || '').trim() && String(playlistId || '').trim());
+  useEffect(() => {
+    if (!hasEventMixContext || !activePersistedSongId) return undefined;
+    let cancelled = false;
+    void readEventKey(eventId, activePersistedSongId).then(state => { if (!cancelled) setEventKeys(previous => ({ ...previous, [activePersistedSongId]: state })); });
+    return () => { cancelled = true; };
+  }, [hasEventMixContext, eventId, activePersistedSongId]);
+  const songOriginalKey = String(activeSong?.originalKey || activeSong?.key || '').trim();
+  const eventKeyControl = useMemo(() => {
+    const tracks = activeSourceSession?.tracks || [];
+    // El permiso lo decide el servidor; quien no lo tiene no ve el control.
+    if (!hasEventMixContext || !eventKeyState?.canEdit || !parseSongKey(songOriginalKey) || !tracks.length) return null;
+    const moved = tracks.filter(isTransposableTrack), songId = activePersistedSongId;
+    if (!moved.length) return null;
+    return {
+      originalKey: songOriginalKey, eventKey: activeKeyApplied ? activeEventKey : null,
+      moved: moved.map(track => track.name || track.id), kept: tracks.filter(track => !isTransposableTrack(track)).map(track => track.name || track.id),
+      onRestore: async () => { await clearEventKey(eventId, songId); setEventKeys(previous => ({ ...previous, [songId]: { ...previous[songId], key: null } })); },
+      onPrepare: async (semitones, targetKey, onProgress, signal) => {
+        const { transposeTracks } = await import('../../utils/eventKeyProcessor');
+        const uploaded = [];
+        try {
+          await transposeTracks(moved, semitones, { signal, onProgress, deliver: async (track, m4a) => {
+            const { uploadUrl, key } = await requestEventKeyUpload(eventId, songId, semitones, track.id);
+            const response = await fetch(uploadUrl, { method: 'PUT', body: m4a, headers: { 'Content-Type': 'audio/mp4' }, signal });
+            if (!response.ok) throw new Error(`No se pudo subir la pista «${track.name || track.id}».`);
+            uploaded.push({ id: track.id, key, sourceUrl: track.url });
+          } });
+          const key = await saveEventKey(eventId, songId, { semitones, targetKey, originalKey: songOriginalKey, tracks: uploaded });
+          setEventKeys(previous => ({ ...previous, [songId]: { ...previous[songId], key } }));
+        } catch (error) {
+          // Nada a medias en R2: el tono que ya estaba sigue sonando.
+          if (uploaded.length) await discardUnfinishedEventKey(eventId, songId);
+          throw error;
+        }
+      },
+    };
+  }, [activeSourceSession, activeEventKey, activeKeyApplied, eventKeyState?.canEdit, hasEventMixContext, songOriginalKey, eventId, activePersistedSongId]);
   const activeEventMixSaveStatus = eventMixSaveStates[activePersistedSongId] || 'idle';
   const isActiveEventMixLoading = Boolean(
     hasEventMixContext
@@ -935,7 +976,9 @@ export default function ModoEnsayoDirector({
     setSessionOverrides(previous => ({...previous,[songId]:session}));
     if (mix) setEventMixOverrides(previous => ({...previous,[songId]:mix}));
     setEventMixLoadedSongIds(previous => new Set([...previous,songId]));
-    return applyLiveDirectorEventMix(session,mix);
+    const keyState = hasEventMixContext ? await readEventKey(eventId,songId) : null;
+    if (keyState) setEventKeys(previous => ({...previous,[songId]:keyState}));
+    return applyEventKey(applyLiveDirectorEventMix(session,mix),keyState?.key);
   },[ensayoSongs,sessionOverrides,eventMixOverrides,hasEventMixContext,eventId]);
 
   // Saving the rehearsal on the device reads each song's enabled stems with its
@@ -952,7 +995,8 @@ export default function ModoEnsayoDirector({
     const session = resolveSongSession(song,fetchedSession || sessionOverrides[songId]);
     if (!hasPlayableLiveDirectorSession(session)) return [];
     const mix = readPendingLiveDirectorEventMix({eventId,songId})?.mix || eventMixOverrides[songId] || fetchedMix;
-    return applyLiveDirectorEventMix(session,mix).tracks.filter(track => track.enabled !== false);
+    const keyState = hasEventMixContext ? await readEventKey(eventId,songId) : null;
+    return applyEventKey(applyLiveDirectorEventMix(session,mix),keyState?.key).tracks.filter(track => track.enabled !== false);
   },[ensayoSongs,sessionOverrides,eventMixOverrides,hasEventMixContext,eventId]);
 
   const handleQueueSongSelect = useCallback((songId, options) => {
@@ -1199,7 +1243,8 @@ export default function ModoEnsayoDirector({
         subtitle={String(activeSong?.artist || activeSong?.cantante || '').trim()}
         songMp3={String(activeSong?.mp3 || '').trim()}
         songArtworkUrl={getLiveDirectorSongArtworkUrl(activeSong)}
-        songKey={String(activeSong?.originalKey || activeSong?.key || '').trim()}
+        songKey={activeKeyApplied ? activeEventKey.targetKey : songOriginalKey}
+        eventKeyControl={eventKeyControl}
         sections={activeSongSections}
         initialSession={activeSongSession}
         queueSongs={queueSongs}

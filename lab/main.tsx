@@ -41,6 +41,7 @@ function Lab() {
     const localMix=mixes.current[id];
     return localMix?{...session,tracks:session.tracks.map(track=>({...track,...localMix.tracks?.find((t:any)=>t.id===track.id)}))}:session;
   };
+  const [labKey,setLabKey]=useState<any>(null);
   const sections=useMemo(()=>song?buildLiveDirectorSectionsFromMarkers(song.section_markers):[],[song]);
   const queue=useMemo(()=>songs.map(s=>({id:s.id,title:s.titulo,subtitle:s.cantante,artworkUrl:s.artworkUrl})),[songs]);
   return <>
@@ -49,6 +50,9 @@ function Lab() {
       experimentalTools eventId={labEventId} eventTitle={labEventId ? 'Evento de prueba local' : ''} key={new URLSearchParams(location.search).has('labRetainView') ? 'queue' : song.id} mode="ensayo" songId={song.id} songTitle={song.titulo} songKey={song.tonalidad} songArtworkUrl={song.artworkUrl}
       title="LiveDirector · Experimental" subtitle={song.titulo} bpm={clickGrid?.bpm ?? song.bpm} timeSignature={song.timeSignature} generatedClickGrid={clickGrid}
       initialSession={resolvedSession} sections={sections} requiresSongContext
+      eventKeyControl={new URLSearchParams(location.search).has('labKey')?{originalKey:'D',eventKey:labKey,moved:['Keys','Bass','Pad'],kept:['Click','Guide','Drums'],
+        onRestore:async()=>setLabKey(null),
+        onPrepare:async(semitones:number,targetKey:string,onProgress:any,signal:AbortSignal)=>{(window as any).__labKeyCalls=[...((window as any).__labKeyCalls||[]),{semitones,targetKey}];for(let index=0;index<3;index++){if(signal.aborted)throw new Error('cancelado');onProgress({index,total:3,name:'Keys',progress:.5});await new Promise(r=>setTimeout(r,120));}setLabKey({semitones,targetKey,originalKey:'D',tracks:{}});}}:null}
       queueSongs={queue} activeQueueSongId={song.id} onSelectQueueSong={selectSong} onPrepareQueueSong={prepareQueueSong}
       onResolveQueueSongTracks={labEventId?async(id:string)=>(await prepareQueueSong(id)).tracks.filter((track:any)=>track.enabled!==false):undefined}
       autoPlayRequest={autoPlayRequest} onCancelAutoPlay={cancelAutoPlay} onAutoPlayHandled={token=>setAutoPlayRequest(previous=>previous?.token===token?null:previous)}
