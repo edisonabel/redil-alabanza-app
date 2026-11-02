@@ -62,4 +62,13 @@ function Lab() {
     />}
   </>;
 }
-createRoot(document.getElementById('root')!).render(<Lab/>);
+// Lista de canciones del evento (?labHub): el tono que se anuncia. La API la simula la prueba.
+const EnsayoHub=React.lazy(()=>import('../src/components/react/EnsayoHub.jsx'));
+const ConfidenceMonitor=React.lazy(()=>import('../src/components/react/ConfidenceMonitor.jsx'));
+const labChart=[{name:'Verso',lines:['[E]Primera [A]linea de [B]prueba']}];
+const labHubSongs=[{id:'11111111-1111-4111-8111-111111111111',title:'Tono cambiado',artist:'Prueba',originalKey:'E',key:'E',bpm:72,mp3:'/lab-none.mp3',sections:labChart},{id:'22222222-2222-4222-8222-222222222222',title:'Tono original',artist:'Prueba',originalKey:'D',key:'D',bpm:80,mp3:'/lab-none.mp3',sections:labChart}];
+const labEvent='33333333-3333-4333-8333-333333333333', labParams=new URLSearchParams(location.search);
+createRoot(document.getElementById('root')!).render(
+  labParams.has('labHub')?<React.Suspense fallback={null}><EnsayoHub playlist={labHubSongs} eventMeta={{id:labEvent}}/></React.Suspense>
+  :labParams.has('labMonitor')?<React.Suspense fallback={null}><ConfidenceMonitor songs={labHubSongs} eventId={labEvent} eventTitle="Prueba"/></React.Suspense>
+  :<Lab/>);

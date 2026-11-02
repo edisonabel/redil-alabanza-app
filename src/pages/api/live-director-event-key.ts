@@ -6,11 +6,13 @@ import { ApiSecurityError, assertRequestBodySize, requireAuthenticatedUser, secu
 import { getServerAuthTokens } from '../../lib/server/auth-cookies.js';
 import { createSupabaseUserClient } from '../../lib/server/supabase-user-client.js';
 import { readEnv } from '../../lib/server/supabase-env.js';
+import { EVENT_KEY_MP3_ID, EVENT_KEY_PREFIX, isEventKeyCopy, isEventKeyFresh } from '../../utils/liveDirectorEventKey';
 
 export const prerender = false;
 
 // Copias transportadas de un evento. netlify/functions/cleanup-event-keys.mjs las borra cuando el evento pasó.
-const PREFIX = 'live-director/event-keys';
+// La canción original (secuencias/) nunca se borra ni se modifica desde aquí.
+const PREFIX = EVENT_KEY_PREFIX.slice(0, -1);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TRACK_ID = /^[\w.-]{1,160}$/;
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
@@ -44,14 +46,41 @@ const removeCopies = async (folder: string, keep: (key: string) => boolean = () 
   let token: string | undefined;
   do {
     const page = await client.send(new ListObjectsV2Command({ Bucket: bucket, Prefix: `${folder}/`, ContinuationToken: token }));
-    const keys = (page.Contents || []).map(item => item.Key!).filter(key => !keep(key));
+    const keys = (page.Contents || []).map(item => item.Key!).filter(key => isEventKeyCopy(key) && !keep(key));
     if (keys.length) await client.send(new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: keys.map(Key => ({ Key })) } }));
     token = page.IsTruncated ? page.NextContinuationToken : undefined;
   } while (token);
 };
 
+// Sin canción: los tonos de todo el evento, para la lista de canciones. El tono no es privado: lo ve
+// cualquier persona con sesión que abra el evento, también quien no está asignado.
+const readEventKeys = async (eventId: string) => {
+  const { bucket, client } = r2();
+  const page = await client.send(new ListObjectsV2Command({ Bucket: bucket, Prefix: `${PREFIX}/${eventId}/`, Delimiter: '/' }));
+  const songIds = (page.CommonPrefixes || []).map(item => item.Prefix!.split('/').at(-2)!).filter(id => UUID.test(id));
+  if (!songIds.length || !serviceRoleClient) return {};
+  const { data } = await serviceRoleClient.from('canciones').select('id,multitrack_session').in('id', songIds);
+  const keys: Record<string, unknown> = {};
+  await Promise.all(songIds.map(async songId => {
+    const stored = await client.send(new GetObjectCommand({ Bucket: bucket, Key: `${PREFIX}/${eventId}/${songId}/key.json` })).catch(() => null);
+    if (!stored) return;
+    const key = JSON.parse(await stored.Body!.transformToString());
+    // Si se volvió a subir la secuencia la copia ya no suena: la lista no puede anunciar ese tono.
+    if (isEventKeyFresh(data?.find(song => song.id === songId)?.multitrack_session, key)) {
+      keys[songId] = { semitones: key.semitones, targetKey: key.targetKey, originalKey: key.originalKey, mp3: key.mp3 };
+    }
+  }));
+  return keys;
+};
+
 export const GET: APIRoute = async ({ cookies, url }) => {
   try {
+    if (!url.searchParams.get('cancion_id')) {
+      const eventId = String(url.searchParams.get('evento_id') || '');
+      if (!UUID.test(eventId)) throw new ApiSecurityError('Evento inválido.', 400);
+      await requireAuthenticatedUser(cookies);
+      return json({ keys: await readEventKeys(eventId) });
+    }
     const { eventId, songId, folder } = context(url.searchParams);
     const result = await access(cookies, eventId, songId);
     const { bucket, client } = r2();
@@ -93,10 +122,17 @@ export const PUT: APIRoute = async ({ cookies, request }) => {
       await client.send(new HeadObjectCommand({ Bucket: bucket, Key: track.key })).catch(() => { throw new ApiSecurityError(`Falta subir la pista ${track.id}.`, 409); });
       stored[track.id] = { url: `${publicBase()}/${track.key}`, sourceUrl: track.sourceUrl };
     }
-    const key = { semitones: payload.semitones, targetKey: String(payload.targetKey || '').slice(0, 8), originalKey: String(payload.originalKey || '').slice(0, 8), tracks: stored, updatedAt: new Date().toISOString() };
+    // El MP3 es opcional: una canción sin copia suena con su MP3 original.
+    let mp3: { url: string; sourceUrl: string } | undefined;
+    if (payload.mp3) {
+      if (payload.mp3.key !== `${base}${EVENT_KEY_MP3_ID}.m4a` || typeof payload.mp3.sourceUrl !== 'string') throw new ApiSecurityError('MP3 inválido.', 400);
+      await client.send(new HeadObjectCommand({ Bucket: bucket, Key: payload.mp3.key })).catch(() => { throw new ApiSecurityError('Falta subir el MP3.', 409); });
+      mp3 = { url: `${publicBase()}/${payload.mp3.key}`, sourceUrl: payload.mp3.sourceUrl };
+    }
+    const key = { semitones: payload.semitones, targetKey: String(payload.targetKey || '').slice(0, 8), originalKey: String(payload.originalKey || '').slice(0, 8), tracks: stored, ...(mp3 ? { mp3 } : {}), updatedAt: new Date().toISOString() };
     await client.send(new PutObjectCommand({ Bucket: bucket, Key: `${folder}/key.json`, ContentType: 'application/json', CacheControl: 'no-store', Body: JSON.stringify(key) }));
     // El tono anterior se reemplaza: sus archivos se borran, también pistas que ya no estén en este.
-    const current = new Set([`${folder}/key.json`, ...tracks.map((track: { key: string }) => track.key)]);
+    const current = new Set([`${folder}/key.json`, ...tracks.map((track: { key: string }) => track.key), ...(payload.mp3 ? [payload.mp3.key] : [])]);
     await removeCopies(folder, item => current.has(item));
     return json({ key });
   } catch (error) { console.error('[live-director-event-key] PUT failed:', error); return securityErrorResponse(error); }
@@ -115,7 +151,7 @@ export const DELETE: APIRoute = async ({ cookies, request }) => {
       const stored = await client.send(new GetObjectCommand({ Bucket: bucket, Key: `${folder}/key.json` })).catch(() => null);
       const current = stored ? JSON.parse(await stored.Body!.transformToString()) : null;
       const base = `${publicBase()}/`;
-      const kept = new Set<string>(current ? [`${folder}/key.json`, ...Object.values(current.tracks as Record<string, { url: string }>).map(track => track.url.slice(base.length))] : []);
+      const kept = new Set<string>(current ? [`${folder}/key.json`, ...[...Object.values(current.tracks as Record<string, { url: string }>), ...(current.mp3 ? [current.mp3] : [])].map(track => track.url.slice(base.length))] : []);
       await removeCopies(folder, item => kept.has(item));
       return json({ key: current });
     }

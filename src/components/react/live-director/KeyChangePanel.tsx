@@ -79,8 +79,9 @@ export function KeyChangePanel({ control, onClose }: { control: KeyChangeControl
         <p className="flex items-center gap-2 text-lg font-semibold text-amber-100"><TriangleAlert className="h-5 w-5 shrink-0" />{restoring ? `¿Volver al tono original (${pickedName})?` : `¿Cambiar esta canción a ${pickedName}?`}</p>
         <ul className="list-disc space-y-1 pl-5 text-sm leading-relaxed text-white/70">
           <li><strong className="text-white">Cambia para todo el equipo</strong> en este evento. No es una prueba personal.</li>
-          {restoring ? <li>Se borran los archivos transportados.</li> : <>
-            <li>Reemplaza el tono anterior de este evento: sus archivos se borran.</li>
+          <li>La canción original <strong className="text-white">no se borra ni se modifica</strong>.</li>
+          {restoring ? <li>Se quita la copia transportada de este evento.</li> : <>
+            <li>Se crea una copia solo para este evento. Si ya había otro tono, esta copia reemplaza a la anterior.</li>
             <li>Tarda varios minutos. No cierres esta pestaña; mejor en una computadora.</li>
             <li>Antes de ensayar o del servicio, nunca durante.</li>
           </>}

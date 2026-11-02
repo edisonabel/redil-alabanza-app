@@ -25,7 +25,7 @@ try {
   await dialog.locator('[data-key-tile="C"]').click();
   await dialog.locator('[data-key-change-next]').click();
   // Advertencia: decir que no, no hace nada.
-  assert.match(await dialog.innerText(), /Cambia para todo el equipo/); assert.match(await dialog.innerText(), /sus archivos se borran/);
+  assert.match(await dialog.innerText(), /Cambia para todo el equipo/); assert.match(await dialog.innerText(), /no se borra ni se modifica/);
   await dialog.getByRole('button', { name: 'No, volver' }).click();
   assert.equal(await page.evaluate(() => window.__labKeyCalls), undefined, 'Sin confirmar no procesa');
   await dialog.locator('[data-key-change-next]').click();

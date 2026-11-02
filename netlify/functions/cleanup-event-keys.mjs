@@ -1,5 +1,5 @@
 // Borra las copias transportadas de los eventos que ya pasaron, para no dejar basura en R2. Solo toca
-// live-director/event-keys/. Deja dos días de margen por si el servicio se repite o se alarga.
+// live-director/event-keys/: la canción original nunca se borra. Deja dos días de margen por si el servicio se repite o se alarga.
 import { DeleteObjectsCommand, ListObjectsV2Command, S3Client } from '@aws-sdk/client-s3';
 import { createClient } from '@supabase/supabase-js';
 
@@ -30,7 +30,7 @@ export default async () => {
     let token;
     do {
       const page = await client.send(new ListObjectsV2Command({ Bucket: R2_BUCKET_NAME, Prefix: `${PREFIX}${eventId}/`, ContinuationToken: token }));
-      const keys = (page.Contents || []).map(item => ({ Key: item.Key }));
+      const keys = (page.Contents || []).filter(item => item.Key.startsWith(PREFIX)).map(item => ({ Key: item.Key }));
       if (keys.length) { await client.send(new DeleteObjectsCommand({ Bucket: R2_BUCKET_NAME, Delete: { Objects: keys } })); removed += keys.length; }
       token = page.IsTruncated ? page.NextContinuationToken : undefined;
     } while (token);

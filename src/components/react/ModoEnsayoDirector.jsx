@@ -6,6 +6,7 @@ import { Capacitor } from '@capacitor/core';
 import { screenWakeLockService } from '../../services/ScreenWakeLockService';
 import { LiveDirectorView } from './LiveDirectorView';
 import { useLiveDirectorSyncTransmitter } from '../../hooks/useLiveDirectorSyncTransmitter';
+import { resolveFetchableAudioUrl } from '../../lib/audio-playback';
 import {
   buildLiveDirectorSectionsFromMarkers,
   normalizePersistedLiveDirectorSession,
@@ -29,7 +30,7 @@ import {
   stagePendingLiveDirectorEventMix,
 } from '../../utils/liveDirectorEventMix';
 import { getPadUrlForSongKey } from '../../utils/padAudio';
-import { applyEventKey, clearEventKey, discardUnfinishedEventKey, isEventKeyFresh, isTransposableTrack, parseSongKey, readEventKey, requestEventKeyUpload, saveEventKey } from '../../utils/liveDirectorEventKey';
+import { applyEventKey, clearEventKey, discardUnfinishedEventKey, EVENT_KEY_MP3_ID, isEventKeyFresh, isTransposableTrack, parseSongKey, readEventKey, requestEventKeyUpload, saveEventKey } from '../../utils/liveDirectorEventKey';
 import {
   isNativeLiveDirectorEngineAvailable,
   NativeLiveDirectorEngine,
@@ -331,7 +332,7 @@ const cacheUrlIfNeeded = async (cache, url, signal) => {
   return 'skipped';
 };
 
-const buildQueueSongs = (songs) =>
+const buildQueueSongs = (songs, listedEventKeys = {}) =>
   songs
     .map((song) => ({
       id: resolveSongId(song),
@@ -340,9 +341,9 @@ const buildQueueSongs = (songs) =>
         ? [
           `${Math.round(Number(song?.bpm) || 0)} BPM`,
           getManualMeterLabel(song.manualTempo),
-          String(song?.originalKey || song?.key || '').trim(),
+          String(listedEventKeys[resolveSongId(song)]?.targetKey || song?.originalKey || song?.key || '').trim(),
         ].filter(Boolean).join(' · ')
-        : [String(song?.artist || '').trim(), String(song?.originalKey || song?.key || '').trim()].filter(Boolean).join(' · '),
+        : [String(song?.artist || '').trim(), String(listedEventKeys[resolveSongId(song)]?.targetKey || song?.originalKey || song?.key || '').trim()].filter(Boolean).join(' · '),
       mp3: String(song?.mp3 || '').trim(),
       artworkUrl: getLiveDirectorSongArtworkUrl(song),
       kind: String(song?.kind || '').trim() || undefined,
@@ -355,6 +356,8 @@ export default function ModoEnsayoDirector({
   eventId = '',
   playlistId = '',
   onExit,
+  listedEventKeys = {},
+  onEventKeyChange,
 }) {
   const realEnsayoSongs = useMemo(
     () =>
@@ -463,6 +466,8 @@ export default function ModoEnsayoDirector({
     [activeEventMix, activeSourceSession, activeEventKey],
   );
   const activeKeyApplied = isEventKeyFresh(activeSourceSession, activeEventKey);
+  // Se anuncia en la transmisión solo cuando ya se sabe el tono de la canción activa.
+  const announcedEventKey = eventKeyState ? (activeKeyApplied ? activeEventKey.targetKey : '') : undefined;
   const activeSongHasSequence = hasPlayableLiveDirectorSession(activeSongSession);
   const activeSongMeter = useMemo(() => (
     String(activeSong?.meter || activeSong?.metrica || '').trim()
@@ -492,8 +497,8 @@ export default function ModoEnsayoDirector({
     [activeSong?.sectionMarkers, activeSongSession, activeSongIsManual],
   );
   const queueSongs = useMemo(
-    () => buildQueueSongs(ensayoSongs),
-    [ensayoSongs],
+    () => buildQueueSongs(ensayoSongs, listedEventKeys),
+    [ensayoSongs, listedEventKeys],
   );
   const remainingManualSongSlots = getRemainingManualSongSlots(
     realEnsayoSongs.length,
@@ -544,30 +549,47 @@ export default function ModoEnsayoDirector({
     if (!hasEventMixContext || !eventKeyState?.canEdit || !parseSongKey(songOriginalKey) || !tracks.length) return null;
     const moved = tracks.filter(isTransposableTrack), songId = activePersistedSongId;
     if (!moved.length) return null;
+    const songMp3 = String(activeSong?.mp3 || '').trim();
     return {
       originalKey: songOriginalKey, eventKey: activeKeyApplied ? activeEventKey : null,
-      moved: moved.map(track => track.name || track.id), kept: tracks.filter(track => !isTransposableTrack(track)).map(track => track.name || track.id),
-      onRestore: async () => { await clearEventKey(eventId, songId); setEventKeys(previous => ({ ...previous, [songId]: { ...previous[songId], key: null } })); },
+      moved: [...moved.map(track => track.name || track.id), ...(songMp3 ? ['MP3 de ensayo'] : [])], kept: tracks.filter(track => !isTransposableTrack(track)).map(track => track.name || track.id),
+      onRestore: async () => { await clearEventKey(eventId, songId); setEventKeys(previous => ({ ...previous, [songId]: { ...previous[songId], key: null } })); onEventKeyChange?.(); },
       onPrepare: async (semitones, targetKey, onProgress, signal) => {
         const { transposeTracks } = await import('../../utils/eventKeyProcessor');
-        const uploaded = [];
+        const uploaded = [], total = moved.length + (songMp3 ? 1 : 0);
+        const upload = async (track, m4a) => {
+          const { uploadUrl, key } = await requestEventKeyUpload(eventId, songId, semitones, track.id);
+          const response = await fetch(uploadUrl, { method: 'PUT', body: m4a, headers: { 'Content-Type': 'audio/mp4' }, signal });
+          if (!response.ok) throw new Error(`No se pudo subir la pista «${track.name || track.id}».`);
+          return key;
+        };
+        let mp3 = null;
         try {
-          await transposeTracks(moved, semitones, { signal, onProgress, deliver: async (track, m4a) => {
-            const { uploadUrl, key } = await requestEventKeyUpload(eventId, songId, semitones, track.id);
-            const response = await fetch(uploadUrl, { method: 'PUT', body: m4a, headers: { 'Content-Type': 'audio/mp4' }, signal });
-            if (!response.ok) throw new Error(`No se pudo subir la pista «${track.name || track.id}».`);
-            uploaded.push({ id: track.id, key, sourceUrl: track.url });
+          await transposeTracks(moved, semitones, { signal, onProgress: progress => onProgress({ ...progress, total }), deliver: async (track, m4a) => {
+            uploaded.push({ id: track.id, key: await upload(track, m4a), sourceUrl: track.url });
           } });
-          const key = await saveEventKey(eventId, songId, { semitones, targetKey, originalKey: songOriginalKey, tracks: uploaded });
+          // El MP3 va de último y no detiene el cambio: si falla, la secuencia cambia igual y el MP3 suena original.
+          if (songMp3) {
+            const url = resolveFetchableAudioUrl(songMp3, { origin: window.location.origin, preferSameOrigin: true });
+            await transposeTracks([{ id: EVENT_KEY_MP3_ID, name: 'MP3 de ensayo', url }], semitones, {
+              signal, onProgress: progress => onProgress({ ...progress, index: moved.length, total }),
+              deliver: async (track, m4a) => { mp3 = { key: await upload(track, m4a), sourceUrl: songMp3 }; },
+            }).catch((error) => {
+              if (signal?.aborted) throw error;
+              console.warn('[ModoEnsayoDirector] No se pudo transportar el MP3.', error);
+            });
+          }
+          const key = await saveEventKey(eventId, songId, { semitones, targetKey, originalKey: songOriginalKey, tracks: uploaded, mp3 });
           setEventKeys(previous => ({ ...previous, [songId]: { ...previous[songId], key } }));
+          onEventKeyChange?.();
         } catch (error) {
           // Nada a medias en R2: el tono que ya estaba sigue sonando.
-          if (uploaded.length) await discardUnfinishedEventKey(eventId, songId);
+          if (uploaded.length || mp3) await discardUnfinishedEventKey(eventId, songId);
           throw error;
         }
       },
     };
-  }, [activeSourceSession, activeEventKey, activeKeyApplied, eventKeyState?.canEdit, hasEventMixContext, songOriginalKey, eventId, activePersistedSongId]);
+  }, [activeSourceSession, activeEventKey, activeKeyApplied, activeSong?.mp3, eventKeyState?.canEdit, hasEventMixContext, songOriginalKey, eventId, activePersistedSongId]);
   const activeEventMixSaveStatus = eventMixSaveStates[activePersistedSongId] || 'idle';
   const isActiveEventMixLoading = Boolean(
     hasEventMixContext
@@ -940,6 +962,7 @@ export default function ModoEnsayoDirector({
         currentTimeRaw: snapshot.currentTimeRaw,
         sectionOffsetSeconds: snapshot.sectionOffsetSeconds || 0,
         isPlaying: snapshot.isPlaying,
+        ...(String(snapshot.songId) === activePersistedSongId ? { eventKeyTarget: announcedEventKey } : {}),
       }).catch((error) => {
         console.warn('[ModoEnsayoDirector] Sync broadcast failed.', error);
       });
@@ -948,7 +971,7 @@ export default function ModoEnsayoDirector({
     pushSnapshot();
     const heartbeat = window.setInterval(pushSnapshot, 1500);
     return () => window.clearInterval(heartbeat);
-  }, [activePersistedSongId, isBroadcasting, sendSectionChange]);
+  }, [activePersistedSongId, announcedEventKey, isBroadcasting, sendSectionChange]);
 
   const handlePlaybackSnapshot = useCallback((snapshot) => {
     playbackSnapshotRef.current = snapshot;

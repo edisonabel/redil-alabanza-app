@@ -47,10 +47,22 @@ await mkdir(resolve(root,'.lab'),{recursive:true});
 console.log('Compilando la pantalla de LiveDirector...');
 const bundle=await build({entryPoints:[resolve(root,'lab/main.tsx')],bundle:true,write:false,metafile:true,format:'esm',platform:'browser',jsx:'automatic',define:{'process.env.NODE_ENV':'"production"','import.meta.env':'{}'},plugins:[{name:'lab-assets',setup(builder){
   builder.onLoad({filter:/\.css$/},()=>({contents:'',loader:'js'}));
+  // La lista de canciones y el monitor importan Supabase: en el laboratorio es un cliente vacío, sin red.
+  builder.onLoad({filter:/\/src\/lib\/supabase\.(js|ts)$/},()=>({loader:'js',contents:`
+    const empty={data:null,error:null};
+    const query=()=>new Proxy(function(){},{get:(_,name)=>name==='then'?(resolve)=>resolve(empty):query,apply:()=>query()});
+    const handlers=[];window.__labBroadcast=(event,payload)=>handlers.filter(item=>item.event===event).forEach(item=>item.callback({payload}));
+    const channel={on(_,{event},callback){handlers.push({event,callback});return channel},subscribe(){return channel},send(){return Promise.resolve('ok')},unsubscribe(){return Promise.resolve('ok')}};
+    export const supabase={from:query,rpc:query,channel:()=>channel,removeChannel(){return Promise.resolve('ok')},storage:{from:query},
+      auth:{getUser:async()=>({data:{user:null},error:null}),getSession:async()=>({data:{session:null},error:null}),onAuthStateChange:()=>({data:{subscription:{unsubscribe(){}}}})}};
+    export default supabase;`}));
+  // Motor de cambio de tono: en el laboratorio no se ejecuta, solo se empaqueta.
+  builder.onResolve({filter:/\?(worker&)?url$/},({path})=>({path,namespace:'lab-wasm-url'}));
+  builder.onLoad({filter:/.*/,namespace:'lab-wasm-url'},()=>({contents:'export default ""',loader:'js'}));
   builder.onLoad({filter:/\/utils\/padAudio\.ts$/},async({path})=>({contents:(await readFile(path,'utf8')).replace('return `${PAD_BASE_URL}/${encodeURIComponent(fileName)}`;','return `/api/mp3-proxy?src=${encodeURIComponent(`${PAD_BASE_URL}/${encodeURIComponent(fileName)}`)}`;'),loader:'ts'}));
 }}]});
 const scanner=new Scanner({});
-const content=await Promise.all(Object.keys(bundle.metafile.inputs).filter(path=>!path.startsWith('<')).map(async path=>({content:await readFile(resolve(path),'utf8'),extension:extname(path).slice(1)})));
+const content=await Promise.all(Object.keys(bundle.metafile.inputs).filter(path=>!path.startsWith('<')&&!path.startsWith('lab-wasm-url:')).map(async path=>({content:await readFile(resolve(path),'utf8'),extension:extname(path).slice(1)})));
 const candidates=scanner.scanFiles(content);
 const compiler=await compile(await readFile(resolve(root,'src/styles/global.css'),'utf8'),{base:resolve(root,'src/styles'),onDependency:()=>{}});
 const css=compiler.build(candidates)+'\n'+await readFile(resolve(root,'src/components/react/live-director/LiveDirectorTools.css'),'utf8')+'\n'+await readFile(resolve(root,'lab/style.css'),'utf8');

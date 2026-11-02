@@ -118,7 +118,8 @@
     "test:live-transition-repeat": "node scripts/test-live-director-transition-repeat-browser.mjs",
     "test:live-load-error-actions": "node scripts/test-live-director-load-error-actions-browser.mjs",
     "test:live-event-key": "node scripts/test-live-director-event-key.mjs",
-    "test:live-key-change-ui": "node scripts/test-live-director-key-change-browser.mjs"
+    "test:live-key-change-ui": "node scripts/test-live-director-key-change-browser.mjs",
+    "test:live-key-list-ui": "node scripts/test-live-director-event-key-list-browser.mjs"
   },
   "dependencies": {
     "@astrojs/netlify": "8.2.1",
