@@ -13,7 +13,8 @@ try {
   page.on('request', request => { if (!['GET', 'HEAD'].includes(request.method())) writes.push(request.url()); });
   await page.goto(`${LAB}/`);
   const wait = count => page.waitForFunction(count => window.__streamingEngineDumpOwner?.getTracks().length === count && !document.querySelector('[data-live-director-control="play-pause"]')?.disabled, count, { timeout: 90000 });
-  const open = () => page.getByRole('button', { name: 'Configurar metrónomo', exact: true }).click();
+  const openMixer = () => page.getByRole('button', { name: 'Configurar metrónomo', exact: true }).click();
+  const open = async () => { await openMixer(); await page.evaluate(() => { const grid = document.querySelector('[data-click-grid]'); if (grid) grid.open = true; }); };
   const close = () => page.getByRole('button', { name: 'Cerrar metrónomo', exact: true }).click();
   await wait(15); await open();
   assert.equal(await page.getByRole('spinbutton', { name: 'BPM del click generado', exact: true }).inputValue(), '120');
@@ -31,8 +32,8 @@ try {
   await open();
   assert.equal(await page.getByRole('spinbutton', { name: 'BPM del click generado', exact: true }).inputValue(), '68.5');
   assert.equal(await page.getByRole('spinbutton', { name: 'Pulso de referencia del click', exact: true }).inputValue(), '0.005');
-  assert.equal(await page.getByRole('checkbox', { name: /El pulso de referencia/ }).isChecked(), false);
-  await page.getByRole('button', { name: 'Click generado', exact: true }).click();
+  assert.equal(await page.getByRole('checkbox', { name: /El primer pulso/ }).isChecked(), false);
+  await page.getByRole('button', { name: 'Metrónomo digital', exact: true }).click();
   await page.waitForFunction(() => window.__calibrationMessages.some(message => message.settings));
   const configuration = await page.evaluate(() => window.__calibrationMessages.at(-1).settings);
   assert.equal(configuration.bpm, 68.5); assert.equal(configuration.originSeconds, .005); assert.equal(configuration.accentConfirmed, false);

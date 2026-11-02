@@ -187,6 +187,22 @@ export async function saveLiveDirectorGuideMode(params: {
   return readJsonResponse(response);
 }
 
+/** Guarda en la canción qué metrónomo usa (el de la pista o el digital) y sus niveles. */
+export async function saveLiveDirectorClickPreference(params: {
+  songId: string;
+  clickPreference: NonNullable<LiveDirectorPersistedSession['clickPreference']>;
+}): Promise<LiveDirectorPersistedSession> {
+  const response = await fetchWithSessionRetry('/api/live-director-song-session', {
+    method: 'PATCH',
+    credentials: 'same-origin',
+    cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+
+  return readJsonResponse(response);
+}
+
 /** Guarda en la canción su kit de pads; null vuelve al kit del equipo. */
 export async function saveLiveDirectorPadKit(params: {
   songId: string;

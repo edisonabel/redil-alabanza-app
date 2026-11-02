@@ -29,8 +29,10 @@ try {
   await dialog.getByRole('button', { name: 'Opciones de sección 1', exact: true }).click();
   await dialog.getByRole('button', { name: 'Duplicar sección 1', exact: true }).click();
   await dialog.getByRole('button', { name: 'Insertar sección en posición 3', exact: true }).click();
-  await dialog.getByRole('combobox', { name: 'Sección para agregar' }).selectOption('interludio-2');
-  await dialog.getByRole('button', { name: 'Agregar', exact: true }).click();
+  // La sección se elige en un modal, no en la barra de abajo.
+  await page.getByRole('dialog', { name: 'Agregar sección' }).waitFor();
+  await page.locator('[data-arrangement-add-section="interludio-2"]').click();
+  assert.equal(await page.getByRole('dialog', { name: 'Agregar sección' }).count(), 0, 'Elegir cierra el modal');
   await dialog.getByRole('button', { name: 'Opciones de sección 3', exact: true }).click();
   await dialog.getByRole('button', { name: 'Mover sección 3 a la izquierda', exact: true }).click();
   const names = await dialog.locator('[data-arrangement-entry] h3').allTextContents(); assert.deepEqual(names, ['Intro 2', 'Interludio 2', 'Intro 2']); // nombres del mapa REAPER aplicado

@@ -12,7 +12,6 @@ export function LiveDirectorArrangementEditor(props: Props) {
   const [error, setError] = useState('');
   const [applying, setApplying] = useState(false);
   const [insertion, setInsertion] = useState<number | null>(null);
-  const [selected, setSelected] = useState(props.sections[0]?.id ?? '');
   const [menu, setMenu] = useState<string | null>(null);
   const locked = props.busy || applying;
   const sources = new Map(props.sections.map(section => [section.id, section]));
@@ -72,9 +71,24 @@ export function LiveDirectorArrangementEditor(props: Props) {
       })}
       <button type="button" className={`${control} self-center rounded-full`} aria-label={`Insertar sección en posición ${draft.length + 1}`} disabled={locked || draft.length >= MAX_ARRANGEMENT_SECTIONS} onClick={() => { setInsertion(draft.length); setMenu(null); }}><Plus size={17}/></button>
     </div>
-    {insertion !== null && <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-white/10 px-3 py-2" role="group" aria-label="Insertar sección">
-      <span className="text-xs text-white/55">Posición {insertion + 1}</span><select aria-label="Sección para agregar" className={`${control} min-w-0 flex-1 bg-[#202426]`} value={selected} disabled={locked} onChange={event => setSelected(event.target.value)}>{props.sections.map(section => <option key={section.id} value={section.id}>{section.name} · {clock(section.startTime)}</option>)}</select>
-      <button type="button" className={control} disabled={locked} onClick={() => insert(insertion, selected)}>Agregar</button><button type="button" className={control} disabled={locked} onClick={() => setInsertion(null)}>Cerrar</button>
+    {insertion !== null && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-3 backdrop-blur-[6px]"
+      onPointerDown={event => { if (event.target === event.currentTarget) setInsertion(null); }}>
+      <div role="dialog" aria-modal="true" aria-labelledby="ld-add-section-title" data-arrangement-add="true"
+        onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); setInsertion(null); } }}
+        className="flex max-h-full w-full max-w-3xl flex-col overflow-hidden rounded-[1.4rem] border border-white/12 bg-[#16191b] shadow-[0_32px_72px_rgba(0,0,0,0.5)]">
+        <header className="flex shrink-0 items-center justify-between gap-3 px-4 py-3">
+          <h3 id="ld-add-section-title" className="text-lg font-semibold text-white">Agregar sección</h3>
+          <button type="button" className={`${control} min-h-11 px-4 text-sm`} onClick={() => setInsertion(null)}>Cerrar</button>
+        </header>
+        <div className="grid min-h-0 grid-cols-2 gap-2 overflow-y-auto px-4 pb-4 sm:grid-cols-3" role="group" aria-label="Sección para agregar">
+          {props.sections.map((section, index) => <button key={section.id} type="button" autoFocus={index === 0} disabled={locked} data-arrangement-add-section={section.id}
+            className="min-h-16 rounded-xl border px-4 py-2 text-left hover:brightness-125 focus-visible:outline-2 focus-visible:outline-cyan-200 disabled:opacity-50"
+            style={{ borderColor: section.border, background: section.surface }} onClick={() => insert(insertion, section.id)}>
+            <span className="block truncate text-base font-semibold text-white">{section.name}</span>
+            <span className="block text-xs tabular-nums text-white/60">{clock(section.startTime)}</span>
+          </button>)}
+        </div>
+      </div>
     </div>}
     {error && <p role="alert" className="shrink-0 px-3 pb-2 text-xs text-rose-100">{error}</p>}
   </section>;

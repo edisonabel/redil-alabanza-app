@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChannelStrip } from './ChannelStrip';
 import { CLICK_LAYERS, normalizeGeneratedClick, type GeneratedClickSettings } from '../../../utils/liveDirectorGeneratedClick';
+import type { ClickPreference } from '../../../utils/liveDirectorClickPreference';
 
 type Props = {
   open: boolean; onClose: () => void;
@@ -12,19 +13,27 @@ type Props = {
   /** Canción sin stems: no hay click grabado, así que el digital se enciende solo (aunque llegue sonando). */
   forceGenerated?: boolean;
   onConfigure: (trackId: string, settings: GeneratedClickSettings | null) => boolean;
+  /** Lo elegido antes para esta canción: se aplica solo, también al entrar sonando. */
+  saved?: ClickPreference | null;
+  onPreferenceChange?: (preference: ClickPreference) => void;
+  onDigitalChange?: (digital: boolean) => void;
 };
 export function LiveDirectorClickMixer(props: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const generation = useRef(0);
+  const savedGrid = props.confirmedByReaper ? null : props.saved;
+  // Lo que eligió el músico; `enabled` es lo que el motor ya aplicó.
+  const [wanted, setWanted] = useState(Boolean(props.forceGenerated || props.saved?.enabled));
   const [enabled, setEnabled] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [bpm, setBpm] = useState(props.bpm);
-  const [origin, setOrigin] = useState(props.originSeconds);
-  const [numerator, setNumerator] = useState(props.meter?.numerator ?? 4);
-  const [denominator, setDenominator] = useState(props.meter?.denominator ?? 4);
-  const [accentConfirmed, setAccentConfirmed] = useState(Boolean(props.confirmedByReaper && props.meter));
-  const [levels, setLevels] = useState([.65, 0, .7, .35, 0]);
+  const [gridOpen, setGridOpen] = useState(false);
+  const [bpm, setBpm] = useState(savedGrid?.bpm ?? props.bpm);
+  const [origin, setOrigin] = useState(savedGrid?.originSeconds ?? props.originSeconds);
+  const [numerator, setNumerator] = useState(savedGrid?.numerator ?? props.meter?.numerator ?? 4);
+  const [denominator, setDenominator] = useState(savedGrid?.denominator ?? props.meter?.denominator ?? 4);
+  const [accentConfirmed, setAccentConfirmed] = useState(savedGrid?.accentConfirmed ?? Boolean(props.confirmedByReaper && props.meter));
+  const [levels, setLevels] = useState(props.saved?.levels ?? [.65, 0, .7, .35, 0]);
   const [muted, setMuted] = useState<boolean[]>([]);
   const [solo, setSolo] = useState<boolean[]>([]);
   const hasSolo = solo.some(Boolean);
@@ -40,7 +49,14 @@ export function LiveDirectorClickMixer(props: Props) {
   }, [props.open]);
   useEffect(() => { if (!props.ready) { generation.current++; setEnabled(false); setLoading(false); } }, [props.ready]);
   useEffect(() => { if (!settings) setEnabled(false); }, [settings]);
-  useEffect(() => { if (props.playing && loading && !props.forceGenerated) { generation.current++; setLoading(false); } }, [props.playing, loading, props.forceGenerated]);
+  useEffect(() => { props.onDigitalChange?.(enabled); }, [enabled, props.onDigitalChange]);
+  // Se guarda solo lo que elige el músico, nunca el apagado momentáneo mientras el motor se prepara.
+  const hydrated = useRef(false);
+  useEffect(() => {
+    if (!hydrated.current) { hydrated.current = true; return; }
+    if (props.forceGenerated) return;
+    props.onPreferenceChange?.({ enabled: wanted, levels, bpm, originSeconds: origin, numerator, denominator, accentConfirmed, updatedAt: Date.now() });
+  }, [wanted, levels, bpm, origin, numerator, denominator, accentConfirmed]);
   useEffect(() => {
     props.onConfigure(props.trackId, enabled && settings ? settings : null);
   }, [props.onConfigure, props.trackId, enabled, settings]);
@@ -48,8 +64,8 @@ export function LiveDirectorClickMixer(props: Props) {
     generation.current++;
     props.onConfigure(props.trackId, null);
   }, [props.onConfigure, props.trackId]);
-  const enable = async (force = false) => {
-    if ((gridLocked && !force) || !props.ready || !settings || enabled) return;
+  const enable = async () => {
+    if (!props.ready || !settings || enabled) return;
     const token = ++generation.current;
     setLoading(true); setError('');
     try {
@@ -59,50 +75,57 @@ export function LiveDirectorClickMixer(props: Props) {
         setEnabled(true);
       }
     } catch (error) {
-      if (generation.current === token) setError(error instanceof Error ? error.message : 'No se pudo preparar el metrónomo.');
+      if (generation.current === token) { setWanted(false); setError(error instanceof Error ? error.message : 'No se pudo preparar el metrónomo.'); }
     } finally { if (generation.current === token) setLoading(false); }
   };
   useEffect(() => {
-    if (props.forceGenerated && props.ready && settings && !enabled && !loading && !error) void enable(true);
+    if (wanted && props.ready && settings && !enabled && !loading && !error) void enable();
   });
   const changeGrid = (update: () => void) => { update(); setAccentConfirmed(false); };
+  const sourceClass = 'min-h-16 rounded-xl border px-4 text-base font-semibold focus-visible:outline-2 focus-visible:outline-cyan-200 disabled:opacity-50';
+  const sourceOn = 'border-cyan-200/70 bg-cyan-300/20 text-white';
+  const sourceOff = 'border-white/15 bg-black/25 text-white/70 hover:bg-white/5';
   const controlClass = 'min-h-10 rounded-lg border border-white/15 bg-black/25 px-3 py-2 text-sm text-white focus-visible:outline-2 focus-visible:outline-cyan-200 disabled:opacity-40';
   return <dialog ref={dialog} onClose={props.onClose} aria-labelledby="ld-click-title"
     className="m-auto w-[min(850px,calc(100vw-24px))] max-h-[calc(100dvh-24px)] overflow-y-auto rounded-2xl border border-white/15 bg-[#202426] p-4 text-white shadow-2xl backdrop:bg-black/70">
     <header className="sticky top-0 z-20 flex items-center justify-between gap-3 bg-[#202426] pb-1">
-      <h2 id="ld-click-title" className="text-lg font-semibold">Metrónomo · Click</h2>
+      <h2 id="ld-click-title" className="text-lg font-semibold">Metrónomo</h2>
       <button type="button" className={controlClass} onClick={() => dialog.current?.close()} aria-label="Cerrar metrónomo">Cerrar</button>
     </header>
-    <div className="mt-3 flex flex-wrap items-center gap-2" role="group" aria-label="Fuente del click">
-      {!props.forceGenerated && <button type="button" className={`${controlClass} ${!enabled ? 'border-cyan-200/60 bg-cyan-300/15' : ''}`} aria-pressed={!enabled} disabled={gridLocked}
-        onClick={() => { generation.current++; setEnabled(false); setError(''); }}>Click grabado</button>}
-      <button type="button" className={`${controlClass} ${enabled ? 'border-cyan-200/60 bg-cyan-300/15' : ''}`} aria-pressed={enabled}
-        disabled={gridLocked || !settings} onClick={() => { void enable(); }}>{loading ? 'Preparando sonidos…' : 'Click generado'}</button>
-      <span className="text-xs text-white/60">{props.playing ? 'Pausa para cambiar la fuente o el mapa.' : 'Los faders se pueden ajustar durante la reproducción.'}</span>
+    <div className="mt-3 grid grid-cols-2 gap-2" role="group" aria-label="Metrónomo que suena">
+      {!props.forceGenerated && <button type="button" aria-pressed={!wanted} disabled={gridLocked}
+        className={`${sourceClass} ${!wanted ? sourceOn : sourceOff}`}
+        onClick={() => { generation.current++; setWanted(false); setEnabled(false); setError(''); }}>Metrónomo</button>}
+      <button type="button" aria-pressed={wanted} disabled={gridLocked || !settings}
+        className={`${sourceClass} ${wanted ? sourceOn : sourceOff} ${props.forceGenerated ? 'col-span-2' : ''}`}
+        onClick={() => { setError(''); setWanted(true); }}>{loading ? 'Preparando…' : 'Metrónomo digital'}</button>
     </div>
-    <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-[1fr_1.3fr_1fr]">
-      <label className="grid gap-1 text-xs text-white/70">BPM · negras
-        <input className={`${controlClass} w-full`} aria-label="BPM del click generado" type="number" min="30" max="300" step="0.001" value={bpm} disabled={gridLocked}
-          onChange={event => changeGrid(() => setBpm(event.target.valueAsNumber || 0))} />
+    <div role="status" className="mt-2 min-h-5 text-sm text-amber-100">{error || (!settings ? 'Revisa el tempo y el compás.' : props.playing && !props.forceGenerated ? 'Pausa para cambiarlo.' : '')}</div>
+    <details data-click-grid="true" className="mt-1 rounded-lg border border-white/10 bg-black/15 px-3 py-2" open={gridOpen || !settings}
+      onToggle={event => setGridOpen(event.currentTarget.open)}>
+      <summary className="cursor-pointer text-sm text-white/75">Tempo y compás · {bpm} BPM · {numerator}/{denominator}</summary>
+      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-[1fr_1.3fr_1fr]">
+        <label className="grid gap-1 text-xs text-white/70">BPM
+          <input className={`${controlClass} w-full`} aria-label="BPM del click generado" type="number" min="30" max="300" step="0.001" value={bpm} disabled={gridLocked}
+            onChange={event => changeGrid(() => setBpm(event.target.valueAsNumber || 0))} />
+        </label>
+        <label className="grid gap-1 text-xs text-white/70">Primer pulso (segundos)
+          <input className={`${controlClass} w-full`} aria-label="Pulso de referencia del click" type="number" min="0" step="0.001" value={origin} disabled={gridLocked}
+            onChange={event => changeGrid(() => setOrigin(event.target.valueAsNumber || 0))} />
+        </label>
+        <div className="grid gap-1 text-xs text-white/70"><span>Compás</span><div className="flex items-center gap-1">
+          <input className={`${controlClass} w-16`} type="number" min="1" max="16" step="1" aria-label="Numerador del compás" value={numerator} disabled={gridLocked}
+            onChange={event => changeGrid(() => setNumerator(event.target.valueAsNumber || 0))} /><span>/</span>
+          <select className={`${controlClass} min-w-16`} aria-label="Denominador del compás" value={denominator} disabled={gridLocked}
+            onChange={event => changeGrid(() => setDenominator(Number(event.target.value)))}>{[2, 4, 8, 16].map(value => <option key={value} value={value}>{value}</option>)}</select>
+        </div></div>
+      </div>
+      <label className="mt-3 flex min-h-10 items-center gap-2 text-sm text-white/75">
+        <input type="checkbox" checked={accentConfirmed} disabled={gridLocked || !settings} className="h-4 w-4 accent-cyan-200"
+          onChange={event => setAccentConfirmed(event.target.checked)} />El primer pulso es el «uno»: acentuar el compás
       </label>
-      <label className="grid gap-1 text-xs text-white/70">Pulso de referencia · segundos
-        <input className={`${controlClass} w-full`} aria-label="Pulso de referencia del click" type="number" min="0" step="0.001" value={origin} disabled={gridLocked}
-          onChange={event => changeGrid(() => setOrigin(event.target.valueAsNumber || 0))} />
-      </label>
-      <div className="grid gap-1 text-xs text-white/70"><span>Compás para el acento</span><div className="flex items-center gap-1">
-        <input className={`${controlClass} w-16`} type="number" min="1" max="16" step="1" aria-label="Numerador del compás" value={numerator} disabled={gridLocked}
-          onChange={event => changeGrid(() => setNumerator(event.target.valueAsNumber || 0))} /><span>/</span>
-        <select className={`${controlClass} min-w-16`} aria-label="Denominador del compás" value={denominator} disabled={gridLocked}
-          onChange={event => changeGrid(() => setDenominator(Number(event.target.value)))}>{[2, 4, 8, 16].map(value => <option key={value} value={value}>{value}</option>)}</select>
-      </div></div>
-    </div>
-    <label className="mt-3 flex min-h-10 items-center gap-2 text-xs text-white/75">
-      <input type="checkbox" checked={accentConfirmed} disabled={gridLocked || !settings} className="h-4 w-4 accent-cyan-200"
-        onChange={event => setAccentConfirmed(event.target.checked)} />El pulso de referencia es el «uno» y el compás está confirmado.{props.confirmedByReaper && props.meter && accentConfirmed && numerator === props.meter.numerator && denominator === props.meter.denominator ? ' (tomado de REAPER)' : ''}
-    </label>
-    <p className="mt-1 text-xs text-white/55">Tempo constante. Si la canción cambia de tempo o compás, conserva el click grabado. Ajustes locales de esta prueba.</p>
-    <div role="status" className="mt-2 min-h-5 text-xs text-amber-100">{error || (!settings ? 'Revisa el tempo, el pulso y el compás antes de activar.' : !accentConfirmed ? 'Acento desactivado hasta confirmar el compás.' : 'Acento: un golpe en el «uno» de cada compás.')}</div>
-    <div className="mt-2 grid h-[clamp(240px,40dvh,380px)] grid-cols-[repeat(5,minmax(112px,1fr))] gap-2 overflow-x-auto" data-live-director-mixer-scroll="true">
+    </details>
+    {wanted && <div className="mt-2 grid h-[clamp(240px,40dvh,380px)] grid-cols-[repeat(5,minmax(112px,1fr))] gap-2 overflow-x-auto" data-live-director-mixer-scroll="true">
       {CLICK_LAYERS.map((layer, index) => <ChannelStrip key={layer.id} id={`click-${layer.id}`} label={layer.label} shortLabel={layer.shortLabel}
         accent={layer.accent} volume={levels[index]} level={0} isPlaying={props.playing && enabled}
         muted={Boolean(muted[index])} soloed={Boolean(solo[index])} dimmed={hasSolo && !solo[index]} compact
@@ -111,7 +134,6 @@ export function LiveDirectorClickMixer(props: Props) {
         onVolumeChange={value => setLevels(previous => previous.map((level, i) => i === index ? value : level))}
         onMute={() => setMuted(previous => Array.from({ length: 5 }, (_, i) => i === index ? !previous[i] : Boolean(previous[i])))}
         onSolo={() => setSolo(previous => Array.from({ length: 5 }, (_, i) => i === index ? !previous[i] : Boolean(previous[i])))} />)}
-    </div>
-    <p className="mt-2 text-xs text-white/55">Click controla el volumen y la salida de todas las capas. Corcheas y semicorcheas añaden los pulsos intermedios.</p>
+    </div>}
   </dialog>;
 }

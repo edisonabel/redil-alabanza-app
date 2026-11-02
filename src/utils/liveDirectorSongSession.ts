@@ -1,3 +1,4 @@
+import { normalizeClickPreference, type ClickPreference } from './liveDirectorClickPreference';
 import { cleanExportedStemLabels } from './stemCategories';
 import { buildSectionShortLabel, getSectionKind, SECTION_VISUALS, toRgba } from './sectionVisuals';
 import type { TrackOutputRoute } from './liveDirectorTrackRouting';
@@ -37,6 +38,8 @@ export type LiveDirectorPersistedSession = {
   guideMode?: 'dynamic';
   /** Kit de pads propio de la canción (src/utils/padKits.ts); sin él suena el kit del equipo. */
   padKitId?: string;
+  /** Metrónomo elegido para la canción (el de la pista o el digital). */
+  clickPreference?: ClickPreference;
   folder: string;
   manifestUrl: string;
   updatedAt: string;
@@ -234,6 +237,7 @@ export const normalizePersistedLiveDirectorSession = (
       : {}),
     ...(sessionRecord.guideMode === 'dynamic' ? { guideMode: 'dynamic' as const } : {}),
     ...(typeof sessionRecord.padKitId === 'string' && /^[a-z0-9-]{1,40}$/.test(sessionRecord.padKitId) ? { padKitId: sessionRecord.padKitId } : {}),
+    ...(normalizeClickPreference(sessionRecord.clickPreference) ? { clickPreference: normalizeClickPreference(sessionRecord.clickPreference)! } : {}),
     folder:
       String(sessionRecord.folder || '').trim() || buildLiveDirectorSongFolder(songId, songTitle),
     manifestUrl: String(sessionRecord.manifestUrl || '').trim(),
