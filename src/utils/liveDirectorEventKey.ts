@@ -1,7 +1,7 @@
 // Tono de una canción en un evento: una copia transportada de sus pistas, solo para ese evento. La canción
 // original no se toca, y la copia se borra sola cuando el evento termina.
 export type EventKeyTrack = { url: string; sourceUrl: string };
-export type EventKey = { semitones: number; targetKey: string; originalKey: string; tracks: Record<string, EventKeyTrack>; updatedAt?: string };
+export type EventKey = { semitones: number; targetKey: string; originalKey: string; tracks: Record<string, EventKeyTrack>; mp3?: EventKeyTrack; updatedAt?: string };
 type SessionTrack = { id: string; name?: string; url: string; optimizedUrl?: string; iosUrl?: string; nativeUrl?: string; cafUrl?: string; pcmUrl?: string; sourceFileName?: string; enabled?: boolean };
 
 export const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'] as const;
@@ -35,6 +35,12 @@ export function applyEventKey<T extends { tracks?: SessionTrack[] } | null | und
 }
 export const isEventKeyFresh = (session: { tracks?: SessionTrack[] } | null | undefined, eventKey?: EventKey | null) => Boolean(eventKey && applyEventKey(session, eventKey) !== session);
 
+// El MP3 de ensayo tiene su propia copia. Si la canción cambió de MP3 después, suena el MP3 nuevo tal cual.
+export const EVENT_KEY_MP3_ID = 'ensayo-mp3';
+export function withEventMp3<T extends { mp3?: string | null } | null | undefined>(song: T, eventKey?: Pick<EventKey, 'targetKey' | 'mp3'> | null): T {
+  return song && eventKey?.mp3 && eventKey.mp3.sourceUrl === song.mp3 ? { ...song, mp3: eventKey.mp3.url, eventMp3Key: eventKey.targetKey } : song;
+}
+
 // Candado: lo único que el cambio de tono puede borrar son sus propias copias. Los stems originales viven
 // en secuencias/ y ningún camino de esta función los toca.
 export const EVENT_KEY_PREFIX = 'live-director/event-keys/';
@@ -61,7 +67,7 @@ export async function readEventKey(eventId: string, songId: string): Promise<{ k
   }
 }
 /** Tonos de este evento por canción, para mostrar el correcto en la lista. */
-export type ListedEventKey = Pick<EventKey, 'semitones' | 'targetKey' | 'originalKey'>;
+export type ListedEventKey = Pick<EventKey, 'semitones' | 'targetKey' | 'originalKey' | 'mp3'>;
 export async function readEventKeys(eventId: string): Promise<Record<string, ListedEventKey>> {
   const body = await parse(await fetch(`${API}?evento_id=${encodeURIComponent(eventId)}`, { credentials: 'same-origin', cache: 'no-store' }));
   return body.keys || {};
@@ -69,7 +75,7 @@ export async function readEventKeys(eventId: string): Promise<Record<string, Lis
 const send = async (method: string, body: unknown) => parse(await fetch(API, { method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
 export const requestEventKeyUpload = (eventId: string, songId: string, semitones: number, trackId: string): Promise<{ uploadUrl: string; key: string }> =>
   send('POST', { evento_id: eventId, cancion_id: songId, semitones, track_id: trackId });
-export async function saveEventKey(eventId: string, songId: string, payload: { semitones: number; targetKey: string; originalKey: string; tracks: Array<{ id: string; key: string; sourceUrl: string }> }): Promise<EventKey> {
+export async function saveEventKey(eventId: string, songId: string, payload: { semitones: number; targetKey: string; originalKey: string; tracks: Array<{ id: string; key: string; sourceUrl: string }>; mp3?: { key: string; sourceUrl: string } | null }): Promise<EventKey> {
   const { key } = await send('PUT', { evento_id: eventId, cancion_id: songId, ...payload });
   remember(eventId, songId, key);
   return key;

@@ -2,6 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, CalendarDays, ChevronDown, ChevronRight, ChevronUp, Clock3, ExternalLink, FileText, GripVertical, ListMusic, Loader2, Mic2, Play, Plus, Printer, RadioReceiver, Share2, X, Zap } from 'lucide-react';
 import ModoEnsayoCompacto from './ModoEnsayoCompacto.jsx';
 import { useEventKeys } from '../../hooks/useEventKeys';
+import { useChordSpelling } from '../../hooks/useChordSpelling';
+import { spellChord } from '../../utils/chordSpelling';
+import { withEventMp3 } from '../../utils/liveDirectorEventKey';
 import EnsayoPersonalView from './EnsayoPersonalView.jsx';
 import { supabase } from '../../lib/supabase';
 import { metronomeService } from '../../services/MetronomeEngine';
@@ -676,6 +679,7 @@ export default function EnsayoHub({
   const rehearsalEventId = String(eventMeta?.id || '').trim();
   // Tono de cada canción en este evento: el que suena es el que se anuncia en la lista.
   const { eventKeys, refreshEventKeys, announceEventKey } = useEventKeys(rehearsalEventId);
+  const [chordSpelling] = useChordSpelling();
 
   const initialSong = useMemo(() => (
     initialSongId
@@ -684,6 +688,9 @@ export default function EnsayoHub({
   ), [initialSongId, songs]);
 
   const [cancionActiva, setCancionActiva] = useState(initialSong);
+  const cancionActivaEnTono = useMemo(() => (
+    withEventMp3(cancionActiva, eventKeys[String(cancionActiva?.id || '')])
+  ), [cancionActiva, eventKeys]);
   const [cancionPersonalActiva, setCancionPersonalActiva] = useState(null);
   const [lastViewedSongId, setLastViewedSongId] = useState(initialSong ? String(initialSong.id || '') : null);
   const [activeMetronomeSongId, setActiveMetronomeSongId] = useState(null);
@@ -963,7 +970,8 @@ export default function EnsayoHub({
     updateProPlayerQueueState({ active: false, index: -1, length: 0 });
   }, []);
 
-  const openSongInPlayer = useCallback((song, autoPlay = true, preserveExpanded = false) => {
+  const openSongInPlayer = useCallback((rawSong, autoPlay = true, preserveExpanded = false) => {
+    const song = withEventMp3(rawSong, eventKeys[String(rawSong?.id || '')]);
     if (!song?.mp3) return;
     const safeUrl = song.mp3.replace(/ /g, '%20');
     dispatchProPlayerEvent({
@@ -975,7 +983,7 @@ export default function EnsayoHub({
       sectionMarkers: song.sectionMarkers || [],
       preserveExpanded,
     });
-  }, []);
+  }, [eventKeys]);
 
   const openPersonalVoiceView = useCallback((song) => {
     if (!song) return;
@@ -1657,7 +1665,7 @@ export default function EnsayoHub({
   if (cancionActiva) {
     return (
       <ModoEnsayoCompacto
-        song={cancionActiva}
+        song={cancionActivaEnTono}
         contextTitle={contextTitle}
         onGoBack={handleCompactBack}
         globalSyncMode={isSyncReceiver}
@@ -1877,9 +1885,9 @@ export default function EnsayoHub({
               }
 
               // ── Card de Canción normal ──
-              const originalKeyLabel = normalizeKeyToAmerican(song?.originalKey || song?.key || '-');
+              const originalKeyLabel = spellChord(normalizeKeyToAmerican(song?.originalKey || song?.key || '-'), chordSpelling);
               const eventKey = eventKeys[String(song?.id || '')];
-              const keyLabel = eventKey ? `${eventKey.targetKey} (original ${originalKeyLabel})` : originalKeyLabel;
+              const keyLabel = eventKey ? `${spellChord(eventKey.targetKey, chordSpelling)} (original ${originalKeyLabel})` : originalKeyLabel;
               const bpmValue = Number.isFinite(Number(song?.bpm)) ? Math.max(0, Math.round(Number(song.bpm))) : 0;
               const isMetronomeActive = activeMetronomeSongId === song?.id;
               const hasSongAudio = typeof song?.mp3 === 'string' && song.mp3.trim() !== '';

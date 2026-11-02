@@ -8,6 +8,8 @@ import { screenWakeLockService } from '../../services/ScreenWakeLockService';
 import { useMultitrackEngine } from '../../hooks/useMultitrackEngine';
 import { isLikelyAudioSourceUrl, resolvePreferredAudioUrl } from '../../lib/audio-playback.js';
 import { buildWordGroups, parseChordProLine } from '../../utils/chordProLineUtils';
+import { CHORD_SPELLINGS, spellChord, spellChordProLine } from '../../utils/chordSpelling';
+import { useChordSpelling } from '../../hooks/useChordSpelling';
 import { normalizePersistedLiveDirectorSession } from '../../utils/liveDirectorSongSession';
 import { getPadUrlForSongKey } from '../../utils/padAudio';
 import { buildLiveDirectorSyncChannelName } from '../../utils/liveDirectorSync';
@@ -365,7 +367,7 @@ const buildPlaybackSources = (song) => {
   };
   pushSource({
     id: 'original',
-    label: 'Musica original',
+    label: song?.eventMp3Key ? `Música en ${song.eventMp3Key}` : 'Musica original',
     url: song?.mp3,
     kind: 'original',
   }, 0, 'original');
@@ -1393,6 +1395,8 @@ export default function ModoEnsayoCompacto({
   const [playbackSeekNotice, setPlaybackSeekNotice] = useState('');
   const [rehearsalMixUnavailable, setRehearsalMixUnavailable] = useState(false);
   const [transposeSteps, setTransposeSteps] = useState(0);
+  const [chordSpelling, setChordSpelling] = useChordSpelling();
+  const showChord = (chord) => formatChordAccidentals(spellChord(chord, chordSpelling));
   const [capoFret, setCapoFret] = useState(0);
   const [isMetronomeOn, setIsMetronomeOn] = useState(false);
   const [loopState, setLoopState] = useState(0);
@@ -1596,10 +1600,10 @@ export default function ModoEnsayoCompacto({
     (currentSong?.sections || []).map((section) => ({
       ...section,
       lines: Array.isArray(section?.lines)
-        ? section.lines.map((line) => transposeChordProLine(line, displayTransposeSteps))
+        ? section.lines.map((line) => spellChordProLine(transposeChordProLine(line, displayTransposeSteps), chordSpelling))
         : [],
     }))
-  ), [currentSong?.sections, displayTransposeSteps]);
+  ), [chordSpelling, currentSong?.sections, displayTransposeSteps]);
   const voiceLyricWords = useMemo(() => buildVoiceLyricIndex(currentSections), [currentSections]);
   const currentChordLibrary = useMemo(() => (
     buildChordLibrary(extractChordTokensFromSections(currentSections))
@@ -3875,7 +3879,7 @@ export default function ModoEnsayoCompacto({
                           Tonalidad
                         </p>
                         <span className="rounded-full border border-zinc-200/80 bg-zinc-100/80 px-2 py-1 text-[0.72rem] font-black leading-none text-zinc-700 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-200">
-                          {formatChordAccidentals(currentSongDisplayKey)}
+                          {showChord(currentSongDisplayKey)}
                         </span>
                       </div>
                       <div className="grid grid-cols-4 gap-1.5">
@@ -3892,16 +3896,16 @@ export default function ModoEnsayoCompacto({
                                 : 'border-zinc-200 bg-white text-zinc-900 hover:border-zinc-300 hover:bg-zinc-50 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800'
                                 }`}
                               aria-pressed={active}
-                              aria-label={`${formatChordAccidentals(option.label)}${original ? ', tono original' : ''}`}
-                              title={original ? 'Tono original' : undefined}
+                              aria-label={`${showChord(option.label)}${original ? (eventKeySemitones ? ', tono del evento' : ', tono original') : ''}`}
+                              title={original ? (eventKeySemitones ? 'Tono del evento' : 'Tono original') : undefined}
                             >
-                              <span>{formatChordAccidentals(option.label)}</span>
+                              <span>{showChord(option.label)}</span>
                               {original && (
                                 <span className={`mt-1 text-[0.48rem] font-black uppercase tracking-[0.08em] ${active
                                   ? 'text-white/80'
                                   : 'text-amber-600 dark:text-amber-300'
                                   }`}>
-                                  Orig
+                                  {eventKeySemitones ? 'Evento' : 'Orig'}
                                 </span>
                               )}
                             </button>
@@ -3910,6 +3914,30 @@ export default function ModoEnsayoCompacto({
                       </div>
                     </div>
                   )}
+                  {/* Alteraciones */}
+                  <div>
+                    <p className="mb-2 px-1 text-[0.72rem] font-black uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
+                      Ver acordes en
+                    </p>
+                    <div role="radiogroup" aria-label="Ver acordes en" className="grid grid-cols-3 gap-1.5">
+                      {CHORD_SPELLINGS.map((option) => (
+                        <button
+                          key={option.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={chordSpelling === option.id}
+                          aria-label={option.id === 'sharp' ? 'Sostenidos' : option.id === 'flat' ? 'Bemoles' : 'Como está escrito'}
+                          data-chord-spelling={option.id}
+                          onClick={() => setChordSpelling(option.id)}
+                          className={`min-h-11 rounded-[0.85rem] border px-1 font-black transition-colors ${option.id === 'written' ? 'text-[0.8rem]' : 'text-[1.15rem]'} ${chordSpelling === option.id
+                            ? 'border-brand bg-brand text-white'
+                            : 'border-zinc-200 bg-white text-zinc-900 hover:border-zinc-300 hover:bg-zinc-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-100 dark:hover:bg-white/[0.08]'}`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   {/* Tamaño */}
                   {originalSongKey !== '-' && songChordTokens.length > 0 && (
                     <div>
@@ -3920,8 +3948,8 @@ export default function ModoEnsayoCompacto({
                           </p>
                           <p className="mt-1 text-[0.68rem] font-semibold leading-tight text-zinc-500 dark:text-zinc-400">
                             {capoFret > 0
-                              ? `Suena ${formatChordAccidentals(currentSongDisplayKey)} · Tocas ${formatChordAccidentals(capoShapeKey)}`
-                              : `Sin capo · Tocas ${formatChordAccidentals(currentSongDisplayKey)}`}
+                              ? `Suena ${showChord(currentSongDisplayKey)} · Tocas ${showChord(capoShapeKey)}`
+                              : `Sin capo · Tocas ${showChord(currentSongDisplayKey)}`}
                           </p>
                         </div>
                         {recommendedCapoOption && (
@@ -3959,7 +3987,7 @@ export default function ModoEnsayoCompacto({
                                 )}
                               </div>
                               <span className={`text-lg font-black leading-none ${active ? 'text-white' : ''}`}>
-                                {formatChordAccidentals(option.shapeKey)}
+                                {showChord(option.shapeKey)}
                               </span>
                             </button>
                           );

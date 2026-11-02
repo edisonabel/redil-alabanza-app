@@ -15,7 +15,7 @@ const open = async respond => {
   return { page, requests };
 };
 try {
-  const keys = { [CHANGED]: { semitones: 1, targetKey: 'F', originalKey: 'E', tracks: {} } };
+  const keys = { [CHANGED]: { semitones: 1, targetKey: 'F', originalKey: 'E', mp3: { url: '/copia-en-f.m4a', sourceUrl: '/lab-none.mp3' } } };
   const { page, requests } = await open(route => route.fulfill({ json: { keys } }));
   await page.getByText('F (original E)').first().waitFor({ timeout: 10000 });
   assert.deepEqual(requests, [`?evento_id=${EVENT}`], 'Pide los tonos de todo el evento una vez');
@@ -24,7 +24,17 @@ try {
   // Los acordes del ensayo siguen el tono del evento: E A B en E, F Bb C subiendo un semitono.
   await page.getByText('Ensayar', { exact: true }).first().click();
   await page.getByText('Primera').first().waitFor({ timeout: 20000 });
+  await page.waitForFunction(() => [...document.querySelectorAll('audio')].some(audio => /copia-en-f/.test(audio.src || audio.currentSrc)), null, { timeout: 10000 });
   await page.waitForFunction(() => /\bF\b/.test(document.body.innerText) && /Bb|A♯|A#/.test(document.body.innerText), null, { timeout: 10000 });
+
+  // Bemol o sostenido: lo escoge el músico en Opciones, y se recuerda en este equipo.
+  await page.getByRole('button', { name: 'Opciones de ensayo' }).click();
+  await page.locator('[data-chord-spelling="sharp"]').click();
+  await page.waitForFunction(() => /A♯/.test(document.body.innerText) && !/B♭/.test(document.body.innerText), null, { timeout: 5000 });
+  await page.locator('[data-chord-spelling="flat"]').click();
+  await page.waitForFunction(() => /B♭/.test(document.body.innerText) && !/A♯/.test(document.body.innerText), null, { timeout: 5000 });
+  assert.equal(await page.evaluate(() => localStorage.getItem('alabanza:chord-spelling')), 'flat');
+  await page.locator('[data-chord-spelling="written"]').click();
 
   // El monitor en vivo: acordes y tono del evento.
   const monitor = await browser.newPage({ viewport: { width: 1280, height: 800 } });

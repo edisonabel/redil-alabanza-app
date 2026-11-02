@@ -4,6 +4,8 @@ import { buildWordGroups } from '../../utils/chordProLineUtils';
 import { buildLiveDirectorSyncChannelName } from '../../utils/liveDirectorSync';
 import { buildDisplayTrack } from '../../utils/splitSectionIntoCues';
 import { useEventKeys } from '../../hooks/useEventKeys';
+import { useChordSpelling } from '../../hooks/useChordSpelling';
+import { CHORD_SPELLINGS, spellChord, spellChordProLine } from '../../utils/chordSpelling';
 import { toRgba } from '../../utils/sectionVisuals';
 import {
   REHEARSAL_PERSONAL_SETTINGS_TOAST_MS,
@@ -407,6 +409,7 @@ function MonitorChordOverlayLine({
 /** @param {{ songs?: any[]; eventId?: string; eventTitle?: string; userId?: string }} props */
 export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle = '', userId = '' }) {
   const { eventKeys, announceEventKey } = useEventKeys(eventId);
+  const [chordSpelling, setChordSpelling] = useChordSpelling();
   const [activeTrackIndex, setActiveTrackIndex] = useState(0);
   const [activeSectionIndex, setActiveSectionIndex] = useState(0);
   const [activeCueIndex, setActiveCueIndex] = useState(0);
@@ -1306,7 +1309,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
                   fontSize: isMobile ? 11 : 14,
                 }}
               >
-                {eventKeys[String(activeTrack?.songId || '')]?.targetKey || activeTrack.key}
+                {spellChord(eventKeys[String(activeTrack?.songId || '')]?.targetKey || activeTrack.key, chordSpelling)}
               </span>
             )}
             {bpmLabel && (
@@ -1472,7 +1475,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
                           settings.showChords
                             ? segments.map((segment) => ({
                                 ...segment,
-                                chord: transposeChordBySteps(segment.chord, personalChordShift),
+                                chord: spellChord(transposeChordBySteps(segment.chord, personalChordShift), chordSpelling),
                               }))
                             : segments.map((segment) => ({ ...segment, chord: '' }))
                         }
@@ -1520,7 +1523,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
                             textWrap: shouldWrapMobileLyrics ? 'balance' : 'nowrap',
                           }}
                         >
-                          {transposeLineBySteps(line, personalChordShift)}
+                          {spellChordProLine(transposeLineBySteps(line, personalChordShift), chordSpelling)}
                         </div>
                       ))}
                     </div>
@@ -1669,7 +1672,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
                       }}
                     >
                       <MonitorChordDisplay
-                        chord={transposeChordBySteps(nextCuePrimaryChord, personalChordShift)}
+                        chord={spellChord(transposeChordBySteps(nextCuePrimaryChord, personalChordShift), chordSpelling)}
                         fontSize={viewport.width >= 1180 ? 44 : 40}
                         color={toRgba(nextCue?.sectionColor || activeCue?.sectionColor || [249, 115, 22], 0.98)}
                       />
@@ -1993,6 +1996,35 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
 
           <div style={{ marginTop: 8, width: 'min(92vw, 520px)' }}>
             <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: 1, textTransform: 'uppercase', opacity: 0.45, marginBottom: 10, textAlign: 'center' }}>
+              Ver acordes en
+            </div>
+            <div role="radiogroup" aria-label="Ver acordes en" style={{ display: 'flex', gap: 6, justifyContent: 'center', marginBottom: 14 }}>
+              {CHORD_SPELLINGS.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={chordSpelling === option.id}
+                  data-chord-spelling={option.id}
+                  onClick={() => setChordSpelling(option.id)}
+                  style={{
+                    minWidth: 52,
+                    height: 34,
+                    padding: '0 10px',
+                    borderRadius: 8,
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontWeight: 800,
+                    fontSize: option.id === 'written' ? 13 : 18,
+                    background: chordSpelling === option.id ? '#f0f0f0' : 'rgba(255,255,255,0.1)',
+                    color: chordSpelling === option.id ? '#0a0a0a' : '#f0f0f0',
+                  }}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: 1, textTransform: 'uppercase', opacity: 0.45, marginBottom: 8 }}>
               Tono personal
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center' }}>
