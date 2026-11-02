@@ -25,11 +25,12 @@ try {
   assert.equal(await headerMeter.innerText(), '4/4', 'Providencia uses the meter confirmed in the imported REAPER map');
   assert.match(await page.locator('[data-live-director-control="bpm"]').innerText(), /120/);
   await page.locator('[data-live-director-control="bpm"]').click();
-  const dialog = page.getByRole('dialog', { name: 'Metrónomo · Click' }); await dialog.waitFor();
+  const dialog = page.getByRole('dialog', { name: 'Metrónomo' }); await dialog.waitFor();
+  await dialog.locator('[data-click-grid] summary').click();
   await dialog.getByRole('spinbutton', { name: 'Numerador del compás' }).fill('6');
   await dialog.getByRole('combobox', { name: 'Denominador del compás' }).selectOption('8');
   await dialog.getByRole('checkbox').check();
-  assert.equal(await dialog.getByRole('button', { name: 'Click grabado', exact: true }).getAttribute('aria-pressed'), 'true', 'Confirming meter does not replace recorded audio');
+  assert.equal(await dialog.getByRole('button', { name: 'Metrónomo', exact: true }).getAttribute('aria-pressed'), 'true', 'Confirming meter does not replace recorded audio');
   await dialog.getByRole('button', { name: 'Cerrar metrónomo' }).click();
   assert.equal(await headerMeter.innerText(), '6/8');
   await page.screenshot({ path: '.lab/results/covers-meter-confirmed.png' });

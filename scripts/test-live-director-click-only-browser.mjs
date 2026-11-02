@@ -48,8 +48,8 @@ try {
   assert.deepEqual(loaded.tracks, ['Click']); assert.ok(Math.abs(loaded.duration - 214.018) < 0.05, `Dura lo que el MP3: ${loaded.duration}`);
   await page.waitForTimeout(800);
   await page.keyboard.press('t');
-  assert.equal(await page.getByRole('button', { name: 'Click grabado', exact: true }).count(), 0, 'Sin click grabado que elegir');
-  assert.equal(await page.getByRole('button', { name: 'Click generado', exact: true }).getAttribute('aria-pressed'), 'true', 'El click digital viene encendido');
+  assert.equal(await page.getByRole('button', { name: 'Metrónomo', exact: true }).count(), 0, 'Sin click grabado que elegir');
+  assert.equal(await page.getByRole('button', { name: 'Metrónomo digital', exact: true }).getAttribute('aria-pressed'), 'true', 'El click digital viene encendido');
   await page.getByRole('button', { name: 'Cerrar metrónomo', exact: true }).click();
   results.loaded = { tracks: loaded.tracks, duration: Number(loaded.duration.toFixed(3)) };
 

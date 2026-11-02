@@ -23,18 +23,20 @@ try {
   });
   const open = () => page.getByRole('button', { name: 'Configurar metrónomo', exact: true }).click();
   const close = () => page.getByRole('button', { name: 'Cerrar metrónomo', exact: true }).click();
-  const recorded = page.getByRole('button', { name: 'Click grabado', exact: true });
-  const generated = page.getByRole('button', { name: 'Click generado', exact: true });
+  const recorded = page.getByRole('button', { name: 'Metrónomo', exact: true });
+  const generated = page.getByRole('button', { name: 'Metrónomo digital', exact: true });
   await open();
   assert.equal(await recorded.getAttribute('aria-pressed'), 'true');
-  // Providencia tiene mapa REAPER: compás y «uno» ya confirmados, el acento está disponible desde el inicio.
-  assert.equal(await page.getByRole('slider', { name: 'Volume for Acento', exact: true }).getAttribute('aria-disabled'), 'false');
-  assert.equal(await page.getByRole('checkbox', { name: /El pulso de referencia/ }).isChecked(), true);
+  // Con el metrónomo de la pista no hay faders de capas; tempo y compás quedan plegados.
+  assert.equal(await page.getByRole('slider', { name: 'Volume for Acento', exact: true }).count(), 0);
+  await page.locator('[data-click-grid] summary').click();
+  // Providencia tiene mapa REAPER: compás y «uno» ya confirmados.
+  assert.equal(await page.getByRole('checkbox', { name: /El primer pulso/ }).isChecked(), true);
   const tempo = page.getByRole('spinbutton', { name: 'BPM del click generado', exact: true });
   await tempo.fill('0'); assert.ok(await generated.isDisabled());
-  // Cambiar la rejilla quita la confirmación: el acento vuelve a quedar protegido.
-  assert.equal(await page.getByRole('slider', { name: 'Volume for Acento', exact: true }).getAttribute('aria-disabled'), 'true');
-  await page.getByRole('checkbox', { name: /El pulso de referencia/ }).check().catch(() => {});
+  // Cambiar la rejilla quita la confirmación.
+  assert.equal(await page.getByRole('checkbox', { name: /El primer pulso/ }).isChecked(), false);
+  await page.getByRole('checkbox', { name: /El primer pulso/ }).check().catch(() => {});
   await tempo.fill('120');
   cases.push('recorded-default-and-invalid-grid-accent-guard');
   await page.route('**/audio/click-classic/quarter.wav', route => route.fulfill({ status: 503, body: 'Temporary sample failure' }));
@@ -52,11 +54,11 @@ try {
   const quarter = page.getByRole('slider', { name: 'Volume for Negras', exact: true });
   await quarter.focus(); await page.keyboard.press('Shift+ArrowDown');
   await page.waitForFunction(() => Math.abs(window.__clickMessages.filter(message => message.settings).at(-1).settings.levels[2] - .699) < 1e-7);
-  await page.getByRole('checkbox', { name: /El pulso de referencia/ }).check();
+  await page.getByRole('checkbox', { name: /El primer pulso/ }).check();
   await page.waitForFunction(() => window.__clickMessages.filter(message => message.settings).at(-1).settings.accentConfirmed);
   assert.equal(await page.getByRole('slider', { name: 'Volume for Acento', exact: true }).getAttribute('aria-disabled'), 'false');
   await tempo.fill('120.5');
-  assert.equal(await page.getByRole('checkbox', { name: /El pulso de referencia/ }).isChecked(), false, 'Changed grid invalidates accent confirmation');
+  assert.equal(await page.getByRole('checkbox', { name: /El primer pulso/ }).isChecked(), false, 'Changed grid invalidates accent confirmation');
   await tempo.fill('120');
   await page.screenshot({ path: '.lab/results/click-desktop.png' });
   cases.push('continuous-layer-faders-and-explicit-downbeat-confirmation');
@@ -81,14 +83,16 @@ try {
   cases.push('live-layer-changes-source-lock-and-real-fifteen-stem-prepared-jump');
   await open(); await recorded.click();
   await page.waitForFunction(() => window.__clickMessages.filter(message => message.type === 'track-generated-click').at(-1)?.settings === null);
+  assert.equal(await page.getByRole('slider', { name: 'Volume for Semicorcheas', exact: true }).count(), 0, 'El metrónomo de la pista no tiene capas');
   await page.setViewportSize({ width: 844, height: 390 });
+  await generated.click();
   await page.getByRole('slider', { name: 'Volume for Semicorcheas', exact: true }).scrollIntoViewIfNeeded();
   assert.ok(await page.getByRole('slider', { name: 'Volume for Semicorcheas', exact: true }).isVisible());
   await page.screenshot({ path: '.lab/results/click-mobile.png' });
-  const bounds = await page.getByRole('dialog', { name: 'Metrónomo · Click', exact: true }).boundingBox();
+  const bounds = await page.getByRole('dialog', { name: 'Metrónomo', exact: true }).boundingBox();
   assert.ok(bounds.width <= 844 && bounds.height <= 390 && bounds.x >= 0 && bounds.y >= 0);
   await page.keyboard.press('Escape');
-  assert.equal(await page.getByRole('dialog', { name: 'Metrónomo · Click', exact: true }).isVisible(), false);
+  assert.equal(await page.getByRole('dialog', { name: 'Metrónomo', exact: true }).isVisible(), false);
   cases.push('recorded-restoration-and-responsive-keyboard-dismissal');
   assert.deepEqual(errors, []); assert.deepEqual(writes, []);
   await writeFile('.lab/results/click-ui-check.json', JSON.stringify({ pass: true, cases, samples, jump, errors, writes }, null, 2));

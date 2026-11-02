@@ -55,8 +55,7 @@ try {
   }
   // Insert exactly where + was pressed; undo restores this draft.
   await editor.getByRole('button', { name: 'Insertar sección en posición 2', exact: true }).click();
-  await editor.getByRole('combobox', { name: 'Sección para agregar' }).selectOption('coro-1-1');
-  await editor.getByRole('button', { name: 'Agregar', exact: true }).click();
+  await page.locator('[data-arrangement-add-section="coro-1-1"]').click();
   assert.equal(await editor.locator('[data-arrangement-entry]').count(), 15);
   assert.equal(await editor.locator('[data-arrangement-entry] h3').nth(1).innerText(), 'Coro 1');
   await editor.getByRole('button', { name: 'Deshacer cambio de sección', exact: true }).click();

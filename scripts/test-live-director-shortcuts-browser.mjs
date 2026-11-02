@@ -63,7 +63,7 @@ try {
   await control('play-pause').click(); await page.waitForFunction(() => !window.__streamingEngineDumpOwner.getIsPlaying());
   await page.keyboard.press('a'); assert.equal(await page.getByRole('slider', { name: 'Nivel de canción en decibelios' }).count(), 1, 'A abre el nivel');
   await page.getByRole('button', { name: 'Cerrar nivel de canción', exact: true }).click();
-  await page.keyboard.press('t'); assert.equal(await page.getByRole('spinbutton', { name: 'BPM del click generado', exact: true }).count(), 1, 'T abre el metrónomo');
+  await page.keyboard.press('t'); assert.equal(await page.getByRole('dialog', { name: 'Metrónomo', exact: true }).count(), 1, 'T abre el metrónomo');
   await page.getByRole('button', { name: 'Cerrar metrónomo', exact: true }).click();
   // Shift+E es Editar (aquí está deshabilitado: evento de solo lectura) y no reinicia la canción.
   const time = await page.evaluate(() => window.__streamingEngineDumpOwner.getCurrentTime());

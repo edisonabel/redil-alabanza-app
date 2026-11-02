@@ -16,6 +16,7 @@ export type LiveDirectorResolvedSession = {
   reaperTiming?: LiveDirectorPersistedSession['reaperTiming'];
   guideMode?: LiveDirectorPersistedSession['guideMode'];
   padKitId?: LiveDirectorPersistedSession['padKitId'];
+  clickPreference?: LiveDirectorPersistedSession['clickPreference'];
 };
 
 export type LiveDirectorMatchedStemFile = {

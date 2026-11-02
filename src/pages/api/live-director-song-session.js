@@ -8,6 +8,7 @@ import {
   normalizePersistedLiveDirectorSession,
 } from '../../utils/liveDirectorSongSession.ts';
 import { resolveTrackOutputRoute } from '../../utils/liveDirectorTrackRouting.ts';
+import { normalizeClickPreference } from '../../utils/liveDirectorClickPreference.ts';
 import { assertCanManageLiveDirectorUploads } from '../../lib/server/live-director-permissions.js';
 import { getSupabaseServerEnv, getSupabaseServiceRoleKey, readEnv } from '../../lib/server/supabase-env.js';
 
@@ -303,6 +304,7 @@ export const POST = async ({ request, cookies }) => {
     // El modo de guía es de la canción, no de los archivos: se conserva al guardar la mezcla.
     if (currentSession?.guideMode) reaperMap.guideMode = currentSession.guideMode;
     if (currentSession?.padKitId) reaperMap.padKitId = currentSession.padKitId;
+    if (currentSession?.clickPreference) reaperMap.clickPreference = currentSession.clickPreference;
 
     const persistedSession = {
       version: 1,
@@ -388,12 +390,18 @@ export const PATCH = async ({ request, cookies }) => {
     const hasOffset = body?.sectionOffsetSeconds !== undefined;
     const hasGuideMode = body?.guideMode !== undefined;
     const hasPadKit = body?.padKitId !== undefined;
+    const hasClick = body?.clickPreference !== undefined;
+    const clickPreference = hasClick ? normalizeClickPreference(body.clickPreference) : null;
 
     if (!songId) {
       return jsonResponse({ error: 'Se requiere songId.' }, 400);
     }
 
-    if (!hasOffset && !hasGuideMode && !hasPadKit) {
+    if (hasClick && !clickPreference) {
+      return jsonResponse({ error: 'clickPreference no es válido.' }, 400);
+    }
+
+    if (!hasOffset && !hasGuideMode && !hasPadKit && !hasClick) {
       return jsonResponse({ error: 'No hay cambios para guardar.' }, 400);
     }
 
@@ -436,6 +444,7 @@ export const PATCH = async ({ request, cookies }) => {
       sectionOffsetSeconds: hasOffset ? Math.round(rawOffset * 4) / 4 : currentSession.sectionOffsetSeconds,
       ...(guideMode === 'dynamic' ? { guideMode: 'dynamic' } : {}),
       ...(padKitId ? { padKitId } : {}),
+      ...(clickPreference ? { clickPreference } : {}),
       folder,
       manifestUrl,
       updatedAt: new Date().toISOString(),

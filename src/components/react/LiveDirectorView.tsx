@@ -55,6 +55,7 @@ import { LiveDirectorClickMixer } from './live-director/LiveDirectorClickMixer';
 import type { GeneratedClickSettings } from '../../utils/liveDirectorGeneratedClick';
 import { ChannelStrip, FaderThumb, PrecisionFaderSurface } from './live-director/ChannelStrip';
 import PadPlayerPanel from './live-director/PadPlayerPanel';
+import { newestClickPreference, readDeviceClickPreference, writeDeviceClickPreference, type ClickPreference } from '../../utils/liveDirectorClickPreference';
 import { DEFAULT_PAD_VOLUME, PAD_KITS, findPadKit, padKeyForSongKey, padUrlFor, readDevicePadKit, readPadAuto, readPadVolume, writeDevicePadKit, writePadAuto, writePadVolume, type PadKey } from '../../utils/padKits';
 import { EnsayoQueueAddCard, EnsayoQueueCard, EnsayoQueueSaveCard } from './live-director/EnsayoQueueCard';
 import { SongTransitionControl } from './live-director/SongTransitionControl';
@@ -92,6 +93,7 @@ import {
   requestLiveDirectorUploadTarget,
   saveLiveDirectorSectionOffset,
   saveLiveDirectorGuideMode,
+  saveLiveDirectorClickPreference,
   saveLiveDirectorPadKit,
   saveLiveDirectorSongSession,
   uploadFileToLiveDirectorTarget,
@@ -602,6 +604,7 @@ const toResolvedSession = (
   reaperTiming: session.reaperTiming,
   guideMode: session.guideMode,
   padKitId: session.padKitId,
+  clickPreference: session.clickPreference,
   mode: session.mode,
   sessionLabel: session.songTitle || 'Saved Session',
   tracks: session.tracks.map((track) => ({
@@ -3806,6 +3809,20 @@ export function LiveDirectorView({
     }
   }, [songId, hasPersistedSongContext, canManagePersistedSongSession, enqueueSessionSave, onSessionPersisted]);
   const openGuideChooser = useCallback(() => setShowGuideChooser(true), []);
+  // Metrónomo elegido: queda en el equipo al instante y, si se puede, en la canción (sin guardar a cada
+  // movimiento de fader).
+  const [clickDigital, setClickDigital] = useState(false);
+  const clickSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savedClickPreference = useMemo(() => newestClickPreference(manualSession?.clickPreference, readDeviceClickPreference(songId)), [songId, manualSession?.clickPreference]);
+  const saveClickPreference = useCallback((preference: ClickPreference) => {
+    writeDeviceClickPreference(songId, preference);
+    if (clickSaveTimer.current) clearTimeout(clickSaveTimer.current);
+    if (!hasPersistedSongContext || !canManagePersistedSongSession) return;
+    clickSaveTimer.current = setTimeout(() => {
+      clickSaveTimer.current = null;
+      void enqueueSessionSave(() => saveLiveDirectorClickPreference({ songId, clickPreference: preference })).catch(error => console.warn('[LiveDirectorView] No se guardó el metrónomo en la canción.', error));
+    }, 800);
+  }, [songId, hasPersistedSongContext, canManagePersistedSongSession, enqueueSessionSave]);
   const openPadPlayer = useCallback(() => { setPadPlayerNotice(''); setShowPadPlayer(true); }, []);
   const chooseDevicePadKit = useCallback((kitId: string) => {
     setDevicePadKitId(kitId); writeDevicePadKit(kitId);
@@ -3983,8 +4000,11 @@ export function LiveDirectorView({
   const preparedTransition=showSongTransitions&&!preparedTransitionUnavailable&&transitionTarget&&!transitionAllowsPad(currentTransition.mode)?currentTransition.mode:null;
   useEffect(()=>{
     const nextEventSong=transitionTarget;
-    if(!preparedTransition||!nextEventSong||!isPlaying)return;
+    // «Una vez por pasada» termina al detenerse o al cambiar de canción: al volver a tocar, aunque sea
+    // entrando directo a la última sección, se prepara otra vez.
+    if(!preparedTransition||!nextEventSong||!isPlaying){chainArmedRef.current='';return;}
     const key=`${currentQueueSongId}>${nextEventSong.id}:${preparedTransition}`;
+    if(chainArmedRef.current!==key)chainArmedRef.current='';
     const timer=setInterval(()=>{
       if(musicalNavigationPendingRef.current||isTransportCueBusyRef.current||sectionJumpActiveRef.current)return;
       const lastIndex=resolvedSections.length-1,last=resolvedSections[lastIndex];if(!last)return;
@@ -6269,6 +6289,7 @@ export function LiveDirectorView({
           meter={reaperTransport?.timeSignature ?? shownMeter} confirmedByReaper={Boolean(reaperTransport?.timeSignature && reaperTransport?.clickGrid)}
           forceGenerated={isClickCarrierUrl(clickTrack.url)}
           ready={isReady} playing={isPlaying} busy={isSectionSeekBusy || isCongregationFading}
+          saved={savedClickPreference} onPreferenceChange={saveClickPreference} onDigitalChange={setClickDigital}
           loadSamples={selectedMultitrackEngine.loadGeneratedClickSamples} onConfigure={selectedMultitrackEngine.setGeneratedClick} />}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(93,214,240,0.08),_transparent_24%),linear-gradient(180deg,#232526_0%,#222425_46%,#202224_100%)]" />
       <div className="relative flex h-[100dvh] flex-col overflow-hidden" style={shellContentStyle}>
@@ -6309,9 +6330,9 @@ export function LiveDirectorView({
                 data-pulse-multiplier={canTogglePulseSubdivision ? manualTempoTransport.pulseMultiplier : undefined}
                 onClick={canTogglePulseSubdivision ? manualTempoTransport.togglePulseSubdivision : openClickMixer}
                 disabled={!canTogglePulseSubdivision && !canUseGeneratedClick}
-                aria-label={`${bpmControlLabel} · Compás ${meterLabel === '—/—' ? 'pendiente de confirmar' : meterLabel}`}
+                aria-label={`Metrónomo${clickDigital ? ' digital' : ''} · ${bpmControlLabel} · Compás ${meterLabel === '—/—' ? 'pendiente de confirmar' : meterLabel}`}
                 aria-pressed={canTogglePulseSubdivision ? manualTempoTransport.pulseMultiplier === 2 : undefined}
-                title={`${bpmControlLabel} · ${meterLabel === '—/—' ? 'Compás pendiente: abre el metrónomo para confirmarlo' : `Compás ${meterLabel}`}`}
+                title={`Metrónomo${clickDigital ? ' digital' : ''} · ${bpmControlLabel} · ${meterLabel === '—/—' ? 'Compás pendiente: abre el metrónomo para confirmarlo' : `Compás ${meterLabel}`}`}
                 className={`flex ${isUltraCompactLandscape ? 'h-11 rounded-[0.8rem] px-1 py-0.5' : isToolbarCompactLandscape ? 'h-12 rounded-[1rem] px-1.5 py-1' : 'h-[var(--ld-control-height)] rounded-[1.45rem] px-2 py-3'} shrink-0 appearance-none flex-col items-center justify-center gap-0.5 border bg-black/16 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70 ${canTogglePulseSubdivision
                   ? manualTempoTransport.pulseMultiplier === 2
                     ? 'cursor-pointer border-cyan-300/42 bg-cyan-300/[0.09] shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_0_20px_rgba(103,232,249,0.08)] active:scale-[0.98]'
@@ -6320,8 +6341,9 @@ export function LiveDirectorView({
                 style={isToolbarCompactLandscape
                   ? { width: scaleRem(isUltraCompactLandscape ? 3.05 : 3.75, 2.75) }
                   : { flex: '0 0 18%', width: '18%' }}
+                data-click-digital={clickDigital || undefined}
               >
-                <span className={`font-light leading-none tracking-tight text-white/92 ${isUltraCompactLandscape ? 'text-[0.95rem]' : isToolbarCompactLandscape ? 'text-[1.18rem]' : 'text-[1.65rem]'}`}>
+                <span className={`font-light leading-none tracking-tight ${clickDigital ? 'text-cyan-100' : 'text-white/92'} ${isUltraCompactLandscape ? 'text-[0.95rem]' : isToolbarCompactLandscape ? 'text-[1.18rem]' : 'text-[1.65rem]'}`}>
                   {displayedPulseBpm || '--'}
                 </span>
                 <div className="h-px w-full bg-white/18" />
