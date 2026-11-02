@@ -9,6 +9,18 @@ import { encodeAudioBufferToFloat32Wav } from './pitchShift/wavEncoder';
 export type EventKeyProgress = { index: number; total: number; name: string; progress: number };
 type Track = { id: string; name?: string; url: string };
 
+// Si el navegador rechaza el convertidor, ffmpeg no avisa y se queda esperando para siempre.
+const LOAD_TIMEOUT_MS = 120000;
+function loadOrFail(loading: Promise<unknown>, signal?: AbortSignal) {
+  let timer: ReturnType<typeof setTimeout> | undefined, onAbort: (() => void) | undefined;
+  const failure = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('No se pudo iniciar el convertidor de audio. Recarga la página e inténtalo otra vez.')), LOAD_TIMEOUT_MS);
+    onAbort = () => reject(signal?.reason ?? new DOMException('Cancelado', 'AbortError'));
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+  return Promise.race([loading, failure]).finally(() => { clearTimeout(timer); if (onAbort) signal?.removeEventListener('abort', onAbort); });
+}
+
 export async function transposeTracks(tracks: Track[], semitones: number, options: {
   signal?: AbortSignal; onProgress?: (progress: EventKeyProgress) => void;
   deliver: (track: Track, m4a: Uint8Array) => Promise<void>;
@@ -16,7 +28,7 @@ export async function transposeTracks(tracks: Track[], semitones: number, option
   const { FFmpeg } = await import('@ffmpeg/ffmpeg');
   const ffmpeg = new FFmpeg();
   try {
-    await ffmpeg.load({ classWorkerURL: ffmpegWorkerURL, coreURL: ffmpegCoreURL, wasmURL: ffmpegCoreWasmURL });
+    await loadOrFail(ffmpeg.load({ classWorkerURL: ffmpegWorkerURL, coreURL: ffmpegCoreURL, wasmURL: ffmpegCoreWasmURL }), options.signal);
     const decoder = new OfflineAudioContext(2, 48000, 48000);
     for (let index = 0; index < tracks.length; index += 1) {
       const track = tracks[index], name = track.name || track.id, total = tracks.length;
