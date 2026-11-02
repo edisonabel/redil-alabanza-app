@@ -1374,6 +1374,8 @@ export default function ModoEnsayoCompacto({
   playlistId = '',
   userId = '',
   onPersonalSettingsChange,
+  eventKeySemitones = 0,
+  onEventKeyAnnounced,
 }) {
   if (!song) return null;
   const [headerHidden, setHeaderHidden] = useState(false);
@@ -1514,17 +1516,18 @@ export default function ModoEnsayoCompacto({
   const songChordTokens = useMemo(() => extractChordTokensFromSections(currentSong?.sections || []), [currentSong?.sections]);
   const explicitSongKey = normalizeKeyToAmerican(currentSong?.originalKey || currentSong?.key || '-');
   const originalSongKey = useMemo(() => {
-    if (explicitSongKey !== '-') return explicitSongKey;
+    // El tono del evento es la base; el ajuste personal se suma encima.
+    if (explicitSongKey !== '-') return transposeChordToken(explicitSongKey, eventKeySemitones);
     const firstParsedChord = songChordTokens
       .map((token) => parseChordSymbol(token))
       .find(Boolean);
-    return firstParsedChord?.root || '-';
-  }, [explicitSongKey, songChordTokens]);
+    return firstParsedChord?.root ? transposeChordToken(firstParsedChord.root, eventKeySemitones) : '-';
+  }, [eventKeySemitones, explicitSongKey, songChordTokens]);
   const currentSongDisplayKey = useMemo(() => transposeChordToken(originalSongKey, transposeSteps), [originalSongKey, transposeSteps]);
   const capoShapeKey = useMemo(() => (
     capoFret > 0 ? transposeChordToken(currentSongDisplayKey, -capoFret) : currentSongDisplayKey
   ), [capoFret, currentSongDisplayKey]);
-  const displayTransposeSteps = transposeSteps - capoFret;
+  const displayTransposeSteps = eventKeySemitones + transposeSteps - capoFret;
   const transposeKeyOptions = useMemo(() => (
     TRANSPOSE_OPTIONS.map((steps) => ({
       steps,
@@ -1535,7 +1538,7 @@ export default function ModoEnsayoCompacto({
     CAPO_OPTIONS.map((fret) => {
       const shapeKey = fret > 0 ? transposeChordToken(currentSongDisplayKey, -fret) : currentSongDisplayKey;
       const score = songChordTokens.reduce((total, token) => (
-        total + scoreCapoShapeChord(transposeChordToken(token, transposeSteps - fret))
+        total + scoreCapoShapeChord(transposeChordToken(token, eventKeySemitones + transposeSteps - fret))
       ), 0) + scoreCapoPlayableKey(shapeKey);
       return {
         fret,
@@ -1543,7 +1546,7 @@ export default function ModoEnsayoCompacto({
         score,
       };
     })
-  ), [currentSongDisplayKey, songChordTokens, transposeSteps]);
+  ), [currentSongDisplayKey, eventKeySemitones, songChordTokens, transposeSteps]);
   const recommendedCapoOption = useMemo(() => {
     const candidates = capoOptions.filter((option) => option.fret > 0 && option.shapeKey !== '-' && songChordTokens.length > 0);
     if (candidates.length === 0) return null;
@@ -3374,6 +3377,7 @@ export default function ModoEnsayoCompacto({
     channel.on('broadcast', { event: 'SECTION_CHANGE' }, (payload) => {
       if (payload.payload) {
         setRemotePayload(payload.payload);
+        onEventKeyAnnounced?.(String(payload.payload.songId || ''), payload.payload.eventKeyTarget);
       }
     }).subscribe((status) => {
       if (status === 'SUBSCRIBED') {
@@ -3387,7 +3391,7 @@ export default function ModoEnsayoCompacto({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [eventId, playlistId, pushSyncSnapshot, syncRole]);
+  }, [eventId, onEventKeyAnnounced, playlistId, pushSyncSnapshot, syncRole]);
   useEffect(() => {
     if (syncRole !== 'director' || !syncChannelRef.current) return undefined;
 

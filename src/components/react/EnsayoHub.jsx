@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, CalendarDays, ChevronDown, ChevronRight, ChevronUp, Clock3, ExternalLink, FileText, GripVertical, ListMusic, Loader2, Mic2, Play, Plus, Printer, RadioReceiver, Share2, X, Zap } from 'lucide-react';
 import ModoEnsayoCompacto from './ModoEnsayoCompacto.jsx';
+import { useEventKeys } from '../../hooks/useEventKeys';
 import EnsayoPersonalView from './EnsayoPersonalView.jsx';
 import { supabase } from '../../lib/supabase';
 import { metronomeService } from '../../services/MetronomeEngine';
@@ -673,6 +674,8 @@ export default function EnsayoHub({
 
   const songs = localPlaylist;
   const rehearsalEventId = String(eventMeta?.id || '').trim();
+  // Tono de cada canción en este evento: el que suena es el que se anuncia en la lista.
+  const { eventKeys, refreshEventKeys, announceEventKey } = useEventKeys(rehearsalEventId);
 
   const initialSong = useMemo(() => (
     initialSongId
@@ -896,6 +899,7 @@ export default function EnsayoHub({
     channel.on('broadcast', { event: 'SECTION_CHANGE' }, (payload) => {
       if (!payload.payload?.songId) return;
       const incomingSongId = String(payload.payload.songId);
+      announceEventKey(incomingSongId, payload.payload.eventKeyTarget);
 
       setCancionActiva(current => {
         if (current && String(current.id) === incomingSongId) return current;
@@ -909,7 +913,7 @@ export default function EnsayoHub({
     }).subscribe();
 
     return () => { channel.unsubscribe(); supabase.removeChannel(channel); };
-  }, [isSyncReceiver, playableSongs, playlistId, rehearsalEventId]);
+  }, [announceEventKey, isSyncReceiver, playableSongs, playlistId, rehearsalEventId]);
 
   // ── Cuenta regresiva de conexión ──
   useEffect(() => {
@@ -1329,7 +1333,8 @@ export default function EnsayoHub({
       const songId = String(song?.id || '');
       const baseTone = normalizeKeyToAmerican(song?.originalKey || song?.key || '');
       const savedSettings = sanitizeRehearsalSongSettings(mergedPersonalSettings[songId]);
-      const savedTone = transposeChordSymbol(baseTone, savedSettings.transposeSteps);
+      // El cancionero parte del tono de este evento; el ajuste personal se suma encima.
+      const savedTone = transposeChordSymbol(baseTone, (eventKeys[songId]?.semitones || 0) + savedSettings.transposeSteps);
       nextCapos[songId] = savedSettings.capoFret;
       nextTones[songId] = CHROMATIC_NOTES.includes(savedTone) ? savedTone : baseTone;
     });
@@ -1338,7 +1343,7 @@ export default function EnsayoHub({
     setSetlistPicker(null);
     setSetlistPrintError('');
     setShowSetlistPrintModal(true);
-  }, [loadPersonalSongSettingsForSongs, personalSongSettings, printableSongs]);
+  }, [eventKeys, loadPersonalSongSettingsForSongs, personalSongSettings, printableSongs]);
 
   const updateSetlistCapo = useCallback((songId, capo) => {
     setSetlistCapos((current) => ({
@@ -1421,7 +1426,10 @@ export default function EnsayoHub({
           const selectedTone = CHROMATIC_NOTES.includes(setlistTones[songId])
             ? setlistTones[songId]
             : baseTone;
-          const metadataTone = setlistRenderMode === 'chords-lyrics' ? selectedTone : baseTone;
+          const eventKey = eventKeys[songId];
+          const metadataTone = setlistRenderMode === 'chords-lyrics'
+            ? selectedTone
+            : eventKey ? transposeChordSymbol(baseTone, eventKey.semitones) : baseTone;
           const toneDelta = getToneDelta(baseTone, selectedTone);
           const transpositionSteps = setlistRenderMode === 'chords-lyrics' ? toneDelta - capo : 0;
           const shapeTone = capo > 0 && selectedTone !== '-'
@@ -1504,7 +1512,7 @@ export default function EnsayoHub({
     } finally {
       setIsGeneratingSetlistPdf(false);
     }
-  }, [displayContextTitle, isGeneratingSetlistPdf, printableSongs, rehearsalEventId, serviceDate, serviceHour, setlistCapos, setlistRenderMode, setlistTones]);
+  }, [displayContextTitle, eventKeys, isGeneratingSetlistPdf, printableSongs, rehearsalEventId, serviceDate, serviceHour, setlistCapos, setlistRenderMode, setlistTones]);
 
   const openCompactSong = useCallback((song) => {
     if (!song) return;
@@ -1657,6 +1665,8 @@ export default function EnsayoHub({
         playlistId={String(playlistId || '')}
         userId={String(userId || '')}
         onPersonalSettingsChange={handlePersonalSettingsChange}
+        eventKeySemitones={eventKeys[String(cancionActiva?.id || '')]?.semitones || 0}
+        onEventKeyAnnounced={announceEventKey}
       />
     );
   }
@@ -1681,6 +1691,8 @@ export default function EnsayoHub({
           eventId={rehearsalEventId}
           playlistId={String(playlistId || '')}
           onExit={handleLiveModeExit}
+          listedEventKeys={eventKeys}
+          onEventKeyChange={refreshEventKeys}
         />
       </React.Suspense>
     );
@@ -1865,7 +1877,9 @@ export default function EnsayoHub({
               }
 
               // ── Card de Canción normal ──
-              const keyLabel = normalizeKeyToAmerican(song?.originalKey || song?.key || '-');
+              const originalKeyLabel = normalizeKeyToAmerican(song?.originalKey || song?.key || '-');
+              const eventKey = eventKeys[String(song?.id || '')];
+              const keyLabel = eventKey ? `${eventKey.targetKey} (original ${originalKeyLabel})` : originalKeyLabel;
               const bpmValue = Number.isFinite(Number(song?.bpm)) ? Math.max(0, Math.round(Number(song.bpm))) : 0;
               const isMetronomeActive = activeMetronomeSongId === song?.id;
               const hasSongAudio = typeof song?.mp3 === 'string' && song.mp3.trim() !== '';

@@ -8,8 +8,9 @@ export const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 
 const ROOTS: Record<string, number> = { C: 0, 'C#': 1, Db: 1, D: 2, 'D#': 3, Eb: 3, E: 4, F: 5, 'F#': 6, Gb: 6, G: 7, 'G#': 8, Ab: 8, A: 9, 'A#': 10, Bb: 10, B: 11,
   Do: 0, 'Do#': 1, Reb: 1, Re: 2, 'Re#': 3, Mib: 3, Mi: 4, Fa: 5, 'Fa#': 6, Solb: 6, Sol: 7, 'Sol#': 8, Lab: 8, La: 9, 'La#': 10, Sib: 10, Si: 11 };
 
-// Lo que no lleva tono no se transporta: click, guía y toda la percusión. Procesarlos los ensuciaría.
-const UNPITCHED = /click|metronom|guide|guia|\bcues?\b|drum|bateria|perc|kick|bombo|snare|redoblante|\bcaja\b|hi ?hat|\bhats?\b|\btoms?\b|overhead|\boh\b|cymbal|platillo|shaker|tambourine|pandereta|conga|bongo|cajon|clap|\bloops?\b/;
+// Solo se transporta lo armónico. Click, guía y toda la percusión quedan iguales: procesarlos los ensuciaría,
+// tardaría más y ocuparía almacenamiento sin ganar nada.
+const UNPITCHED = /click|metronom|guide|guia|\bcues?\b|\bconteo\b|\bcount\b|drum|bateria|perc|kick|bombo|snare|redoblante|\bcaja\b|hi ?hat|\bhats?\b|\btoms?\b|overhead|\boh\b|cymbal|platillo|shake|tambourine|pandereta|conga|bongo|cajon|clap|palmas|tumba|timbal|guira|guiro|maraca|cencerro|cowbell|agogo|triangulo|\bclaves?\b|\bride\b|\bcrash\b|\bloops?\b/;
 export const isTransposableTrack = (track: Pick<SessionTrack, 'id' | 'name'>) =>
   !UNPITCHED.test(`${track.name || ''} ${track.id || ''}`.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[_-]+/g, ' '));
 
@@ -34,6 +35,11 @@ export function applyEventKey<T extends { tracks?: SessionTrack[] } | null | und
 }
 export const isEventKeyFresh = (session: { tracks?: SessionTrack[] } | null | undefined, eventKey?: EventKey | null) => Boolean(eventKey && applyEventKey(session, eventKey) !== session);
 
+// Candado: lo único que el cambio de tono puede borrar son sus propias copias. Los stems originales viven
+// en secuencias/ y ningún camino de esta función los toca.
+export const EVENT_KEY_PREFIX = 'live-director/event-keys/';
+export const isEventKeyCopy = (key: string) => key.startsWith(EVENT_KEY_PREFIX) && !key.includes('..');
+
 const API = '/api/live-director-event-key';
 const cacheKey = (eventId: string, songId: string) => `live-director:event-key:${eventId}:${songId}`;
 const remember = (eventId: string, songId: string, key: EventKey | null) => {
@@ -53,6 +59,12 @@ export async function readEventKey(eventId: string, songId: string): Promise<{ k
   } catch {
     try { return { key: JSON.parse(localStorage.getItem(cacheKey(eventId, songId)) || 'null'), canEdit: false }; } catch { return { key: null, canEdit: false }; }
   }
+}
+/** Tonos de este evento por canción, para mostrar el correcto en la lista. */
+export type ListedEventKey = Pick<EventKey, 'semitones' | 'targetKey' | 'originalKey'>;
+export async function readEventKeys(eventId: string): Promise<Record<string, ListedEventKey>> {
+  const body = await parse(await fetch(`${API}?evento_id=${encodeURIComponent(eventId)}`, { credentials: 'same-origin', cache: 'no-store' }));
+  return body.keys || {};
 }
 const send = async (method: string, body: unknown) => parse(await fetch(API, { method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
 export const requestEventKeyUpload = (eventId: string, songId: string, semitones: number, trackId: string): Promise<{ uploadUrl: string; key: string }> =>

@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase';
 import { buildWordGroups } from '../../utils/chordProLineUtils';
 import { buildLiveDirectorSyncChannelName } from '../../utils/liveDirectorSync';
 import { buildDisplayTrack } from '../../utils/splitSectionIntoCues';
+import { useEventKeys } from '../../hooks/useEventKeys';
 import { toRgba } from '../../utils/sectionVisuals';
 import {
   REHEARSAL_PERSONAL_SETTINGS_TOAST_MS,
@@ -405,6 +406,7 @@ function MonitorChordOverlayLine({
 
 /** @param {{ songs?: any[]; eventId?: string; eventTitle?: string; userId?: string }} props */
 export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle = '', userId = '' }) {
+  const { eventKeys, announceEventKey } = useEventKeys(eventId);
   const [activeTrackIndex, setActiveTrackIndex] = useState(0);
   const [activeSectionIndex, setActiveSectionIndex] = useState(0);
   const [activeCueIndex, setActiveCueIndex] = useState(0);
@@ -581,10 +583,15 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
     eventId,
     songId: activeTrack?.songId || '',
   }), [activeTrack?.songId, eventId, userId]);
-  const personalChordShift = Number(settings.transposeSteps || 0) - Number(settings.capoFret || 0);
+  // El tono del evento es la base; el ajuste personal se suma encima.
+  const eventKeySemitones = eventKeys[String(activeTrack?.songId || '')]?.semitones || 0;
+  const personalChordShift = eventKeySemitones + Number(settings.transposeSteps || 0) - Number(settings.capoFret || 0);
   const activeTrackBaseTone = useMemo(
-    () => normalizeMonitorTone(activeTrack?.key || activeTrack?.originalKey || ''),
-    [activeTrack?.key, activeTrack?.originalKey],
+    () => {
+      const tone = normalizeMonitorTone(activeTrack?.key || activeTrack?.originalKey || '');
+      return tone ? transposeNoteBySteps(tone, eventKeySemitones) : '';
+    },
+    [activeTrack?.key, activeTrack?.originalKey, eventKeySemitones],
   );
   const buildPersonalSettingsToastDetail = useCallback((settingsValue, options = {}) => {
     const safeSettings = sanitizeRehearsalSongSettings(settingsValue);
@@ -852,6 +859,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
         setConnectionStatus('connected');
 
         const nextSongId = String(payload.songId);
+        announceEventKey(nextSongId, payload.eventKeyTarget);
         const songChanged = nextSongId !== String(lastPayloadSongIdRef.current);
         const receiveTimestamp = performance.now();
 
@@ -950,7 +958,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [eventId, findCueAtTime, syncDisplayState]);
+  }, [announceEventKey, eventId, findCueAtTime, syncDisplayState]);
 
   useEffect(() => {
     const check = setInterval(() => {
@@ -1298,7 +1306,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
                   fontSize: isMobile ? 11 : 14,
                 }}
               >
-                {activeTrack.key}
+                {eventKeys[String(activeTrack?.songId || '')]?.targetKey || activeTrack.key}
               </span>
             )}
             {bpmLabel && (

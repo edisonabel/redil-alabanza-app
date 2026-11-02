@@ -331,7 +331,7 @@ const cacheUrlIfNeeded = async (cache, url, signal) => {
   return 'skipped';
 };
 
-const buildQueueSongs = (songs) =>
+const buildQueueSongs = (songs, listedEventKeys = {}) =>
   songs
     .map((song) => ({
       id: resolveSongId(song),
@@ -340,9 +340,9 @@ const buildQueueSongs = (songs) =>
         ? [
           `${Math.round(Number(song?.bpm) || 0)} BPM`,
           getManualMeterLabel(song.manualTempo),
-          String(song?.originalKey || song?.key || '').trim(),
+          String(listedEventKeys[resolveSongId(song)]?.targetKey || song?.originalKey || song?.key || '').trim(),
         ].filter(Boolean).join(' · ')
-        : [String(song?.artist || '').trim(), String(song?.originalKey || song?.key || '').trim()].filter(Boolean).join(' · '),
+        : [String(song?.artist || '').trim(), String(listedEventKeys[resolveSongId(song)]?.targetKey || song?.originalKey || song?.key || '').trim()].filter(Boolean).join(' · '),
       mp3: String(song?.mp3 || '').trim(),
       artworkUrl: getLiveDirectorSongArtworkUrl(song),
       kind: String(song?.kind || '').trim() || undefined,
@@ -355,6 +355,8 @@ export default function ModoEnsayoDirector({
   eventId = '',
   playlistId = '',
   onExit,
+  listedEventKeys = {},
+  onEventKeyChange,
 }) {
   const realEnsayoSongs = useMemo(
     () =>
@@ -463,6 +465,8 @@ export default function ModoEnsayoDirector({
     [activeEventMix, activeSourceSession, activeEventKey],
   );
   const activeKeyApplied = isEventKeyFresh(activeSourceSession, activeEventKey);
+  // Se anuncia en la transmisión solo cuando ya se sabe el tono de la canción activa.
+  const announcedEventKey = eventKeyState ? (activeKeyApplied ? activeEventKey.targetKey : '') : undefined;
   const activeSongHasSequence = hasPlayableLiveDirectorSession(activeSongSession);
   const activeSongMeter = useMemo(() => (
     String(activeSong?.meter || activeSong?.metrica || '').trim()
@@ -492,8 +496,8 @@ export default function ModoEnsayoDirector({
     [activeSong?.sectionMarkers, activeSongSession, activeSongIsManual],
   );
   const queueSongs = useMemo(
-    () => buildQueueSongs(ensayoSongs),
-    [ensayoSongs],
+    () => buildQueueSongs(ensayoSongs, listedEventKeys),
+    [ensayoSongs, listedEventKeys],
   );
   const remainingManualSongSlots = getRemainingManualSongSlots(
     realEnsayoSongs.length,
@@ -547,7 +551,7 @@ export default function ModoEnsayoDirector({
     return {
       originalKey: songOriginalKey, eventKey: activeKeyApplied ? activeEventKey : null,
       moved: moved.map(track => track.name || track.id), kept: tracks.filter(track => !isTransposableTrack(track)).map(track => track.name || track.id),
-      onRestore: async () => { await clearEventKey(eventId, songId); setEventKeys(previous => ({ ...previous, [songId]: { ...previous[songId], key: null } })); },
+      onRestore: async () => { await clearEventKey(eventId, songId); setEventKeys(previous => ({ ...previous, [songId]: { ...previous[songId], key: null } })); onEventKeyChange?.(); },
       onPrepare: async (semitones, targetKey, onProgress, signal) => {
         const { transposeTracks } = await import('../../utils/eventKeyProcessor');
         const uploaded = [];
@@ -560,6 +564,7 @@ export default function ModoEnsayoDirector({
           } });
           const key = await saveEventKey(eventId, songId, { semitones, targetKey, originalKey: songOriginalKey, tracks: uploaded });
           setEventKeys(previous => ({ ...previous, [songId]: { ...previous[songId], key } }));
+          onEventKeyChange?.();
         } catch (error) {
           // Nada a medias en R2: el tono que ya estaba sigue sonando.
           if (uploaded.length) await discardUnfinishedEventKey(eventId, songId);
@@ -940,6 +945,7 @@ export default function ModoEnsayoDirector({
         currentTimeRaw: snapshot.currentTimeRaw,
         sectionOffsetSeconds: snapshot.sectionOffsetSeconds || 0,
         isPlaying: snapshot.isPlaying,
+        ...(String(snapshot.songId) === activePersistedSongId ? { eventKeyTarget: announcedEventKey } : {}),
       }).catch((error) => {
         console.warn('[ModoEnsayoDirector] Sync broadcast failed.', error);
       });
@@ -948,7 +954,7 @@ export default function ModoEnsayoDirector({
     pushSnapshot();
     const heartbeat = window.setInterval(pushSnapshot, 1500);
     return () => window.clearInterval(heartbeat);
-  }, [activePersistedSongId, isBroadcasting, sendSectionChange]);
+  }, [activePersistedSongId, announcedEventKey, isBroadcasting, sendSectionChange]);
 
   const handlePlaybackSnapshot = useCallback((snapshot) => {
     playbackSnapshotRef.current = snapshot;

@@ -24,6 +24,12 @@ assert.equal(K.isEventKeyFresh(session, key), true);
 // Se resubieron los stems: la copia vieja no suena encima de la secuencia nueva.
 const replaced = { tracks: [{ id: 'keys', name: 'Keys', url: 'nuevo' }] };
 assert.equal(K.applyEventKey(replaced, key), replaced); assert.equal(K.isEventKeyFresh(replaced, key), false);
+// Solo se transporta lo armónico: nada de percusión, click ni guía, ni en español ni en inglés.
+for (const name of ['Click', 'Guía', 'Voz guía', 'Conteo', 'Batería', 'Drums', 'Shake', 'Shaker', 'Percusión', 'Pandereta', 'Tumbadoras', 'Timbales', 'Congas', 'Bongó', 'Cajón', 'Güira', 'Maracas', 'Cencerro', 'Triángulo', 'Palmas', 'Claves', 'Loop']) assert.equal(K.isTransposableTrack({ id: 'x', name }), false, name);
+for (const name of ['Keys', 'Bajo', 'Bass', 'Piano', 'Guitarra', 'Electric Guitar', 'Órgano', 'Sintetizador', 'Coros', 'Strings', 'Pad', 'Voz']) assert.equal(K.isTransposableTrack({ id: 'x', name }), true, name);
+// Candado: solo las copias del tono se pueden borrar; un stem original jamás.
+assert.equal(K.isEventKeyCopy('live-director/event-keys/e/s/2/keys.m4a'), true);
+for (const key of ['secuencias/s-mi-esperanza/stems/keys.m4a', 'pads/kits/motion-pads-2/C.m4a', 'live-director/event-mixes/e/s.json', 'live-director/event-keys/../../secuencias/x.m4a']) assert.equal(K.isEventKeyCopy(key), false, key);
 const { expiredEventIds } = await import('../netlify/functions/cleanup-event-keys.mjs');
 const now = Date.parse('2026-11-10T12:00:00Z');
 assert.deepEqual(expiredEventIds(['viejo', 'ayer', 'futuro', 'borrado'], [

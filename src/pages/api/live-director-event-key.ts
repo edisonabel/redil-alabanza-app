@@ -6,11 +6,13 @@ import { ApiSecurityError, assertRequestBodySize, requireAuthenticatedUser, secu
 import { getServerAuthTokens } from '../../lib/server/auth-cookies.js';
 import { createSupabaseUserClient } from '../../lib/server/supabase-user-client.js';
 import { readEnv } from '../../lib/server/supabase-env.js';
+import { EVENT_KEY_PREFIX, isEventKeyCopy, isEventKeyFresh } from '../../utils/liveDirectorEventKey';
 
 export const prerender = false;
 
 // Copias transportadas de un evento. netlify/functions/cleanup-event-keys.mjs las borra cuando el evento pasó.
-const PREFIX = 'live-director/event-keys';
+// La canción original (secuencias/) nunca se borra ni se modifica desde aquí.
+const PREFIX = EVENT_KEY_PREFIX.slice(0, -1);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TRACK_ID = /^[\w.-]{1,160}$/;
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
@@ -44,14 +46,41 @@ const removeCopies = async (folder: string, keep: (key: string) => boolean = () 
   let token: string | undefined;
   do {
     const page = await client.send(new ListObjectsV2Command({ Bucket: bucket, Prefix: `${folder}/`, ContinuationToken: token }));
-    const keys = (page.Contents || []).map(item => item.Key!).filter(key => !keep(key));
+    const keys = (page.Contents || []).map(item => item.Key!).filter(key => isEventKeyCopy(key) && !keep(key));
     if (keys.length) await client.send(new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: keys.map(Key => ({ Key })) } }));
     token = page.IsTruncated ? page.NextContinuationToken : undefined;
   } while (token);
 };
 
+// Sin canción: los tonos de todo el evento, para la lista de canciones. El tono no es privado: lo ve
+// cualquier persona con sesión que abra el evento, también quien no está asignado.
+const readEventKeys = async (eventId: string) => {
+  const { bucket, client } = r2();
+  const page = await client.send(new ListObjectsV2Command({ Bucket: bucket, Prefix: `${PREFIX}/${eventId}/`, Delimiter: '/' }));
+  const songIds = (page.CommonPrefixes || []).map(item => item.Prefix!.split('/').at(-2)!).filter(id => UUID.test(id));
+  if (!songIds.length || !serviceRoleClient) return {};
+  const { data } = await serviceRoleClient.from('canciones').select('id,multitrack_session').in('id', songIds);
+  const keys: Record<string, unknown> = {};
+  await Promise.all(songIds.map(async songId => {
+    const stored = await client.send(new GetObjectCommand({ Bucket: bucket, Key: `${PREFIX}/${eventId}/${songId}/key.json` })).catch(() => null);
+    if (!stored) return;
+    const key = JSON.parse(await stored.Body!.transformToString());
+    // Si se volvió a subir la secuencia la copia ya no suena: la lista no puede anunciar ese tono.
+    if (isEventKeyFresh(data?.find(song => song.id === songId)?.multitrack_session, key)) {
+      keys[songId] = { semitones: key.semitones, targetKey: key.targetKey, originalKey: key.originalKey };
+    }
+  }));
+  return keys;
+};
+
 export const GET: APIRoute = async ({ cookies, url }) => {
   try {
+    if (!url.searchParams.get('cancion_id')) {
+      const eventId = String(url.searchParams.get('evento_id') || '');
+      if (!UUID.test(eventId)) throw new ApiSecurityError('Evento inválido.', 400);
+      await requireAuthenticatedUser(cookies);
+      return json({ keys: await readEventKeys(eventId) });
+    }
     const { eventId, songId, folder } = context(url.searchParams);
     const result = await access(cookies, eventId, songId);
     const { bucket, client } = r2();
