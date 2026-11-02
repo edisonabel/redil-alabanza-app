@@ -2,8 +2,9 @@ import { ArrowLeft, ArrowRight, Copy, Minus, MoreHorizontal, Plus, Undo2 } from 
 import { useMemo, useRef, useState } from 'react';
 import { buildSectionWavePath } from '../../../utils/liveDirectorSectionWave';
 import type { LiveDirectorSectionVisual } from '../../../utils/liveDirectorSongSession';
+import { KeyChangePanel, type KeyChangeControl } from './KeyChangePanel';
 import { MAX_ARRANGEMENT_SECTIONS, originalArrangement, resolveArrangement, arrangementDuration, type ArrangementEntry } from '../../../utils/liveDirectorArrangement';
-type Props = { busy: boolean; sections: LiveDirectorSectionVisual[]; entries: ArrangementEntry[] | null; eventTitle?: string; onClose: () => void; onApply: (entries: ArrangementEntry[] | null) => Promise<void> };
+type Props = { busy: boolean; sections: LiveDirectorSectionVisual[]; entries: ArrangementEntry[] | null; eventTitle?: string; onClose: () => void; onApply: (entries: ArrangementEntry[] | null) => Promise<void>; keyControl?: KeyChangeControl | null; sectionsLocked?: boolean };
 const clock = (time: number) => `${Math.floor(time / 60)}:${Math.floor(time % 60).toString().padStart(2, '0')}`;
 const control = 'inline-flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded-lg border border-white/15 bg-black/30 px-2 text-xs text-white/80 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-cyan-200 disabled:opacity-30';
 export function LiveDirectorArrangementEditor(props: Props) {
@@ -13,7 +14,8 @@ export function LiveDirectorArrangementEditor(props: Props) {
   const [applying, setApplying] = useState(false);
   const [insertion, setInsertion] = useState<number | null>(null);
   const [menu, setMenu] = useState<string | null>(null);
-  const locked = props.busy || applying;
+  const [showKey, setShowKey] = useState(false);
+  const locked = props.busy || applying || Boolean(props.sectionsLocked);
   const sources = new Map(props.sections.map(section => [section.id, section]));
   const waves = useMemo(() => new Map(props.sections.map((section, index) => [section.id, buildSectionWavePath(index + 1, 18)])), [props.sections]);
   const change = (next: ArrangementEntry[]) => {
@@ -40,6 +42,9 @@ export function LiveDirectorArrangementEditor(props: Props) {
   return <section aria-label="Editar secciones de la canción" className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-[1.2rem] border border-cyan-200/25 bg-[#1b1f21]">
     <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-white/10 px-3 py-2">
       <div className="min-w-0 flex-1"><h2 className="text-xs font-semibold text-cyan-100">Editar secciones</h2><p className="truncate text-[10px] text-white/50" title={props.eventTitle}>{props.eventTitle ? `Evento · ${props.eventTitle}` : 'Temporal · se descarta al salir'} · {clock(arrangementDuration(resolveArrangement(props.sections, draft)))}</p></div>
+      {props.keyControl && <button type="button" data-live-director-control="change-key" disabled={props.busy} title={props.busy ? 'Pausa para cambiar el tono' : undefined}
+        className={`${control} ${props.keyControl.eventKey ? 'border-cyan-200/40 text-cyan-100' : ''}`} onClick={() => setShowKey(true)}>
+        Cambiar tono · {props.keyControl.eventKey ? `${props.keyControl.originalKey} → ${props.keyControl.eventKey.targetKey}` : props.keyControl.originalKey}</button>}
       <button type="button" className={control} disabled={locked || !history.current.length} aria-label="Deshacer cambio de sección" onClick={() => { const previous = history.current.pop(); if (previous) { setDraft(previous); setMenu(null); setInsertion(null); } }}><Undo2 size={15}/></button>
       <button type="button" className={control} disabled={locked} onClick={() => { change(originalArrangement(props.sections)); setInsertion(null); }}>Restaurar original</button>
       <button type="button" className={control} disabled={applying} onClick={props.onClose}>Cancelar</button>
@@ -90,6 +95,7 @@ export function LiveDirectorArrangementEditor(props: Props) {
         </div>
       </div>
     </div>}
+    {showKey && props.keyControl && <KeyChangePanel control={props.keyControl} onClose={() => setShowKey(false)} />}
     {error && <p role="alert" className="shrink-0 px-3 pb-2 text-xs text-rose-100">{error}</p>}
   </section>;
 }

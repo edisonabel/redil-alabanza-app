@@ -55,6 +55,7 @@ import { LiveDirectorClickMixer } from './live-director/LiveDirectorClickMixer';
 import type { GeneratedClickSettings } from '../../utils/liveDirectorGeneratedClick';
 import { ChannelStrip, FaderThumb, PrecisionFaderSurface } from './live-director/ChannelStrip';
 import PadPlayerPanel from './live-director/PadPlayerPanel';
+import type { KeyChangeControl } from './live-director/KeyChangePanel';
 import { newestClickPreference, readDeviceClickPreference, writeDeviceClickPreference, type ClickPreference } from '../../utils/liveDirectorClickPreference';
 import { DEFAULT_PAD_VOLUME, PAD_KITS, findPadKit, padKeyForSongKey, padUrlFor, readDevicePadKit, readPadAuto, readPadVolume, writeDevicePadKit, writePadAuto, writePadVolume, type PadKey } from '../../utils/padKits';
 import { EnsayoQueueAddCard, EnsayoQueueCard, EnsayoQueueSaveCard } from './live-director/EnsayoQueueCard';
@@ -246,6 +247,8 @@ type LiveDirectorViewProps = {
   timeSignature?: { numerator: number; denominator: number };
   songKey?: string;
   initialSession?: LiveDirectorPersistedSession | null;
+  /** Cambiar tono en este evento; solo llega para administradores, director y líder asignados. */
+  eventKeyControl?: KeyChangeControl | null;
   requiresSongContext?: boolean;
   mode?: LiveDirectorMode;
   engineSurface?: LiveDirectorEngineSurface;
@@ -648,6 +651,7 @@ export function LiveDirectorView({
   timeSignature: catalogTimeSignature,
   songKey = '',
   initialSession = null,
+  eventKeyControl = null,
   requiresSongContext = false,
   mode = 'director',
   engineSurface = 'web',
@@ -5661,7 +5665,8 @@ export function LiveDirectorView({
 
   const advancedStreamingActive = diagnostics?.engineRoute === 'streaming-worker';
   // Por qué «Editar» está apagado, en el orden en que conviene resolverlo (null = disponible).
-  const editSongUnavailableReason = !eventArrangement.canEdit
+  // El líder de alabanza entra por el tono, aunque las secciones sigan siendo del director.
+  const editSongUnavailableReason = !eventArrangement.canEdit && !eventKeyControl
     ? (eventId ? 'Este evento es de solo lectura: no tienes permiso para editar su arreglo.' : 'No tienes permiso para editar esta canción.')
     : eventArrangement.loading ? 'Cargando el arreglo del evento…'
     : eventArrangement.error ? `No se pudo cargar el arreglo: ${eventArrangement.error}`
@@ -5725,7 +5730,8 @@ export function LiveDirectorView({
   const sectionSurface = showArrangementEditor ? (
     <LiveDirectorArrangementEditor key={arrangementIdentity} onClose={() => setShowArrangementEditor(false)}
       busy={isPlaying || isSectionSeekBusy || isCongregationFading} sections={sourceSections} entries={arrangementEntries}
-      eventTitle={eventId ? eventTitle || 'Evento actual' : undefined} onApply={applyArrangement} />
+      eventTitle={eventId ? eventTitle || 'Evento actual' : undefined} onApply={applyArrangement}
+      keyControl={eventKeyControl} sectionsLocked={!eventArrangement.canEdit} />
   ) : (
 <div data-live-director-section-surface="true" className="relative flex min-h-0 flex-col overflow-hidden rounded-[1.2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(29,30,32,0.98),rgba(23,24,26,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
               <div data-live-director-section-controls="true" data-live-repeat-count={sectionJump.repeat?.completed ?? 0} className="relative z-40 flex h-11 shrink-0 items-center gap-2 border-b border-white/5 px-3 text-xs text-white/60">
