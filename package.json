@@ -115,7 +115,8 @@
     "test:live-silent-head-switch": "node scripts/test-live-director-silent-head-switch-browser.mjs",
     "test:live-pad-player-ui": "node scripts/test-live-director-pad-player-browser.mjs",
     "test:live-long-index-seek": "node scripts/test-live-director-long-index-seek-browser.mjs",
-    "test:live-transition-repeat": "node scripts/test-live-director-transition-repeat-browser.mjs"
+    "test:live-transition-repeat": "node scripts/test-live-director-transition-repeat-browser.mjs",
+    "test:live-load-error-actions": "node scripts/test-live-director-load-error-actions-browser.mjs"
   },
   "dependencies": {
     "@astrojs/netlify": "8.2.1",

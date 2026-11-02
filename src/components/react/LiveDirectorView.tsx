@@ -4865,6 +4865,12 @@ export function LiveDirectorView({
     });
   };
 
+  const rawAudioError = loadError || selectedMultitrackEngine.runtimeError || '';
+  const plainAudioError = /AAC decoder|produced PCM|decoding failed/i.test(rawAudioError)
+    ? 'Uno de los archivos de esta secuencia está dañado o este navegador no puede leerlo. Reintenta, reemplaza el stem o borra la secuencia y súbela de nuevo.'
+    : /productor sincronizado/i.test(rawAudioError)
+      ? 'Este navegador no pudo preparar los stems sincronizados. Reintenta, o administra o borra la secuencia.'
+      : rawAudioError;
   const handleStemsToolbarAction = () => {
     if (!canUseStemsToolbar) {
       return;
@@ -7837,12 +7843,14 @@ export function LiveDirectorView({
         );
       })()}
 
-      {(loadError || selectedMultitrackEngine.runtimeError) && (
+      {/* Al administrar los stems el error se aparta: una secuencia que no carga también se puede arreglar o borrar. */}
+      {(loadError || selectedMultitrackEngine.runtimeError) && !showTrackLoadModal && !showStemsActionModal && !showLoadPanel && (
         <div className="absolute inset-0 z-[70] flex items-center justify-center bg-black/24 backdrop-blur-[8px]">
           <div role="alertdialog" aria-modal="true" aria-labelledby="ld-audio-error-title" className="max-w-lg rounded-[1.8rem] border border-rose-300/18 bg-[linear-gradient(180deg,rgba(23,15,17,0.96),rgba(16,12,13,0.96))] px-7 py-6 shadow-[0_30px_60px_rgba(0,0,0,0.32)]">
             <p className="text-[0.8rem] font-black uppercase tracking-[0.28em] text-rose-200/70">Error de audio</p>
             <h2 id="ld-audio-error-title" className="mt-2 text-2xl font-semibold text-white">{selectedMultitrackEngine.runtimeError ? 'La reproducción se detuvo.' : 'La sesión multitrack no pudo terminar de cargarse.'}</h2>
-            <p className="mt-3 text-base leading-relaxed text-white/62">{loadError || selectedMultitrackEngine.runtimeError}</p>
+            <p className="mt-3 text-base leading-relaxed text-white/62">{plainAudioError}</p>
+            {plainAudioError !== (loadError || selectedMultitrackEngine.runtimeError) && <p className="mt-2 break-words text-xs text-white/40">{loadError || selectedMultitrackEngine.runtimeError}</p>}
             <button
               type="button"
               autoFocus
@@ -7864,6 +7872,14 @@ export function LiveDirectorView({
             <button type="button" onClick={() => { void exitLiveDirector(); }} className="ml-3 mt-3 rounded-xl border border-white/20 px-5 py-3 text-sm text-white">
               Volver
             </button>
+            {canUseStemsToolbar && <button type="button" data-live-director-error-action="stems" onClick={handleStemsToolbarAction} className="ml-3 mt-3 rounded-xl border border-white/20 px-5 py-3 text-sm text-white">
+              Administrar stems
+            </button>}
+            {hasPersistedSongContext && canManagePersistedSongSession && !hasProvidedTracks && hasTrackSession && <button type="button" data-live-director-error-action="delete"
+              onClick={() => { if (window.confirm(`¿Borrar la secuencia de "${songTitle}"? Se eliminan todos sus stems de la canción y de R2. No se puede deshacer.`)) void clearManualSession(); }}
+              className="ml-3 mt-3 rounded-xl border border-rose-300/40 bg-rose-500/15 px-5 py-3 text-sm text-rose-100">
+              Borrar secuencia
+            </button>}
           </div>
         </div>
       )}
