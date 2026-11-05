@@ -44,12 +44,18 @@ export function useLiveDirectorDynamicGuide(options: Options) {
     void player.load(controller.signal).then(() => {
       if (cancelled) return;
       setStatus('ready');
+      // Al arrancar o saltar, el reloj puede dar un instante un tiempo viejo: la voz espera una lectura que
+      // avance al paso del reloj real, o cuenta antes de una sección en el lugar equivocado.
+      let previousTick: { time: number; wall: number } | null = null;
       timer = setInterval(() => {
         const current = latest.current;
         const time = current.getTime(), cues = current.getInstructions?.() ?? [];
         const upcoming = nextGuideInstruction(cues, time);
         setNextInstruction(previous => previous?.id === upcoming?.id ? previous : upcoming);
-        if (!current.playing || current.busy) { player.pause(); return; }
+        if (!current.playing || current.busy) { previousTick = null; player.pause(); return; }
+        const wall = performance.now() / 1000, last = previousTick;
+        previousTick = { time, wall };
+        if (!last || Math.abs((time - last.time) - (wall - last.wall)) > .15) return;
         player.update(current.getPlan(time), time, current.bpm,current.meter);
         player.updateInstructions(cues, time, current.bpm);
       }, 25);

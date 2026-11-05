@@ -39,8 +39,10 @@ try {
   const clicks = sources.filter(source => source.d > 0.03 && source.d < 0.04).map(source => source.when).sort((a, b) => a - b);
   assert.ok(clicks.length >= 8, `Suena el click digital (${clicks.length} pulsos)`);
   const gaps = clicks.slice(1).map((when, index) => when - clicks[index]);
-  const spacing = gaps.sort((a, b) => a - b)[Math.floor(gaps.length / 2)];
-  assert.ok(gaps.every(gap => Math.abs(gap - spacing) < 0.002), `Pulsos parejos: ${gaps.map(gap => gap.toFixed(4)).join(' ')}`);
+  const spacing = [...gaps].sort((a, b) => a - b)[Math.floor(gaps.length / 2)];
+  // Un pulso suelto puede caer un bloque de audio (2,7 ms) antes o después: imperceptible. El promedio, exacto.
+  assert.ok(gaps.every(gap => Math.abs(gap - spacing) < 0.006), `Pulsos parejos: ${gaps.map(gap => gap.toFixed(4)).join(' ')}`);
+  assert.ok(Math.abs((clicks.at(-1) - clicks[0]) / gaps.length - spacing) < 0.0005, 'Sin deriva');
   const accents = sources.filter(source => source.d > 0.03 && source.d < 0.04 && source.peak > 0.8).length;
   assert.ok(accents >= 1 && accents < clicks.length, `Acento al inicio del compás (${accents} de ${clicks.length})`);
   const voices = sources.filter(source => source.d > 0.15 && source.d < 2 && source.songTime > 19.5);

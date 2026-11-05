@@ -7,6 +7,9 @@ for(let i=0;i<4;i++)assert.equal(at(p,uno-(4-i)*step+.001),i+1);
 assert.equal(at(p,uno),'ENTRA');assert.equal(at(p,uno+.5),null);
 assert.equal(plan(76,meter,0).recorded,false,'No recorded prelude means one added bar, not a guessed lyric offset');
 assert.equal(plan(76,meter,.5).recorded,false);assert.equal(plan(0,meter,0),null);
+// «Gracia más Grande»: el 1 cae justo a un compás (3,29 s a 73): sonando no da tiempo de decir el primer número.
+assert.equal(plan(73,meter,4*60/73).recorded,false,'Un compás justo: la cuenta va en la pausa');
+assert.equal(plan(73,meter,4*60/73+.5).recorded,true);
 const six=plan(120,{numerator:6,denominator:8},3);assert.equal(six.beatSeconds,.25);assert.equal(at(six,2.75),6);
 const three=plan(90,{numerator:3,denominator:4},4);
 for(let i=0;i<3;i++)assert.equal(at(three,4-(3-i)*60/90+.001),i+1);

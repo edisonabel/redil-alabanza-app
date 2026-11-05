@@ -126,7 +126,8 @@
     "test:live-song-level-save": "node scripts/test-live-director-song-level-save-browser.mjs",
     "test:live-event-transitions-saved": "node scripts/test-live-director-event-transitions-saved-browser.mjs",
     "test:live-transition-safety-net": "node scripts/test-live-director-transition-safety-net-browser.mjs",
-    "test:live-digital-channels": "node scripts/test-live-director-digital-channels-browser.mjs"
+    "test:live-digital-channels": "node scripts/test-live-director-digital-channels-browser.mjs",
+    "test:live-entry-count-no-reaper": "node scripts/test-live-director-entry-count-no-reaper-browser.mjs"
   },
   "dependencies": {
     "@astrojs/netlify": "8.2.1",
