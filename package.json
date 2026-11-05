@@ -124,7 +124,8 @@
     "test:live-short-final": "node scripts/test-live-director-short-final-transition-browser.mjs",
     "test:live-guide-without-track": "node scripts/test-live-director-guide-without-track-browser.mjs",
     "test:live-song-level-save": "node scripts/test-live-director-song-level-save-browser.mjs",
-    "test:live-event-transitions-saved": "node scripts/test-live-director-event-transitions-saved-browser.mjs"
+    "test:live-event-transitions-saved": "node scripts/test-live-director-event-transitions-saved-browser.mjs",
+    "test:live-transition-safety-net": "node scripts/test-live-director-transition-safety-net-browser.mjs"
   },
   "dependencies": {
     "@astrojs/netlify": "8.2.1",

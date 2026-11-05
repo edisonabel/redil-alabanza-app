@@ -5,7 +5,7 @@ import {entryCountPlan} from '../../utils/liveDirectorEntryCount';
 import {queueNumberFromKey} from '../../utils/liveDirectorEntryCount';
 import { useLiveDirectorEventAdvance, type EventPlaybackRequest, type QueueSelectionOptions } from '../../hooks/useLiveDirectorEventAdvance';
 import { useLiveDirectorSongLevel } from '../../hooks/useLiveDirectorSongLevel';
-import { fetchEventSongTransitions, saveDefaultSongTransition, saveEventSongTransitions } from '../../utils/liveDirectorEventTransitions';
+import { fetchEventSongTransitions, saveEventSongTransitions } from '../../utils/liveDirectorEventTransitions';
 import { LiveDirectorSongLevel } from './live-director/LiveDirectorSongLevel';
 import { useLiveDirectorEventArrangement } from '../../hooks/useLiveDirectorEventArrangement';
 import { useLiveDirectorArrangement } from '../../hooks/useLiveDirectorArrangement';
@@ -63,7 +63,7 @@ import { EnsayoQueueAddCard, EnsayoQueueCard, EnsayoQueueSaveCard } from './live
 import { SongTransitionControl } from './live-director/SongTransitionControl';
 import { isClickCarrierUrl } from '../../utils/silentClickCarrier.js';
 import {
-  DEFAULT_SONG_TRANSITION, SONG_BLEND_SECONDS, readDefaultSongTransition, readSongTransitions, transitionAllowsPad, writeDefaultSongTransition, writeSongTransitions,
+  DEFAULT_SONG_TRANSITION, SONG_BLEND_SECONDS, readSongTransitions, transitionAllowsPad, writeSongTransitions,
   type SongTransition,
 } from '../../utils/liveDirectorSongTransitions';
 import { useLiveDirectorRehearsalDownload } from '../../hooks/useLiveDirectorRehearsalDownload';
@@ -3705,18 +3705,14 @@ export function LiveDirectorView({
   const [songTransitions, setSongTransitions] = useState<Record<string, SongTransition>>({});
   const songTransitionsRef = useRef(songTransitions); songTransitionsRef.current = songTransitions;
   const canSaveTransitionsRef = useRef(false);
-  // Modo de todos los eventos: lo usa cada paso sin elección propia en este evento.
-  const [allEventsTransition, setAllEventsTransition] = useState<SongTransition | null>(() => readDefaultSongTransition());
-  const [canSetAllEventsTransition, setCanSetAllEventsTransition] = useState(false);
   useEffect(() => {
     const local = readSongTransitions(eventId || '');
     setSongTransitions(local); canSaveTransitionsRef.current = false;
     if (!eventId) return undefined;
     let cancelled = false;
-    void fetchEventSongTransitions(eventId).then(({ transitions, canEdit, defaultTransition, canEditDefault }) => {
+    void fetchEventSongTransitions(eventId).then(({ transitions, canEdit }) => {
       if (cancelled) return;
       canSaveTransitionsRef.current = canEdit;
-      setAllEventsTransition(defaultTransition); writeDefaultSongTransition(defaultTransition); setCanSetAllEventsTransition(canEditDefault);
       if (transitions) { setSongTransitions(transitions); writeSongTransitions(eventId, transitions); return; }
       // El evento aún no tiene: lo elegido antes en este equipo pasa a ser del evento.
       if (canEdit && Object.keys(local).length) void saveEventSongTransitions(eventId, local).catch(() => {});
@@ -3725,7 +3721,7 @@ export function LiveDirectorView({
   }, [eventId]);
   const [openTransitionFrom, setOpenTransitionFrom] = useState<string | null>(null);
   const currentQueueSongId = activeQueueSongId || songId;
-  const currentTransition = songTransitions[currentQueueSongId] ?? allEventsTransition ?? DEFAULT_SONG_TRANSITION;
+  const currentTransition = songTransitions[currentQueueSongId] ?? DEFAULT_SONG_TRANSITION;
   const currentTransitionRef = useRef(currentTransition); currentTransitionRef.current = currentTransition;
   const showSongTransitions = experimentalTools && !isManualTempoMode && Boolean(eventId && onSelectQueueSong);
   // AutoLink, Sobreponer y Transición Cruzada cambian de canción sonando: necesitan el cambio preparado.
@@ -3747,7 +3743,13 @@ export function LiveDirectorView({
     autoAdvance: false,
     onEnded: () => {
       const transition = currentTransitionRef.current;
-      if (!transitionAllowsPad(transition.mode)) return;
+      // Red de seguridad de AutoLink, Sobreponer y Cruzada: si el cambio preparado no llegó a armarse o
+      // falló (la canción llegó a su final), la siguiente entra igual en vez de quedarse detenida.
+      if (!transitionAllowsPad(transition.mode)) {
+        const next = nextEventSongRef.current;
+        if (next) { eventMixFlushRef.current(); onSelectQueueSong?.(next.id, { autoPlay: true }); }
+        return;
+      }
       if (transition.continuePad && !isPadActive) setPadActiveFromGesture(true);
       // El pad que entró solo se va solo, en un fundido, al terminar la canción; al tocar otra vuelve a entrar.
       if (!transition.continuePad && autoPadOwnedByFallbackRef.current) {
@@ -4042,12 +4044,6 @@ export function LiveDirectorView({
     if(isPlaying&&!isManualTempoMode){void musicalNavigation.arm('song',target.id,target.title);return;}
     musicalNavigation.cancel();entryCount.cancel();if(usesEventMixPersistence)eventMixFlushRef.current();onSelectQueueSong?.(target.id);
   },[activeQueueSongId,isPlaying,isManualTempoMode,musicalNavigation.arm,musicalNavigation.cancel,entryCount.cancel,usesEventMixPersistence,onSelectQueueSong]);
-  // Modo de todos los eventos: cada paso sin elección propia lo usa, en este evento y en los que vengan.
-  const changeAllEventsTransition=useCallback((transition:SongTransition|null)=>{
-    setAllEventsTransition(transition);writeDefaultSongTransition(transition);
-    if(eventId)void saveDefaultSongTransition(eventId,transition).catch(error=>console.warn('[LiveDirectorView] No se guardó el modo de todos los eventos.',error));
-    if(chainArmedRef.current){chainArmedRef.current='';if(musicalNavigation.pending?.kind==='song')musicalNavigation.cancel();}
-  },[eventId,musicalNavigation.pending,musicalNavigation.cancel]);
   const changeSongTransition=useCallback((fromSongId:string,transition:SongTransition)=>{
     const next={...songTransitionsRef.current,[fromSongId]:transition};
     songTransitionsRef.current=next;setSongTransitions(next);writeSongTransitions(eventId||'',next);
@@ -4069,7 +4065,11 @@ export function LiveDirectorView({
     if(chainArmedRef.current!==key)chainArmedRef.current='';
     const timer=setInterval(()=>{
       if(musicalNavigationPendingRef.current||isTransportCueBusyRef.current||sectionJumpActiveRef.current)return;
-      const lastIndex=resolvedSections.length-1,last=resolvedSections[lastIndex];if(!last)return;
+      // Sin secciones marcadas, los últimos 12 s hacen de última sección (la mezcla dura 5 s).
+      const songEnd=selectedMultitrackEngine.getDurationSnapshot?.()??0;
+      const lastIndex=resolvedSections.length-1,last=resolvedSections[lastIndex]
+        ??(songEnd>CHAIN_LEAD_SECONDS?{startTime:songEnd-CHAIN_LEAD_SECONDS,endTime:songEnd}:null);
+      if(!last)return;
       const time=selectedMultitrackEngine.getCurrentTimeSnapshot();
       const armFrom=Math.min(last.startTime,last.endTime-CHAIN_LEAD_SECONDS);
       const cursor=arrangementCursor.current;
@@ -6684,7 +6684,7 @@ export function LiveDirectorView({
                   <div className={`flex py-4 ${isUltraCompactLandscape ? 'gap-1 px-0.5' : 'gap-1.5 px-0.5'}`}>
                     {ensayoSlotSongs.map((queueSong, queueIndex) => {
                       const followingSong = ensayoSlotSongs[queueIndex + 1];
-                      const transition = songTransitions[queueSong.id] ?? allEventsTransition ?? DEFAULT_SONG_TRANSITION;
+                      const transition = songTransitions[queueSong.id] ?? DEFAULT_SONG_TRANSITION;
                       return (
                       <Fragment key={queueSong.id}>
                       <EnsayoQueueCard
@@ -6716,8 +6716,6 @@ export function LiveDirectorView({
                             preparedUnavailableReason={preparedTransitionUnavailable}
                             onOpenChange={open => setOpenTransitionFrom(open ? queueSong.id : null)}
                             onChange={next => changeSongTransition(queueSong.id, next)}
-                            defaultTransition={allEventsTransition}
-                            onSetDefault={canSetAllEventsTransition && eventId ? changeAllEventsTransition : undefined}
                           />
                         </div>
                       )}

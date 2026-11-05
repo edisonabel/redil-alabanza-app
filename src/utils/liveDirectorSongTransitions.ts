@@ -66,16 +66,6 @@ export function readSongTransitions(eventId: string): Record<string, SongTransit
   }
 }
 
-// El modo de todos los eventos, recordado en el equipo para usarlo aun sin conexión.
-const DEFAULT_STORAGE_KEY = 'live-director:transitions:all-events';
-export function readDefaultSongTransition(): SongTransition | null {
-  try { return normalize(JSON.parse(localStorage.getItem(DEFAULT_STORAGE_KEY) || 'null')); } catch { return null; }
-}
-export function writeDefaultSongTransition(transition: SongTransition | null) {
-  try { if (transition) localStorage.setItem(DEFAULT_STORAGE_KEY, JSON.stringify(transition)); else localStorage.removeItem(DEFAULT_STORAGE_KEY); } catch { /* vale para esta sesión */ }
-}
-export const normalizeSongTransition = (value: unknown) => normalize(value);
-
 export function writeSongTransitions(eventId: string, transitions: Record<string, SongTransition>) {
   if (!eventId) return;
   try {

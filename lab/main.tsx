@@ -39,6 +39,8 @@ function Lab() {
   },[song]);
   // Como ModoEnsayoDirector: la siguiente canción se carga sonando para el cambio preparado sin silencio.
   const prepareQueueSong=async(id:string)=>{
+    // ?labFailPrepare: la siguiente canción nunca queda preparada (prueba la red de seguridad).
+    if(new URLSearchParams(location.search).has('labFailPrepare'))throw new Error('Preparación fallida a propósito.');
     const next=songs.find(s=>s.id===id);
     const session=next?normalizePersistedLiveDirectorSession(next.multitrack_session,{songId:next.id,songTitle:next.titulo}):null;
     if(!session)throw new Error('Esta canción todavía no tiene stems preparados.');
@@ -48,9 +50,11 @@ function Lab() {
   const [labKey,setLabKey]=useState<any>(null);
   // ?labFinalAt=<s>: la primera canción termina con un «Final» corto desde ese segundo, como muchas sesiones de REAPER.
   const labFinalAt=Number(new URLSearchParams(location.search).get('labFinalAt'));
-  const sections=useMemo(()=>song?buildLiveDirectorSectionsFromMarkers(labFinalAt>0&&song.id===songs[0]?.id
+  // ?labNoSections: la primera canción sin secciones marcadas.
+  const labNoSections=new URLSearchParams(location.search).has('labNoSections');
+  const sections=useMemo(()=>labNoSections&&song?.id===songs[0]?.id?[]:song?buildLiveDirectorSectionsFromMarkers(labFinalAt>0&&song.id===songs[0]?.id
     ?[...song.section_markers,{id:'lab-final',startSec:labFinalAt,sectionName:'Final',sectionKey:'final__1',sectionIndex:song.section_markers.length,sectionOccurrence:1,note:''}]
-    :song.section_markers):[],[song,songs,labFinalAt]);
+    :song.section_markers):[],[song,songs,labFinalAt,labNoSections]);
   const queue=useMemo(()=>songs.map(s=>({id:s.id,title:s.titulo,subtitle:s.cantante,artworkUrl:s.artworkUrl})),[songs]);
   return <>
     <div className="lab-banner" role="status"><strong>EXPERIMENTAL</strong><span>Copia de prueba · Los ajustes no cambian Alabanza</span><a className="lab-mode" href={labEventId ? "/" : "/?labEvent=lab-playback-preview"}>{labEventId ? "Canción suelta" : "Probar evento"}</a><label>Canción <select aria-label="Canción de prueba" value={selected} disabled={!songs.length} onChange={event=>selectSong(event.target.value)}>{songs.map(s=><option key={s.id} value={s.id}>{s.titulo}</option>)}</select></label></div>
