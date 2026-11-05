@@ -224,6 +224,7 @@ type LiveDirectorEventMixPayload = {
     enabled: boolean;
     volume: number;
   }>;
+  songLevelDb?: number;
 };
 
 type EventMixSaveStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -304,6 +305,10 @@ const DISABLE_BACKWARD_SEEK_WHILE_PLAYING = true;
 const LIVE_DIRECTOR_COMBINED_MIN_HEIGHT = 900;
 const LIVE_DIRECTOR_COMPACT_MAX_HEIGHT = 700;
 const CHAIN_MIN_PREPARE_SECONDS = 4;
+const MASTER_VOLUME_STORAGE_KEY = 'redil:live-director:master-volume:v1';
+// Preparar la siguiente canción toma unos segundos: si la última sección es más corta (un «Final» de 2
+// compases), se prepara desde la sección anterior. El cambio igual cae al final de la canción.
+const CHAIN_LEAD_SECONDS = 12;
 // Instrucciones «se dicen ahora»: toda la fila de encima del espacio (posición física, sirve igual en
 // teclado español e inglés). Lógica: Z baja / X sube (con Shift, el tono), C A capella, V última Vez,
 // B entra Batería, M Mantener; los instrumentos van juntos con Shift (B N M ,).
@@ -1220,9 +1225,29 @@ export function LiveDirectorView({
   const [outputLayout, setOutputLayout] = useState<LiveDirectorOutputLayout>('guide-left');
   const [trackOutputRoutes, setTrackOutputRoutes] = useState<Record<string, TrackOutputRoute>>({});
   const [soloTrackIds, setSoloTrackIds] = useState<Set<string>>(() => new Set());
-  const [masterVolume, setMasterVolumeState] = useState(experimentalTools ? 1 : 0.82);
+  // El Master es la salida de este equipo: se recuerda en el equipo.
+  const [masterVolume, setMasterVolumeState] = useState(() => {
+    try {
+      const saved = Number(localStorage.getItem(MASTER_VOLUME_STORAGE_KEY) ?? Number.NaN);
+      if (Number.isFinite(saved) && saved >= 0 && saved <= 1) return saved;
+    } catch { /* sin almacenamiento: el nivel de siempre */ }
+    return experimentalTools ? 1 : 0.82;
+  });
+  useEffect(() => {
+    try { localStorage.setItem(MASTER_VOLUME_STORAGE_KEY, String(masterVolume)); } catch { /* vale para esta sesión */ }
+  }, [masterVolume]);
   const [masterMeterTarget, setMasterMeterTarget] = useState<HTMLDivElement | null>(null);
-  const songLevel = useLiveDirectorSongLevel(`${eventId || 'independent'}:${songId || activeQueueSongId || songTitle}`);
+  const songLevel = useLiveDirectorSongLevel(`${eventId || 'independent'}:${songId || activeQueueSongId || songTitle}`,
+    usesEventMixPersistence ? (initialSession as { songLevelDb?: number } | null | undefined)?.songLevelDb : undefined);
+  // Nivel canción va en la mezcla del evento: al moverlo se guarda como un fader más.
+  const songLevelDbRef = useRef(songLevel.db);
+  useEffect(() => {
+    if (songLevelDbRef.current === songLevel.db) return undefined;
+    songLevelDbRef.current = songLevel.db;
+    if (!usesEventMixPersistence) return undefined;
+    const timer = window.setTimeout(() => eventMixFlushRef.current(), 400);
+    return () => window.clearTimeout(timer);
+  }, [songLevel.db, usesEventMixPersistence]);
   const [congregationFadeState, setCongregationFadeState] = useState<
     'normal' | 'fading-out' | 'muted' | 'fading-in'
   >('normal');
@@ -3767,9 +3792,10 @@ export function LiveDirectorView({
   const clickTrack = activeEngineTracks.find(track => /\b(click|metronomo|metronome)\b/i.test(`${track.id} ${track.name}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '')));
   const canUseGeneratedClick = experimentalTools && !isManualTempoMode && Boolean(clickTrack) && diagnostics?.engineRoute === 'streaming-worker';
   const guideTrack = activeEngineTracks.find(track => /\b(guide|guia)\b/i.test(`${track.id} ${track.name}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '')));
-  const canUseDynamicGuide = experimentalTools && Boolean(guideTrack) && diagnostics?.engineRoute === 'streaming-worker';
+  // Sin pista Guide también hay guía: la voz automática anuncia las secciones marcadas.
+  const canUseDynamicGuide = experimentalTools && diagnostics?.engineRoute === 'streaming-worker' && (Boolean(guideTrack) || resolvedSections.length > 0);
   const [guideModeChoice, setGuideModeChoice] = useState<{ songId: string; mode: 'recorded' | 'dynamic' } | null>(null);
-  const guideMode = guideModeChoice?.songId === songId ? guideModeChoice.mode : manualSession?.guideMode === 'dynamic' ? 'dynamic' : 'recorded';
+  const guideMode = !guideTrack ? 'dynamic' : guideModeChoice?.songId === songId ? guideModeChoice.mode : manualSession?.guideMode === 'dynamic' ? 'dynamic' : 'recorded';
   const guideDynamic = canUseDynamicGuide && guideMode === 'dynamic';
   const guideDynamicRef = useRef(guideDynamic); guideDynamicRef.current = guideDynamic;
   // Conteo de entrada solo en canciones con mapa de REAPER: sin él, la guía subida ya trae su
@@ -3783,7 +3809,8 @@ export function LiveDirectorView({
     identity: `${transportIdentity}:${reloadKey}`, ready: currentSessionPrepared, playing: isPlaying,
     bpm, meter: shownMeter, unoSeconds: arrangementEntries ? null : reaperTransport?.clickGrid?.originSeconds,
     getTime: selectedMultitrackEngine.getCurrentTimeSnapshot,
-    getGraph: () => (guideTrack || clickTrack) ? selectedMultitrackEngine.getGuideAudioGraph?.((guideTrack || clickTrack)!.id) ?? null : null,
+    getGraph: () => (guideTrack || clickTrack) ? selectedMultitrackEngine.getGuideAudioGraph?.((guideTrack || clickTrack)!.id) ?? null
+      : selectedMultitrackEngine.getVirtualGuideAudioGraph?.(resolveTrackOutputRouteForLayout({ id: 'guide', name: 'Guide' }, outputLayout)) ?? null,
     play, pause,
     getLeadCue: () => entryLeadCueRef.current(),
     getCountOverride: () => entryCountOverrideRef.current(),
@@ -3871,7 +3898,8 @@ export function LiveDirectorView({
   const dynamicGuide = useLiveDirectorDynamicGuide({
     wanted: canUseDynamicGuide, ready: isReady, playing: isPlaying,
     busy: isSectionSeekBusy, resetKey: `${trackSignature}:${reloadKey}:${guideRetryKey}`, bpm, meter:shownMeter,
-    getGraph: () => guideTrack ? selectedMultitrackEngine.getGuideAudioGraph?.(guideTrack.id) ?? null : null,
+    getGraph: () => guideTrack ? selectedMultitrackEngine.getGuideAudioGraph?.(guideTrack.id) ?? null
+      : selectedMultitrackEngine.getVirtualGuideAudioGraph?.(resolveTrackOutputRouteForLayout({ id: 'guide', name: 'Guide' }, outputLayout)) ?? null,
     getTime: selectedMultitrackEngine.getCurrentTimeSnapshot, getPlan: time => {
       const plan = sectionJump.getCuePlan(time);
       if (plan && /^(jump|repeat):/.test(plan.id)) return plan;
@@ -3998,9 +4026,10 @@ export function LiveDirectorView({
     // Un cambio ya armado para esta canción se suelta; el nuevo modo se arma solo si corresponde.
     if(fromSongId===currentQueueSongId&&chainArmedRef.current){chainArmedRef.current='';if(musicalNavigation.pending?.kind==='song')musicalNavigation.cancel();}
   },[eventId,currentQueueSongId,musicalNavigation.pending,musicalNavigation.cancel]);
-  // AutoLink, Sobreponer y Cruzada: al entrar en la última sección se prepara la siguiente canción. AutoLink
-  // entra justo al terminar esta; las mezclas empiezan antes para terminar con ella (lo menor entre 5 s y
-  // la última sección). Una vez por pasada; si ya no queda tiempo para prepararla, la canción termina sola.
+  // AutoLink, Sobreponer y Cruzada: al entrar en la última sección (o 12 s antes del final, si esa sección
+  // es corta) se prepara la siguiente canción. AutoLink entra justo al terminar esta; las mezclas empiezan
+  // antes para terminar con ella (lo menor entre 5 s y la última sección). Una vez por pasada; si ya no
+  // queda tiempo para prepararla, la canción termina sola.
   const preparedTransition=showSongTransitions&&!preparedTransitionUnavailable&&transitionTarget&&!transitionAllowsPad(currentTransition.mode)?currentTransition.mode:null;
   useEffect(()=>{
     const nextEventSong=transitionTarget;
@@ -4013,13 +4042,15 @@ export function LiveDirectorView({
       if(musicalNavigationPendingRef.current||isTransportCueBusyRef.current||sectionJumpActiveRef.current)return;
       const lastIndex=resolvedSections.length-1,last=resolvedSections[lastIndex];if(!last)return;
       const time=selectedMultitrackEngine.getCurrentTimeSnapshot();
-      const inLast=arrangementEntries?arrangementCursor.current===lastIndex&&time>=last.startTime:time>=last.startTime;
-      if(!inLast){if(chainArmedRef.current===key)chainArmedRef.current='';return;}
+      const armFrom=Math.min(last.startTime,last.endTime-CHAIN_LEAD_SECONDS);
+      const cursor=arrangementCursor.current;
+      const inWindow=time>=armFrom&&(!arrangementEntries||cursor===lastIndex||(cursor===lastIndex-1&&time<last.startTime));
+      if(!inWindow){if(chainArmedRef.current===key)chainArmedRef.current='';return;}
       if(chainArmedRef.current===key||last.endTime-time<CHAIN_MIN_PREPARE_SECONDS)return;
       chainArmedRef.current=key;
-      if(preparedTransition==='autolink'){handleMusicalQueueSelect(nextEventSong);return;}
-      void musicalNavigation.arm('song',nextEventSong.id,nextEventSong.title,
-        {mode:preparedTransition,seconds:Math.min(SONG_BLEND_SECONDS,last.endTime-last.startTime)});
+      const until=last.endTime;
+      void musicalNavigation.arm('song',nextEventSong.id,nextEventSong.title,preparedTransition==='autolink'?undefined
+        :{mode:preparedTransition,seconds:Math.min(SONG_BLEND_SECONDS,last.endTime-last.startTime)},{until});
     },100);
     return()=>clearInterval(timer);
   },[preparedTransition,transitionTarget,isPlaying,currentQueueSongId,resolvedSections,arrangementEntries,selectedMultitrackEngine,handleMusicalQueueSelect,musicalNavigation.arm]);
@@ -4202,7 +4233,7 @@ export function LiveDirectorView({
     ));
 
     if (usesEventMixPersistence && onEventMixChange) {
-      const eventMix = buildLiveDirectorEventMix(nextTracks, eventMixGroupsRef.current) as LiveDirectorEventMixPayload | null;
+      const eventMix = buildLiveDirectorEventMix(nextTracks, eventMixGroupsRef.current, songLevelDbRef.current) as LiveDirectorEventMixPayload | null;
       if (eventMix) {
         void Promise.resolve(onEventMixChange(eventMix)).catch((error) => {
           console.warn('[LiveDirectorView] Event mixer autosave failed.', error);

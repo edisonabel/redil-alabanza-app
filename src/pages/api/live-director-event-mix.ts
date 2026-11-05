@@ -111,7 +111,11 @@ const sanitizeMix = (value: unknown) => {
     }
   }
   const hasGroups = Object.keys(gains).length > 0 || Object.keys(muted).length > 0 || Object.keys(assignments).length > 0;
-  return { version: 1, tracks, ...(hasGroups ? { groups: { gains, muted, assignments } } : {}) };
+  // Nivel canción en dB (-24 a +12); 0 es el nivel de siempre y no se guarda.
+  const rawLevel = source?.songLevelDb;
+  const songLevelDb = rawLevel !== null && rawLevel !== undefined && rawLevel !== '' && Number.isFinite(Number(rawLevel))
+    ? Math.round(Math.max(-24, Math.min(12, Number(rawLevel))) * 10) / 10 : 0;
+  return { version: 1, tracks, ...(hasGroups ? { groups: { gains, muted, assignments } } : {}), ...(songLevelDb ? { songLevelDb } : {}) };
 };
 
 const getAuthenticatedDatabase = async (cookies: Parameters<typeof requireAuthenticatedUser>[0]) => {

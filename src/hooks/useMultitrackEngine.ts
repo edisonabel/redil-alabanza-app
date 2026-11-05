@@ -84,6 +84,7 @@ export type UseMultitrackEngineReturn = {
   scheduleSectionEnd?: (endSeconds: number) => { completion: Promise<boolean>; cancel: () => void };
   runtimeError?: string | null;
   getGuideAudioGraph?: (trackId: string) => GuideAudioGraph | null;
+  getVirtualGuideAudioGraph?: (route: TrackOutputRoute) => GuideAudioGraph | null;
   getDurationSnapshot?: () => number;
   loadGeneratedClickSamples?: () => Promise<void>;
   setGeneratedClick?: (trackId: string, settings: GeneratedClickSettings | null) => boolean;
@@ -822,6 +823,10 @@ export function useMultitrackEngine(
     const engine = engineRef.current;
     return engine instanceof StreamingMultitrackEngine ? engine.getGuideAudioGraph(trackId) : null;
   }, []);
+  const getVirtualGuideAudioGraph = useCallback((route: TrackOutputRoute) => {
+    const engine = engineRef.current;
+    return engine instanceof StreamingMultitrackEngine ? engine.getVirtualGuideAudioGraph(route) : null;
+  }, []);
 
   const getDurationSnapshot = useCallback(() => engineRef.current?.getDuration() ?? 0, []);
 
@@ -1117,6 +1122,7 @@ export function useMultitrackEngine(
     () => ({
       runtimeError,
       getGuideAudioGraph,
+      getVirtualGuideAudioGraph,
       getDurationSnapshot,
       loadGeneratedClickSamples,
       setGeneratedClick,
@@ -1163,6 +1169,7 @@ export function useMultitrackEngine(
     [
       runtimeError,
       getGuideAudioGraph,
+      getVirtualGuideAudioGraph,
       getDurationSnapshot,
       loadGeneratedClickSamples,
       setGeneratedClick,

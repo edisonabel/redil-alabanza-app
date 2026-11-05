@@ -16,6 +16,8 @@ type Options={enabled:boolean;identity:string;playing:boolean;ready:boolean;busy
 const BLEND_SCHEDULE_MARGIN_SECONDS=.5;
 /** Sobreponer / Transición cruzada: la mezcla termina justo al final de la canción que suena. */
 export type SongTransitionBlend={mode:SongBlend['mode'];seconds:number};
+/** `until`: el cambio cae al final de la canción aunque se prepare en una sección anterior (Final corto). */
+export type ArmOptions={until?:number};
 export function useLiveDirectorMusicalNavigation(options:Options){
  const latest=useRef(options);latest.current=options;
  const[pending,setPending]=useState<Pending|null>(null),[notice,setNotice]=useState('');
@@ -24,13 +26,13 @@ export function useLiveDirectorMusicalNavigation(options:Options){
  useEffect(()=>{if(job.current)latest.current.cancelAudio?.();generation.current++;job.current=null;setPending(null);setNotice('');},[options.identity]);
  useEffect(()=>()=>{if(job.current)latest.current.cancelAudio?.();generation.current++;},[]);
  useEffect(()=>{if(pending&&(!options.enabled||!options.playing||!options.ready||options.busy)&&!committing.current)cancel();},[options.enabled,options.playing,options.ready,options.busy,pending,cancel]);
- const arm=useCallback(async(kind:'restart'|'song',id:string,title:string,blendRequest?:SongTransitionBlend)=>{
+ const arm=useCallback(async(kind:'restart'|'song',id:string,title:string,blendRequest?:SongTransitionBlend,armOptions?:ArmOptions)=>{
   const o=latest.current;if(!o.enabled){setNotice('Este motor necesita pausa para cambiar de canción.');return false;}if(!o.ready||!o.playing||o.busy)return false;
   cancel();
   // Lock the end of the section that was playing when the user requested the
   // change. Preparing destination stems must never move the boundary forward
   // to a bar or a later section and make the transition feel unexpected.
-  const requestedAt=o.getTime(),boundary=o.sectionEnd(requestedAt);
+  const requestedAt=o.getTime(),boundary=armOptions?.until??o.sectionEnd(requestedAt);
   if(boundary===null||boundary-requestedAt<.05){setNotice('No hay tiempo suficiente para preparar el cambio antes del final de esta sección.');return false;}
   o.beforeArm();const token=++generation.current;
   const initial:Pending={kind,id,title,phase:'preparing',boundary:null};job.current=initial;setPending(initial);setNotice('');
