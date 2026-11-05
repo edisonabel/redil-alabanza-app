@@ -31,9 +31,9 @@ function Lab() {
   const resolvedSession=useMemo(()=>{
     if(!song)return null;
     const rawSession=normalizePersistedLiveDirectorSession(song.multitrack_session,{songId:song.id,songTitle:song.titulo});
-    // ?labNoGuide: la primera canción sin pista Guide, como una sesión subida sin guía.
-    const session=rawSession&&new URLSearchParams(location.search).has('labNoGuide')&&song.id===songs[0]?.id
-      ?{...rawSession,tracks:rawSession.tracks.filter((track:any)=>!/guide|guia/i.test(`${track.id} ${track.name}`))}:rawSession;
+    // ?labNoGuide: la primera canción sin pista Guide (=click: tampoco Click), como una sesión subida sin guía.
+    const session=rawSession&&new URLSearchParams(location.search).has('labNoGuide')&&(song.id===songs[0]?.id||new URLSearchParams(location.search).has('labAllSongs'))
+      ?{...rawSession,tracks:rawSession.tracks.filter((track:any)=>!(new URLSearchParams(location.search).get('labNoGuide')==='click'?/guide|guia|click/i:/guide|guia/i).test(`${track.id} ${track.name}`))}:rawSession;
     const localMix=mixes.current[song.id];
     return session && localMix ? {...session,tracks:session.tracks.map(track=>({...track,...localMix.tracks?.find((t:any)=>t.id===track.id)})),...(localMix.groups?{mixGroups:localMix.groups}:{}),songLevelDb:localMix.songLevelDb??0}:session;
   },[song]);
