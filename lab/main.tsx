@@ -24,14 +24,18 @@ function Lab() {
   };
   const cancelAutoPlay=()=>{selectionToken.current++;setAutoPlayRequest(null);};
   const mixes=useRef<Record<string,any>>({});
+  (window as any).__labMixes=mixes.current;
   useEffect(()=>{fetch('/api/lab/songs').then(r=>{if(!r.ok)throw new Error('No se pudo abrir la copia de canciones.');return r.json();}).then(data=>{setSongs(data.songs);setSelected(data.songs.find((s:Song)=>s.titulo==='Providencia')?.id || data.songs[0]?.id || '');}).catch(e=>setError(e.message));},[]);
   const song=songs.find(s=>s.id===selected);
   const clickGrid=song ? (clickGrids as Record<string,{bpm:number;originSeconds:number}>)[song.id] : undefined;
   const resolvedSession=useMemo(()=>{
     if(!song)return null;
-    const session=normalizePersistedLiveDirectorSession(song.multitrack_session,{songId:song.id,songTitle:song.titulo});
+    const rawSession=normalizePersistedLiveDirectorSession(song.multitrack_session,{songId:song.id,songTitle:song.titulo});
+    // ?labNoGuide: la primera canción sin pista Guide, como una sesión subida sin guía.
+    const session=rawSession&&new URLSearchParams(location.search).has('labNoGuide')&&song.id===songs[0]?.id
+      ?{...rawSession,tracks:rawSession.tracks.filter((track:any)=>!/guide|guia/i.test(`${track.id} ${track.name}`))}:rawSession;
     const localMix=mixes.current[song.id];
-    return session && localMix ? {...session,tracks:session.tracks.map(track=>({...track,...localMix.tracks?.find((t:any)=>t.id===track.id)})),...(localMix.groups?{mixGroups:localMix.groups}:{})}:session;
+    return session && localMix ? {...session,tracks:session.tracks.map(track=>({...track,...localMix.tracks?.find((t:any)=>t.id===track.id)})),...(localMix.groups?{mixGroups:localMix.groups}:{}),songLevelDb:localMix.songLevelDb??0}:session;
   },[song]);
   // Como ModoEnsayoDirector: la siguiente canción se carga sonando para el cambio preparado sin silencio.
   const prepareQueueSong=async(id:string)=>{
@@ -42,7 +46,11 @@ function Lab() {
     return localMix?{...session,tracks:session.tracks.map(track=>({...track,...localMix.tracks?.find((t:any)=>t.id===track.id)}))}:session;
   };
   const [labKey,setLabKey]=useState<any>(null);
-  const sections=useMemo(()=>song?buildLiveDirectorSectionsFromMarkers(song.section_markers):[],[song]);
+  // ?labFinalAt=<s>: la primera canción termina con un «Final» corto desde ese segundo, como muchas sesiones de REAPER.
+  const labFinalAt=Number(new URLSearchParams(location.search).get('labFinalAt'));
+  const sections=useMemo(()=>song?buildLiveDirectorSectionsFromMarkers(labFinalAt>0&&song.id===songs[0]?.id
+    ?[...song.section_markers,{id:'lab-final',startSec:labFinalAt,sectionName:'Final',sectionKey:'final__1',sectionIndex:song.section_markers.length,sectionOccurrence:1,note:''}]
+    :song.section_markers):[],[song,songs,labFinalAt]);
   const queue=useMemo(()=>songs.map(s=>({id:s.id,title:s.titulo,subtitle:s.cantante,artworkUrl:s.artworkUrl})),[songs]);
   return <>
     <div className="lab-banner" role="status"><strong>EXPERIMENTAL</strong><span>Copia de prueba · Los ajustes no cambian Alabanza</span><a className="lab-mode" href={labEventId ? "/" : "/?labEvent=lab-playback-preview"}>{labEventId ? "Canción suelta" : "Probar evento"}</a><label>Canción <select aria-label="Canción de prueba" value={selected} disabled={!songs.length} onChange={event=>selectSong(event.target.value)}>{songs.map(s=><option key={s.id} value={s.id}>{s.titulo}</option>)}</select></label></div>

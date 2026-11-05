@@ -11,6 +11,8 @@ import {
 import type { MultitrackEngineLoadWarning, TrackData } from './MultitrackEngine';
 import * as MP4Box from 'mp4box';
 import type { TrackOutputRoute } from '../utils/liveDirectorTrackRouting';
+// Nivel de la voz automática cuando la canción no trae pista Guide (no hay fader que la regule).
+const VIRTUAL_GUIDE_GAIN = 0.85;
 import {
   isGuideRoutingTrack,
   normalizeTrackOutputRoute,
@@ -3474,6 +3476,17 @@ export class StreamingMultitrackEngine {
         (settings && (!normalized || this.clickSamplesNode !== this.workletNode))) return false;
     this.workletNode.port.postMessage({ type: 'track-generated-click', trackIndex, settings: normalized });
     return true;
+  }
+
+  /** Canción sin pista Guide: la voz automática sale igual por el lado de la guía, sin nada que silenciar. */
+  getVirtualGuideAudioGraph(route: TrackOutputRoute): GuideAudioGraph {
+    return {
+      context: this.context, destination: this.masterGain,
+      setOverride: () => undefined,
+      scheduleRecordedGuideDuck: () => Promise.resolve(),
+      clearRecordedGuideDuck: () => undefined,
+      readState: () => ({ gain: VIRTUAL_GUIDE_GAIN, route }),
+    };
   }
 
   getGuideAudioGraph(trackId: string): GuideAudioGraph | null {

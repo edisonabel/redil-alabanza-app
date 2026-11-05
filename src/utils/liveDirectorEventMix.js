@@ -34,6 +34,13 @@ export const normalizeLiveDirectorMixGroups = (value = null) => {
     ? { gains, muted, assignments } : null;
 };
 
+// Nivel canción: la ganancia final de esta canción en el evento, en dB (0 no se guarda).
+export const normalizeSongLevelDb = (value) => {
+  if (value === null || value === undefined || value === '' || !Number.isFinite(Number(value))) return null;
+  const db = Math.round(Math.max(-24, Math.min(12, Number(value))) * 10) / 10;
+  return db === 0 ? null : db;
+};
+
 export const normalizeLiveDirectorEventMix = (value = null) => {
   const source = value && typeof value === 'object' && !Array.isArray(value) ? value : null;
   if (!source || !Array.isArray(source.tracks)) return null;
@@ -56,19 +63,22 @@ export const normalizeLiveDirectorEventMix = (value = null) => {
   if (tracks.length === 0) return null;
 
   const groups = normalizeLiveDirectorMixGroups(source.groups);
+  const songLevelDb = normalizeSongLevelDb(source.songLevelDb);
   return {
     version: 1,
     tracks,
     ...(groups ? { groups } : {}),
+    ...(songLevelDb !== null ? { songLevelDb } : {}),
     updatedAt: String(source.updatedAt || source.updated_at || '').trim(),
     updatedBy: String(source.updatedBy || source.updated_by || '').trim(),
   };
 };
 
-/** @param {Array<any>} [tracks] @param {object | null} [groups] */
-export const buildLiveDirectorEventMix = (tracks = [], groups = null) => normalizeLiveDirectorEventMix({
+/** @param {Array<any>} [tracks] @param {object | null} [groups] @param {number | null} [songLevelDb] */
+export const buildLiveDirectorEventMix = (tracks = [], groups = null, songLevelDb = null) => normalizeLiveDirectorEventMix({
   version: 1,
   groups,
+  songLevelDb,
   tracks: (Array.isArray(tracks) ? tracks : []).map((track) => ({
     id: track?.id,
     enabled: track?.enabled !== false,
@@ -93,6 +103,7 @@ export const applyLiveDirectorEventMix = (session = null, rawMix = null) => {
       };
     }),
     ...(mix.groups ? { mixGroups: mix.groups } : {}),
+    songLevelDb: mix.songLevelDb ?? 0,
   };
 };
 
@@ -102,10 +113,11 @@ export const liveDirectorEventMixSignature = (value = null) => {
   const tracks = mix.tracks
     .map((track) => `${track.id}:${track.enabled ? '1' : '0'}:${track.volume.toFixed(4)}`)
     .join('|');
-  if (!mix.groups) return tracks;
+  const level = mix.songLevelDb !== undefined ? `~${mix.songLevelDb.toFixed(1)}` : '';
+  if (!mix.groups) return `${tracks}${level}`;
   const entries = (record) => Object.entries(record).sort(([a], [b]) => a.localeCompare(b));
   const { gains, muted, assignments } = mix.groups;
-  return `${tracks}#${entries(gains).map(([id, gain]) => `${id}:${gain.toFixed(4)}`).join(',')}#${entries(muted).map(([id]) => id).join(',')}#${entries(assignments).map(([id, group]) => `${id}:${group}`).join(',')}`;
+  return `${tracks}#${entries(gains).map(([id, gain]) => `${id}:${gain.toFixed(4)}`).join(',')}#${entries(muted).map(([id]) => id).join(',')}#${entries(assignments).map(([id, group]) => `${id}:${group}`).join(',')}` + level;
 };
 
 const buildPendingEventMixStorageKey = (eventId = '', songId = '') => (

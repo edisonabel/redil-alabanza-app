@@ -120,7 +120,10 @@
     "test:live-event-key": "node scripts/test-live-director-event-key.mjs",
     "test:live-key-change-ui": "node scripts/test-live-director-key-change-browser.mjs",
     "test:live-key-list-ui": "node scripts/test-live-director-event-key-list-browser.mjs",
-    "test:live-key-isolated": "node scripts/test-live-director-key-change-isolated-browser.mjs"
+    "test:live-key-isolated": "node scripts/test-live-director-key-change-isolated-browser.mjs",
+    "test:live-short-final": "node scripts/test-live-director-short-final-transition-browser.mjs",
+    "test:live-guide-without-track": "node scripts/test-live-director-guide-without-track-browser.mjs",
+    "test:live-song-level-save": "node scripts/test-live-director-song-level-save-browser.mjs"
   },
   "dependencies": {
     "@astrojs/netlify": "8.2.1",
