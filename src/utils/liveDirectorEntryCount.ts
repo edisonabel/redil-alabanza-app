@@ -1,10 +1,13 @@
 export type EntryCountPlan = { beats: number; beatSeconds: number; entrySeconds: number | null; recorded: boolean };
+export const ENTRY_COUNT_MARGIN_SECONDS = .35;
 export function entryCountPlan(bpm: number, meter?: { numerator: number; denominator: number } | null, unoSeconds?: number | null): EntryCountPlan | null {
   if (!Number.isFinite(bpm) || bpm < 30 || bpm > 300) return null;
   const beats = meter?.numerator ?? 4, denominator = meter?.denominator ?? 4;
   if (!Number.isInteger(beats) || beats < 1 || beats > 16 || ![1,2,4,8,16].includes(denominator)) return null;
   const beatSeconds = 60 / bpm * 4 / denominator;
-  const entrySeconds = typeof unoSeconds === 'number' && Number.isFinite(unoSeconds) && unoSeconds >= beats * beatSeconds - .02 ? unoSeconds : null;
+  // La voz cuenta sonando solo si el compás de cuenta cabe antes del 1 con margen para agendarla; si el 1 cae
+  // justo al compás (o antes), la cuenta va en la pausa.
+  const entrySeconds = typeof unoSeconds === 'number' && Number.isFinite(unoSeconds) && unoSeconds >= beats * beatSeconds + ENTRY_COUNT_MARGIN_SECONDS ? unoSeconds : null;
   return { beats, beatSeconds, entrySeconds, recorded: entrySeconds !== null };
 }
 export function entryCountAt(plan: EntryCountPlan, time: number): number | 'ENTRA' | null {

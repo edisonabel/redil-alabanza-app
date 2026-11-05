@@ -52,9 +52,11 @@ function Lab() {
   const labFinalAt=Number(new URLSearchParams(location.search).get('labFinalAt'));
   // ?labNoSections: la primera canción sin secciones marcadas.
   const labNoSections=new URLSearchParams(location.search).has('labNoSections');
+  // ?labIntroAt=<s>: la primera sección de cada canción empieza en ese segundo (Intro muy pegado al inicio).
+  const labIntroAt=Number(new URLSearchParams(location.search).get('labIntroAt'));
   const sections=useMemo(()=>labNoSections&&song?.id===songs[0]?.id?[]:song?buildLiveDirectorSectionsFromMarkers(labFinalAt>0&&song.id===songs[0]?.id
     ?[...song.section_markers,{id:'lab-final',startSec:labFinalAt,sectionName:'Final',sectionKey:'final__1',sectionIndex:song.section_markers.length,sectionOccurrence:1,note:''}]
-    :song.section_markers):[],[song,songs,labFinalAt,labNoSections]);
+    :labIntroAt>0?song.section_markers.map((marker:any,index:number)=>index===0?{...marker,startSec:labIntroAt}:marker):song.section_markers):[],[song,songs,labFinalAt,labNoSections,labIntroAt]);
   const queue=useMemo(()=>songs.map(s=>({id:s.id,title:s.titulo,subtitle:s.cantante,artworkUrl:s.artworkUrl})),[songs]);
   return <>
     <div className="lab-banner" role="status"><strong>EXPERIMENTAL</strong><span>Copia de prueba · Los ajustes no cambian Alabanza</span><a className="lab-mode" href={labEventId ? "/" : "/?labEvent=lab-playback-preview"}>{labEventId ? "Canción suelta" : "Probar evento"}</a><label>Canción <select aria-label="Canción de prueba" value={selected} disabled={!songs.length} onChange={event=>selectSong(event.target.value)}>{songs.map(s=><option key={s.id} value={s.id}>{s.titulo}</option>)}</select></label></div>

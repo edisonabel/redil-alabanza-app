@@ -74,6 +74,9 @@ export function useLiveDirectorEntryCount(options:Options) {
       try{await o.seekTo(override.startFrom);}catch{/* entra desde donde está */}
       if(generation.current!==token)throw abort();
     }
+    // El «1» de la canción cae sobre el «entra»: si la canción tiene algo antes del 1 (un compás corto, una
+    // anacrusa), empieza a sonar durante la cuenta, justo a tiempo, sin recortar nada.
+    const playLead=override?0:Math.max(0,Math.min(plan.beats*plan.beatSeconds,o.unoSeconds??0));
     const graph=o.getGraph();let buffers:Map<number,AudioBuffer>|null=null;
     if(graph){
       try{await graph.context.resume();buffers=await load(graph);}catch{setNotice('Conteo visual; guía no disponible.');}
@@ -94,14 +97,16 @@ export function useLiveDirectorEntryCount(options:Options) {
         const source=graph.context.createBufferSource();source.buffer=buffer;source.connect(gain);source.start(startAt+i*plan.beatSeconds);sources.push(source);
       }
     }
+    let playing:Promise<void>|null=null;
     await new Promise<void>((resolve,reject)=>{
       const tick=()=>{
         if(generation.current!==token)return;
         if(graph&&gain&&left&&right){const state=graph.readState();gain.gain.setTargetAtTime(Math.max(0,Math.min(2,state.gain)),graph.context.currentTime,.005);left.gain.value=state.route==='right'?0:1;right.gain.value=state.route==='right'?1:0;}
         const elapsed=clock()-startAt;if(elapsed<0)return;
+        if(!playing&&clock()>=endAt-playLead)playing=latest.current.play();
         if(clock()>=endAt){
           const current=job.current;job.current=null;if(current)clearInterval(current.timer);sources.forEach(source=>source.disconnect());gains.forEach(node=>node.disconnect());setBeat('ENTRA');
-          void latest.current.play().then(()=>{if(generation.current!==token){if(latest.current.identity===o.identity)o.pause();reject(abort());return;}preparing.current=false;setPending(false);setBeat(null);resolve();}).catch(error=>{if(generation.current===token){preparing.current=false;setPending(false);setBeat(null);}reject(error);});return;
+          void (playing??latest.current.play()).then(()=>{if(generation.current!==token){if(latest.current.identity===o.identity)o.pause();reject(abort());return;}preparing.current=false;setPending(false);setBeat(null);resolve();}).catch(error=>{if(generation.current===token){preparing.current=false;setPending(false);setBeat(null);}reject(error);});return;
         }
         const next=Math.min(plan.beats,Math.floor(elapsed/plan.beatSeconds)+1);setBeat(previous=>previous===next?previous:next);
       };

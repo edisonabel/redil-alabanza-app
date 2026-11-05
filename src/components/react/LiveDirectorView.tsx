@@ -3908,10 +3908,15 @@ export function LiveDirectorView({
   // Guía dinámica: el conteo de entrada dice primero la sección con la que arranca la canción («Intro»).
   const entryLeadCueRef = useRef<() => AudioBuffer | null>(() => null);
   const entryCountOverrideRef = useRef<() => 'play' | { beats: number; beatSeconds: number; startFrom: number } | null>(() => null);
+  // Sin mapa de REAPER, la guía dinámica toma la primera sección como el «1» de la canción: cuenta el compás
+  // anterior sonando, o en la pausa si el Intro empieza antes de que quepa la cuenta.
+  const entryFallbackSeconds = !reaperTransport && !arrangementEntries && guideDynamic && sourceSections[0] && sourceSections[0].startTime > .05
+    ? sourceSections[0].startTime : null;
+  const entryUnoSeconds = arrangementEntries ? null : reaperTransport?.clickGrid?.originSeconds ?? entryFallbackSeconds;
   const entryCount = useLiveDirectorEntryCount({
     enabled: entryCountEnabled,
     identity: `${transportIdentity}:${reloadKey}`, ready: currentSessionPrepared, playing: isPlaying,
-    bpm, meter: shownMeter, unoSeconds: arrangementEntries ? null : reaperTransport?.clickGrid?.originSeconds,
+    bpm, meter: shownMeter, unoSeconds: entryUnoSeconds,
     getTime: selectedMultitrackEngine.getCurrentTimeSnapshot,
     getGraph: () => (guideTrack || clickTrack) ? selectedMultitrackEngine.getGuideAudioGraph?.((guideTrack || clickTrack)!.id) ?? null
       : selectedMultitrackEngine.getVirtualGuideAudioGraph?.(readVirtualState('guide')) ?? null,
@@ -3995,7 +4000,9 @@ export function LiveDirectorView({
   // Antes de la primera sección (la entrada de la canción) anuncia esa misma, también con conteo.
   const nextSectionCuePlan = (time: number) => {
     const first = resolvedSections[0];
-    if (first && time < first.startTime) return { id: `entry:${first.id}`, boundary: first.startTime, name: first.name, countIn: true };
+    // Si la cuenta de entrada va en la pausa (no cabe sonando), la voz no la repite al arrancar.
+    if (first && time < first.startTime) return entryCountEnabled && !entryCountPlan(bpm, shownMeter, entryUnoSeconds)?.recorded ? null
+      : { id: `entry:${first.id}`, boundary: first.startTime, name: first.name, countIn: true };
     const next = resolvedSections[getSectionIndexAtTime(time) + 1];
     return next && next.startTime > time ? { id: `next:${next.id}`, boundary: next.startTime, name: next.name, countIn: true } : null;
   };
