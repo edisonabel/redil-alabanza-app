@@ -48,9 +48,25 @@ try {
       assert.ok(Math.abs(plan.boundarySeconds + seconds - duration) < 0.2, `${mode}: termina con la canción (${plan.boundarySeconds} + ${seconds} de ${duration})`);
     }
     assert.equal(await engine(() => window.__streamingEngineDumpOwner.getIsPlaying()), true, `${mode}: la segunda sigue sonando`);
+    await page.waitForTimeout(4000);
+    assert.equal(await chooser.inputValue(), ids[1], `${mode}: no salta otra canción de más`);
     console.log(mode, 'ok', plan.boundarySeconds.toFixed(2), seconds.toFixed(2));
     await play.click();
   }
+  // Sin secciones marcadas: también se sobrepone, con 5 s de mezcla que terminan con la canción.
+  await page.goto(`${LAB}/?labEvent=lab-playback-preview&labRetainView=1&labNoSections=1`); await ready(15);
+  if (await chooser.inputValue() !== ids[0]) { await chooser.selectOption(ids[0]); await ready(15); }
+  await circle.click(); await menu.waitFor(); await menu.locator('[data-transition-option="overlap"]').click();
+  await engine(at => { window.__switchPlans.length = 0; return window.__streamingEngineDumpOwner.seekTo(at, { wasPlayingBeforeUiSeek: false }); }, duration - 20);
+  await play.click();
+  await page.waitForFunction(id => document.querySelector('[aria-label="Canción de prueba"]').value === id, ids[1], { timeout: 30000 })
+    .catch(() => { throw new Error('sin secciones: no pasó a la segunda canción'); });
+  const plain = (await engine(() => window.__switchPlans)).find(item => item.replaceSong);
+  assert.ok(plain?.blend, 'sin secciones: se sobrepone con el cambio preparado');
+  const plainSeconds = plain.blend.frames / 48000;
+  assert.ok(Math.abs(plainSeconds - 5) < 0.1 && Math.abs(plain.boundarySeconds + plainSeconds - duration) < 0.2, `sin secciones: ${plain.boundarySeconds} + ${plainSeconds} de ${duration}`);
+  console.log('sin secciones ok', plain.boundarySeconds.toFixed(2), plainSeconds.toFixed(2));
+  await play.click();
   assert.deepEqual(errors, []);
   console.log('short final transitions passed');
 } finally { await browser.close(); }

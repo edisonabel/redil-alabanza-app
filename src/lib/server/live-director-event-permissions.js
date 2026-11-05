@@ -14,5 +14,5 @@ export async function getLiveDirectorEventAccess(database, userId, eventId) {
     return roles.some(role => codes.includes(String(role?.codigo || '').trim().toLowerCase()));
   });
   const isDirector = hasRole(['talkback', 'director_musical']);
-  return { isAdmin, canRead: isAdmin || rows.length > 0, canWrite: isAdmin || isDirector, canWriteMix: isAdmin || isDirector || hasRole(['lider_alabanza']) };
+  return { canRead: isAdmin || rows.length > 0, canWrite: isAdmin || isDirector, canWriteMix: isAdmin || isDirector || hasRole(['lider_alabanza']) };
 }

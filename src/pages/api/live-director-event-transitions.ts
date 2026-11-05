@@ -3,12 +3,10 @@ import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3
 import { ApiSecurityError, assertRequestBodySize, requireAuthenticatedUser, securityErrorResponse, serviceRoleClient } from '../../lib/server/api-security.js';
 import { readEnv } from '../../lib/server/supabase-env.js';
 import { getLiveDirectorEventAccess } from '../../lib/server/live-director-event-permissions.js';
-import { normalizeSongTransition, normalizeSongTransitions } from '../../utils/liveDirectorSongTransitions';
+import { normalizeSongTransitions } from '../../utils/liveDirectorSongTransitions';
 export const prerender = false;
 // Transiciones entre canciones de un evento (Sobreponer, AutoLink…): un archivo por evento. Las leen todos
-// los asignados; las guardan el líder de alabanza, el director musical o un administrador. Aparte, un modo
-// para todos los eventos (cada paso sin elección propia), que solo cambia un administrador.
-const DEFAULT_KEY = 'live-director/event-transitions/_all-events.json';
+// los asignados; las guardan el líder de alabanza, el director musical o un administrador.
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function storage() {
@@ -39,11 +37,8 @@ export const GET: APIRoute = async ({ cookies, url }) => {
   try {
     const access = await context(cookies, url.searchParams.get('evento_id') || '', false);
     const { client, bucket } = storage();
-    const [stored, defaults] = await Promise.all([readJson(client, bucket, access.key), readJson(client, bucket, DEFAULT_KEY)]);
-    return json({
-      transitions: stored ? normalizeSongTransitions(stored.transitions) : null, canEdit: access.canWriteMix,
-      defaultTransition: normalizeSongTransition(defaults?.transition), canEditDefault: access.isAdmin === true,
-    });
+    const stored = await readJson(client, bucket, access.key);
+    return json({ transitions: stored ? normalizeSongTransitions(stored.transitions) : null, canEdit: access.canWriteMix });
   } catch (error) { return securityErrorResponse(error); }
 };
 export const PUT: APIRoute = async ({ request, cookies, url }) => {
@@ -53,16 +48,6 @@ export const PUT: APIRoute = async ({ request, cookies, url }) => {
     const payload = await request.json().catch(() => null);
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new ApiSecurityError('Solicitud inválida.', 400);
     const eventId = String(payload.evento_id || '');
-    if ('defaultTransition' in payload) {
-      const access = await context(cookies, eventId, false);
-      if (!access.isAdmin) throw new ApiSecurityError('Solo un administrador puede cambiar el modo de todos los eventos.', 403);
-      const transition = payload.defaultTransition === null ? null : normalizeSongTransition(payload.defaultTransition);
-      if (payload.defaultTransition !== null && !transition) throw new ApiSecurityError('Transición inválida.', 400);
-      const { client, bucket } = storage();
-      await client.send(new PutObjectCommand({ Bucket: bucket, Key: DEFAULT_KEY, ContentType: 'application/json; charset=utf-8', CacheControl: 'no-store',
-        Body: JSON.stringify({ transition, updatedBy: access.userId, updatedAt: new Date().toISOString() }) }));
-      return json({ defaultTransition: transition });
-    }
     const access = await context(cookies, eventId, true);
     // Solo canciones del repertorio de este evento.
     const playlist = await serviceRoleClient!.from('playlists').select('id').eq('evento_id', eventId).maybeSingle();
