@@ -1,5 +1,5 @@
 // Transiciones entre canciones de un evento, como en Playback: cada paso «esta canción → la siguiente»
-// tiene su modo, y el modo se recuerda por evento en este dispositivo.
+// tiene su modo. Se guarda en el evento (sirve en cualquier equipo) y se recuerda en el dispositivo.
 //   cue        Activar Siguiente Canción: al terminar deja lista la siguiente, sin reproducirla.
 //   stay       Mantenerse en Canción: al terminar se queda en la misma.
 //   autolink   AutoLink: la siguiente entra justo al terminar, sin pausa.
@@ -38,6 +38,15 @@ const normalize = (value: unknown): SongTransition | null => {
   return { mode: mode as SongTransitionMode, continuePad: continuePad === true && transitionAllowsPad(mode as SongTransitionMode) };
 };
 
+/** Mapa canción → transición; descarta lo inválido. */
+export function normalizeSongTransitions(value: unknown): Record<string, SongTransition> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).slice(0, 200).flatMap(([songId, raw]) => {
+    const transition = normalize(raw);
+    return transition && songId.length <= 80 ? [[songId, transition]] : [];
+  }));
+}
+
 export function readSongTransitions(eventId: string): Record<string, SongTransition> {
   if (!eventId) return {};
   try {
@@ -56,6 +65,16 @@ export function readSongTransitions(eventId: string): Record<string, SongTransit
     return {};
   }
 }
+
+// El modo de todos los eventos, recordado en el equipo para usarlo aun sin conexión.
+const DEFAULT_STORAGE_KEY = 'live-director:transitions:all-events';
+export function readDefaultSongTransition(): SongTransition | null {
+  try { return normalize(JSON.parse(localStorage.getItem(DEFAULT_STORAGE_KEY) || 'null')); } catch { return null; }
+}
+export function writeDefaultSongTransition(transition: SongTransition | null) {
+  try { if (transition) localStorage.setItem(DEFAULT_STORAGE_KEY, JSON.stringify(transition)); else localStorage.removeItem(DEFAULT_STORAGE_KEY); } catch { /* vale para esta sesión */ }
+}
+export const normalizeSongTransition = (value: unknown) => normalize(value);
 
 export function writeSongTransitions(eventId: string, transitions: Record<string, SongTransition>) {
   if (!eventId) return;

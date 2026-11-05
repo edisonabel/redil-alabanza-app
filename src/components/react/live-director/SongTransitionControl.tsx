@@ -32,10 +32,14 @@ type Props = {
   compact?: boolean;
   onOpenChange: (open: boolean) => void;
   onChange: (transition: SongTransition) => void;
+  /** El modo de todos los eventos (los pasos sin elección propia). Solo un administrador lo cambia. */
+  defaultTransition?: SongTransition | null;
+  onSetDefault?: (transition: SongTransition | null) => void;
 };
 
 export const SongTransitionControl = memo(function SongTransitionControl({
   fromSongId, fromTitle, toTitle, transition, current = false, open, preparedUnavailableReason, compact = false, onOpenChange, onChange,
+  defaultTransition = null, onSetDefault,
 }: Props) {
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -161,6 +165,28 @@ export const SongTransitionControl = memo(function SongTransitionControl({
               </button>
             )];
           })}
+          {onSetDefault && (() => {
+            const isDefault = defaultTransition?.mode === transition.mode && defaultTransition.continuePad === transition.continuePad;
+            return (
+              <button
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={isDefault}
+                data-transition-option="all-events"
+                onClick={() => onSetDefault(isDefault ? null : transition)}
+                className={`${row} min-h-14 border-t border-white/14 py-2`}
+              >
+                <span className="flex w-7 shrink-0 justify-center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" /></svg></span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">Usar en todos los eventos</span>
+                  <span className="block truncate text-[0.72rem] font-normal text-white/50">{isDefault ? `${SONG_TRANSITION_LABELS[transition.mode]} en cada cambio sin elección propia` : 'Cada cambio de canción, en cada evento'}</span>
+                </span>
+                <span aria-hidden="true" className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${isDefault ? 'bg-sky-500' : 'bg-white/18'}`}>
+                  <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-all ${isDefault ? 'left-[1.375rem]' : 'left-0.5'}`} />
+                </span>
+              </button>
+            );
+          })()}
         </div>,
         document.body,
       )}
