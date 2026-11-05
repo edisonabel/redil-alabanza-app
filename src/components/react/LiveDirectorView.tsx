@@ -5,6 +5,7 @@ import {entryCountPlan} from '../../utils/liveDirectorEntryCount';
 import {queueNumberFromKey} from '../../utils/liveDirectorEntryCount';
 import { useLiveDirectorEventAdvance, type EventPlaybackRequest, type QueueSelectionOptions } from '../../hooks/useLiveDirectorEventAdvance';
 import { useLiveDirectorSongLevel } from '../../hooks/useLiveDirectorSongLevel';
+import { VirtualClickPlayer, type VirtualClickGrid } from '../../services/VirtualClickPlayer';
 import { fetchEventSongTransitions, saveEventSongTransitions } from '../../utils/liveDirectorEventTransitions';
 import { LiveDirectorSongLevel } from './live-director/LiveDirectorSongLevel';
 import { useLiveDirectorEventArrangement } from '../../hooks/useLiveDirectorEventArrangement';
@@ -300,6 +301,26 @@ const IOS_SAFARI_WEB_MAX_ACTIVE_TRACKS = 4;
 const SAFARI_WEB_MAX_ACTIVE_TRACKS = 9;
 const WEB_ENGINE_MAX_ACTIVE_TRACKS = 11;
 const INTERNAL_PAD_TRACK_ID = '__internal-pad__';
+// Canales digitales: aparecen cuando la canción no trae pista Guide o Click. Su nivel se recuerda en el equipo.
+const VIRTUAL_GUIDE_TRACK_ID = '__virtual-guide__';
+const VIRTUAL_CLICK_TRACK_ID = '__virtual-click__';
+const VIRTUAL_LEVELS_STORAGE_KEY = 'redil:live-director:virtual-levels:v1';
+type VirtualLevel = { volume: number; muted: boolean };
+type VirtualLevels = { guide: VirtualLevel; click: VirtualLevel };
+const DEFAULT_VIRTUAL_LEVELS: VirtualLevels = { guide: { volume: 0.85, muted: false }, click: { volume: 0.5, muted: false } };
+const readVirtualLevels = (): VirtualLevels => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(VIRTUAL_LEVELS_STORAGE_KEY) || 'null');
+    const level = (value: unknown, fallback: VirtualLevel): VirtualLevel => {
+      const raw = value as Partial<VirtualLevel> | null;
+      const volume = Number(raw?.volume);
+      return { volume: Number.isFinite(volume) && volume >= 0 && volume <= 1 ? volume : fallback.volume, muted: raw?.muted === true };
+    };
+    return { guide: level(saved?.guide, DEFAULT_VIRTUAL_LEVELS.guide), click: level(saved?.click, DEFAULT_VIRTUAL_LEVELS.click) };
+  } catch { return DEFAULT_VIRTUAL_LEVELS; }
+};
+const isGuideLikeTrack = (track: { id?: string; name?: string }) => /\b(guide|guia)\b/i.test(`${track.id} ${track.name}`.normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
+const isClickLikeTrack = (track: { id?: string; name?: string }) => /\b(click|metronomo|metronome)\b/i.test(`${track.id} ${track.name}`.normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
 const DEFAULT_DEVICE_PAD_KIT = findPadKit(null).id;
 const MANUAL_CLICK_TRACK_ID = '__manual-click__';
 const DISABLE_BACKWARD_SEEK_WHILE_PLAYING = true;
@@ -751,6 +772,7 @@ export function LiveDirectorView({
     handleToggleGuideTrackRoute: (trackId: string) => void;
     setIsPadActive: (value: boolean | ((previous: boolean) => boolean)) => void;
     isPadActive: boolean;
+    setVirtualLevel: (kind: keyof VirtualLevels, change: (level: VirtualLevel) => VirtualLevel) => void;
   } | null>(null);
   const channelStripCallbacksRef = useRef<Map<string, {
     onVolumeChange: (volume: number) => void;
@@ -1224,6 +1246,21 @@ export function LiveDirectorView({
   const [busyMessage, setBusyMessage] = useState<string | null>(null);
   const [mutedTrackIds, setMutedTrackIds] = useState<Set<string>>(new Set());
   const [outputLayout, setOutputLayout] = useState<LiveDirectorOutputLayout>('guide-left');
+  const outputLayoutRef = useRef(outputLayout); outputLayoutRef.current = outputLayout;
+  const [virtualLevels, setVirtualLevels] = useState<VirtualLevels>(readVirtualLevels);
+  const virtualLevelsRef = useRef(virtualLevels); virtualLevelsRef.current = virtualLevels;
+  const setVirtualLevel = useCallback((kind: keyof VirtualLevels, change: (level: VirtualLevel) => VirtualLevel) => {
+    setVirtualLevels(previous => {
+      const next = { ...previous, [kind]: change(previous[kind]) };
+      try { localStorage.setItem(VIRTUAL_LEVELS_STORAGE_KEY, JSON.stringify(next)); } catch { /* vale para esta sesión */ }
+      return next;
+    });
+  }, []);
+  // Lo que suena por los canales digitales: su fader, su silencio y su lado (como la guía o el click de siempre).
+  const readVirtualState = (kind: keyof VirtualLevels) => () => {
+    const level = virtualLevelsRef.current[kind];
+    return { gain: level.muted ? 0 : level.volume, route: resolveTrackOutputRouteForLayout({ id: kind, name: kind === 'guide' ? 'Guide' : 'Click' }, outputLayoutRef.current) };
+  };
   const [trackOutputRoutes, setTrackOutputRoutes] = useState<Record<string, TrackOutputRoute>>({});
   const [soloTrackIds, setSoloTrackIds] = useState<Set<string>>(() => new Set());
   // El Master es la salida de este equipo: se recuerda en el equipo.
@@ -2378,6 +2415,10 @@ export function LiveDirectorView({
     return warningMap;
   }, [loadWarnings]);
 
+  // Sin pista Guide hay guía digital (si hay secciones); sin pista Click, click digital (si hay tempo).
+  const digitalChannelsAvailable = experimentalTools && !isManualTempoMode && activeTracks.length > 0 && diagnostics?.engineRoute === 'streaming-worker';
+  const virtualGuideWanted = digitalChannelsAvailable && !activeTracks.some(isGuideLikeTrack) && resolvedSections.length > 0;
+  const virtualClickWanted = digitalChannelsAvailable && !activeTracks.some(isClickLikeTrack) && bpm > 0;
   const mixerView = useMemo<MixerTrackView[]>(() => {
     const sourceTracks =
       isManualTempoMode
@@ -2446,6 +2487,18 @@ export function LiveDirectorView({
 
     resolvedMixerTracks.sort((a, b) => mixerRoleRank(a) - mixerRoleRank(b));
 
+    // Canales digitales: la canción no trae Click o Guide, pero igual hay click y guía, y se regulan aquí.
+    const virtualStrip = (id: string, kind: keyof VirtualLevels, label: string, shortLabel: string, accent: string): MixerTrackView => ({
+      id, label, shortLabel, accent, defaultVolume: DEFAULT_VIRTUAL_LEVELS[kind].volume,
+      volume: virtualLevels[kind].volume, level: 0, muted: virtualLevels[kind].muted, soloed: false, dimmed: false,
+      disabled: false, disabledReason: undefined, disabledTitle: undefined,
+      outputRoute: resolveTrackOutputRouteForLayout({ id: kind, name: label }, outputLayout), showRouteFlip: false,
+    });
+    const digitalStrips: MixerTrackView[] = [];
+    if (virtualClickWanted) digitalStrips.push(virtualStrip(VIRTUAL_CLICK_TRACK_ID, 'click', 'Click digital', 'CLK', '#5ccfe6'));
+    if (virtualGuideWanted) digitalStrips.push(virtualStrip(VIRTUAL_GUIDE_TRACK_ID, 'guide', 'Guía digital', 'GDE', '#73d1f8'));
+    resolvedMixerTracks.unshift(...digitalStrips);
+
     if (resolvedPadUrl || isPadActive) {
       const padEnvelope = trackEnvelopes[INTERNAL_PAD_TRACK_ID];
       const padEnvelopeLevel = isPlaying && isPadActive
@@ -2484,7 +2537,7 @@ export function LiveDirectorView({
     }
 
     return resolvedMixerTracks;
-  }, [activeTracks, congregationPadGain, currentTime, isManualTempoMode, isPadActive, isPlaying, manualTempoTransport.muted, manualTempoTransport.volume, mutedTrackIds, omittedWarningByTrackId, resolvedInternalPadVolume, resolvedPadUrl, soloTrackIds, trackEnvelopes, trackLevels, trackOutputRoutes, trackVolumes]);
+  }, [activeTracks, congregationPadGain, currentTime, isManualTempoMode, isPadActive, isPlaying, manualTempoTransport.muted, manualTempoTransport.volume, mutedTrackIds, omittedWarningByTrackId, resolvedInternalPadVolume, resolvedPadUrl, soloTrackIds, trackEnvelopes, trackLevels, trackOutputRoutes, trackVolumes, virtualLevels, virtualClickWanted, virtualGuideWanted, outputLayout]);
 
   // Precompute the mixer scroll container style so it isn't re-created on
   // every tick of the visual clock. The grid template only actually changes
@@ -2559,6 +2612,17 @@ export function LiveDirectorView({
       return cached;
     }
     const isInternalPadTrack = trackId === INTERNAL_PAD_TRACK_ID;
+    const virtualKind = trackId === VIRTUAL_GUIDE_TRACK_ID ? 'guide' : trackId === VIRTUAL_CLICK_TRACK_ID ? 'click' : null;
+    if (virtualKind) {
+      const callbacks = {
+        onVolumeChange: (volume: number) => channelStripHandlersRef.current?.setVirtualLevel(virtualKind, level => ({ ...level, volume, muted: volume > 0 ? false : level.muted })),
+        onMute: () => channelStripHandlersRef.current?.setVirtualLevel(virtualKind, level => ({ ...level, muted: !level.muted })),
+        onSolo: () => undefined,
+        onToggleOutputRoute: () => undefined,
+      };
+      cache.set(trackId, callbacks);
+      return callbacks;
+    }
     const callbacks = {
       onVolumeChange: (nextVolume: number) => {
         const handlers = channelStripHandlersRef.current;
@@ -3812,9 +3876,26 @@ export function LiveDirectorView({
   const openClickMixer = useCallback(() => setShowClickMixer(true), []);
   const closeClickMixer = useCallback(() => setShowClickMixer(false), []);
   useEffect(() => { setShowClickMixer(false); }, [trackSignature, reloadKey]);
-  const clickTrack = activeEngineTracks.find(track => /\b(click|metronomo|metronome)\b/i.test(`${track.id} ${track.name}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '')));
+  const clickTrack = activeEngineTracks.find(isClickLikeTrack);
   const canUseGeneratedClick = experimentalTools && !isManualTempoMode && Boolean(clickTrack) && diagnostics?.engineRoute === 'streaming-worker';
-  const guideTrack = activeEngineTracks.find(track => /\b(guide|guia)\b/i.test(`${track.id} ${track.name}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '')));
+  // Click digital (la canción no trae pista Click): la misma grilla que el click generado, con el tempo y el primer
+  // pulso de REAPER, del catálogo o de la primera sección. Con un arreglo editado no suena (su reloj es otro).
+  const virtualClickGridRef = useRef<VirtualClickGrid | null>(null);
+  virtualClickGridRef.current = virtualClickWanted && !arrangementEntries ? {
+    bpm: generatedClickGrid?.bpm ?? reaperTransport?.clickGrid?.bpm ?? bpm,
+    originSeconds: generatedClickGrid?.originSeconds ?? reaperTransport?.clickGrid?.originSeconds ?? sourceSections[0]?.startTime ?? 0,
+    numerator: shownMeter?.numerator ?? 4,
+  } : null;
+  const virtualClickPlayingRef = useRef(false); virtualClickPlayingRef.current = isPlaying && !isSectionSeekBusy;
+  useEffect(() => {
+    if (!virtualClickWanted || !isReady) return undefined;
+    const graph = selectedMultitrackEngine.getVirtualGuideAudioGraph?.(readVirtualState('click'));
+    if (!graph) return undefined;
+    const player = new VirtualClickPlayer(graph);
+    const timer = setInterval(() => player.update(selectedMultitrackEngine.getCurrentTimeSnapshot(), virtualClickPlayingRef.current, virtualClickGridRef.current), 25);
+    return () => { clearInterval(timer); player.dispose(); };
+  }, [virtualClickWanted, isReady, selectedMultitrackEngine.getVirtualGuideAudioGraph, selectedMultitrackEngine.getCurrentTimeSnapshot, trackSignature, reloadKey]);
+  const guideTrack = activeEngineTracks.find(isGuideLikeTrack);
   // Sin pista Guide también hay guía: la voz automática anuncia las secciones marcadas.
   const canUseDynamicGuide = experimentalTools && diagnostics?.engineRoute === 'streaming-worker' && (Boolean(guideTrack) || resolvedSections.length > 0);
   const [guideModeChoice, setGuideModeChoice] = useState<{ songId: string; mode: 'recorded' | 'dynamic' } | null>(null);
@@ -3833,7 +3914,7 @@ export function LiveDirectorView({
     bpm, meter: shownMeter, unoSeconds: arrangementEntries ? null : reaperTransport?.clickGrid?.originSeconds,
     getTime: selectedMultitrackEngine.getCurrentTimeSnapshot,
     getGraph: () => (guideTrack || clickTrack) ? selectedMultitrackEngine.getGuideAudioGraph?.((guideTrack || clickTrack)!.id) ?? null
-      : selectedMultitrackEngine.getVirtualGuideAudioGraph?.(resolveTrackOutputRouteForLayout({ id: 'guide', name: 'Guide' }, outputLayout)) ?? null,
+      : selectedMultitrackEngine.getVirtualGuideAudioGraph?.(readVirtualState('guide')) ?? null,
     play, pause,
     getLeadCue: () => entryLeadCueRef.current(),
     getCountOverride: () => entryCountOverrideRef.current(),
@@ -3922,7 +4003,7 @@ export function LiveDirectorView({
     wanted: canUseDynamicGuide, ready: isReady, playing: isPlaying,
     busy: isSectionSeekBusy, resetKey: `${trackSignature}:${reloadKey}:${guideRetryKey}`, bpm, meter:shownMeter,
     getGraph: () => guideTrack ? selectedMultitrackEngine.getGuideAudioGraph?.(guideTrack.id) ?? null
-      : selectedMultitrackEngine.getVirtualGuideAudioGraph?.(resolveTrackOutputRouteForLayout({ id: 'guide', name: 'Guide' }, outputLayout)) ?? null,
+      : selectedMultitrackEngine.getVirtualGuideAudioGraph?.(readVirtualState('guide')) ?? null,
     getTime: selectedMultitrackEngine.getCurrentTimeSnapshot, getPlan: time => {
       const plan = sectionJump.getCuePlan(time);
       if (plan && /^(jump|repeat):/.test(plan.id)) return plan;
@@ -5130,6 +5211,7 @@ export function LiveDirectorView({
     handleToggleGuideTrackRoute,
     setIsPadActive: setPadByUser,
     isPadActive,
+    setVirtualLevel,
   };
 
   const endMixerDrag = useCallback((pointerId?: number) => {
