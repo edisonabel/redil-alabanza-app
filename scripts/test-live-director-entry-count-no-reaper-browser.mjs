@@ -19,7 +19,8 @@ async function run(introAt) {
     const start = AudioBufferSourceNode.prototype.start;
     AudioBufferSourceNode.prototype.start = function (when, ...args) {
       const engine = window.__streamingEngineDumpOwner;
-      if ((this.buffer?.duration || 0) > .15) window.__voices.push({ when, ctx: this.context.currentTime, song: engine?.getCurrentTime(), playing: engine?.getIsPlaying(), duration: this.buffer.duration });
+      // Solo la voz de la guía: los sonidos del metrónomo (click digital) no cuentan.
+      if ((this.buffer?.duration || 0) > .15 && !(window.__clickDurations || []).some(duration => Math.abs(this.buffer.duration - duration) < 1e-4)) window.__voices.push({ when, ctx: this.context.currentTime, song: engine?.getCurrentTime(), playing: engine?.getIsPlaying(), duration: this.buffer.duration });
       return start.call(this, when, ...args);
     };
     const stop = AudioBufferSourceNode.prototype.stop;
@@ -30,6 +31,7 @@ async function run(introAt) {
   const ids = await page.locator('[aria-label="Canción de prueba"] option').evaluateAll(options => options.map(option => option.value));
   await page.locator('[aria-label="Canción de prueba"]').selectOption(ids[1]); await page.waitForTimeout(1500); await ready();
   await page.waitForFunction(() => document.querySelector('[data-live-director-control="guide-status"]')?.dataset.guideState === 'ready', null, { timeout: 30000 });
+  await page.evaluate(async () => { window.__clickDurations = await Promise.all(['accents', 'quarter', 'eighth', 'sixteenth'].map(async name => { const context = new OfflineAudioContext(1, 1, 48000); return (await context.decodeAudioData(await (await fetch(`/audio/click-classic/${name}.wav`)).arrayBuffer())).duration; })); });
   await page.evaluate(() => { window.__voices.length = 0; window.__startedAt = null; window.__probe = setInterval(() => { const e = window.__streamingEngineDumpOwner; if (e.getIsPlaying() && window.__startedAt === null) window.__startedAt = { song: e.getCurrentTime(), ctx: e.context?.currentTime }; }, 5); return window.__streamingEngineDumpOwner.seekTo(0, { wasPlayingBeforeUiSeek: false }); });
   await page.locator('[data-live-director-control="play-pause"]').click();
   await page.waitForFunction(at => window.__streamingEngineDumpOwner.getCurrentTime() > at + 1, introAt + OFFSET, { timeout: 40000 });

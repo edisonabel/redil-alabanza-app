@@ -12,6 +12,8 @@ type Props = {
   loadSamples: () => Promise<void>;
   /** Canción sin stems: no hay click grabado, así que el digital se enciende solo (aunque llegue sonando). */
   forceGenerated?: boolean;
+  /** Click digital de una canción sin pista Click: siempre digital, pero las capas y el tempo sí se recuerdan. */
+  rememberForced?: boolean;
   onConfigure: (trackId: string, settings: GeneratedClickSettings | null) => boolean;
   /** Lo elegido antes para esta canción: se aplica solo, también al entrar sonando. */
   saved?: ClickPreference | null;
@@ -54,7 +56,7 @@ export function LiveDirectorClickMixer(props: Props) {
   const hydrated = useRef(false);
   useEffect(() => {
     if (!hydrated.current) { hydrated.current = true; return; }
-    if (props.forceGenerated) return;
+    if (props.forceGenerated && !props.rememberForced) return;
     props.onPreferenceChange?.({ enabled: wanted, levels, bpm, originSeconds: origin, numerator, denominator, accentConfirmed, updatedAt: Date.now() });
   }, [wanted, levels, bpm, origin, numerator, denominator, accentConfirmed]);
   useEffect(() => {

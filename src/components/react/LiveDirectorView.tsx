@@ -5,7 +5,7 @@ import {entryCountPlan} from '../../utils/liveDirectorEntryCount';
 import {queueNumberFromKey} from '../../utils/liveDirectorEntryCount';
 import { useLiveDirectorEventAdvance, type EventPlaybackRequest, type QueueSelectionOptions } from '../../hooks/useLiveDirectorEventAdvance';
 import { useLiveDirectorSongLevel } from '../../hooks/useLiveDirectorSongLevel';
-import { VirtualClickPlayer, type VirtualClickGrid } from '../../services/VirtualClickPlayer';
+import { VirtualClickPlayer } from '../../services/VirtualClickPlayer';
 import { fetchEventSongTransitions, saveEventSongTransitions } from '../../utils/liveDirectorEventTransitions';
 import { LiveDirectorSongLevel } from './live-director/LiveDirectorSongLevel';
 import { useLiveDirectorEventArrangement } from '../../hooks/useLiveDirectorEventArrangement';
@@ -2495,8 +2495,8 @@ export function LiveDirectorView({
       outputRoute: resolveTrackOutputRouteForLayout({ id: kind, name: label }, outputLayout), showRouteFlip: false,
     });
     const digitalStrips: MixerTrackView[] = [];
-    if (virtualClickWanted) digitalStrips.push(virtualStrip(VIRTUAL_CLICK_TRACK_ID, 'click', 'Click digital', 'CLK', '#5ccfe6'));
-    if (virtualGuideWanted) digitalStrips.push(virtualStrip(VIRTUAL_GUIDE_TRACK_ID, 'guide', 'Guía digital', 'GDE', '#73d1f8'));
+    if (virtualClickWanted) digitalStrips.push(virtualStrip(VIRTUAL_CLICK_TRACK_ID, 'click', 'Click', 'CLK', '#5ccfe6'));
+    if (virtualGuideWanted) digitalStrips.push(virtualStrip(VIRTUAL_GUIDE_TRACK_ID, 'guide', 'Guía', 'GDE', '#73d1f8'));
     resolvedMixerTracks.unshift(...digitalStrips);
 
     if (resolvedPadUrl || isPadActive) {
@@ -3878,23 +3878,30 @@ export function LiveDirectorView({
   useEffect(() => { setShowClickMixer(false); }, [trackSignature, reloadKey]);
   const clickTrack = activeEngineTracks.find(isClickLikeTrack);
   const canUseGeneratedClick = experimentalTools && !isManualTempoMode && Boolean(clickTrack) && diagnostics?.engineRoute === 'streaming-worker';
-  // Click digital (la canción no trae pista Click): la misma grilla que el click generado, con el tempo y el primer
-  // pulso de REAPER, del catálogo o de la primera sección. Con un arreglo editado no suena (su reloj es otro).
-  const virtualClickGridRef = useRef<VirtualClickGrid | null>(null);
-  virtualClickGridRef.current = virtualClickWanted && !arrangementEntries ? {
-    bpm: generatedClickGrid?.bpm ?? reaperTransport?.clickGrid?.bpm ?? bpm,
-    originSeconds: generatedClickGrid?.originSeconds ?? reaperTransport?.clickGrid?.originSeconds ?? sourceSections[0]?.startTime ?? 0,
-    numerator: shownMeter?.numerator ?? 4,
-  } : null;
-  const virtualClickPlayingRef = useRef(false); virtualClickPlayingRef.current = isPlaying && !isSectionSeekBusy;
+  // Click (la canción no trae pista Click): el metrónomo digital de siempre, con su panel (tempo, compás y capas),
+  // por fuera del motor. Con un arreglo editado no suena (su reloj es otro).
+  const virtualClickPlayerRef = useRef<VirtualClickPlayer | null>(null);
+  const ensureVirtualClickPlayer = () => {
+    if (!virtualClickPlayerRef.current) {
+      const graph = selectedMultitrackEngine.getVirtualGuideAudioGraph?.(readVirtualState('click'));
+      if (graph) virtualClickPlayerRef.current = new VirtualClickPlayer(graph);
+    }
+    return virtualClickPlayerRef.current;
+  };
+  const virtualClickPlayingRef = useRef(false); virtualClickPlayingRef.current = isPlaying && !isSectionSeekBusy && !arrangementEntries;
   useEffect(() => {
     if (!virtualClickWanted || !isReady) return undefined;
-    const graph = selectedMultitrackEngine.getVirtualGuideAudioGraph?.(readVirtualState('click'));
-    if (!graph) return undefined;
-    const player = new VirtualClickPlayer(graph);
-    const timer = setInterval(() => player.update(selectedMultitrackEngine.getCurrentTimeSnapshot(), virtualClickPlayingRef.current, virtualClickGridRef.current), 25);
-    return () => { clearInterval(timer); player.dispose(); };
+    const timer = setInterval(() => ensureVirtualClickPlayer()?.update(selectedMultitrackEngine.getCurrentTimeSnapshot(), virtualClickPlayingRef.current), 25);
+    return () => { clearInterval(timer); virtualClickPlayerRef.current?.dispose(); virtualClickPlayerRef.current = null; };
   }, [virtualClickWanted, isReady, selectedMultitrackEngine.getVirtualGuideAudioGraph, selectedMultitrackEngine.getCurrentTimeSnapshot, trackSignature, reloadKey]);
+  const loadVirtualClickSamples = useCallback(async () => {
+    const player = ensureVirtualClickPlayer();
+    if (!player) throw new Error('El motor de audio todavía no está listo.');
+    await player.load();
+  }, [selectedMultitrackEngine.getVirtualGuideAudioGraph]);
+  const configureVirtualClick = useCallback((_trackId: string, settings: GeneratedClickSettings | null) => (
+    settings ? Boolean(ensureVirtualClickPlayer()?.configure(settings)) : (virtualClickPlayerRef.current?.configure(null), true)
+  ), [selectedMultitrackEngine.getVirtualGuideAudioGraph]);
   const guideTrack = activeEngineTracks.find(isGuideLikeTrack);
   // Sin pista Guide también hay guía: la voz automática anuncia las secciones marcadas.
   const canUseDynamicGuide = experimentalTools && diagnostics?.engineRoute === 'streaming-worker' && (Boolean(guideTrack) || resolvedSections.length > 0);
@@ -6374,7 +6381,7 @@ export function LiveDirectorView({
                       onMute={stableCallbacks.onMute}
                       onSolo={stableCallbacks.onSolo}
                       onToggleOutputRoute={stableCallbacks.onToggleOutputRoute}
-                      onOpenSettings={canUseDynamicGuide && track.id === guideTrack?.id ? openGuideChooser : canUseGeneratedClick && track.id === clickTrack?.id ? openClickMixer : isInternalPadTrack && !isIOSNativeEngineSurface ? openPadPlayer : undefined}
+                      onOpenSettings={canUseDynamicGuide && track.id === guideTrack?.id ? openGuideChooser : (canUseGeneratedClick && track.id === clickTrack?.id) || track.id === VIRTUAL_CLICK_TRACK_ID ? openClickMixer : isInternalPadTrack && !isIOSNativeEngineSurface ? openPadPlayer : undefined}
                       {...(canUseDynamicGuide && track.id === guideTrack?.id ? {
                         settingsLabel: 'Elegir guía', settingsTitle: guideDynamic ? 'Guía dinámica: voz automática en cada sección' : 'Guía grabada · cambiar a guía dinámica',
                         settingsShortcut: '', settingsBadge: guideDynamic ? 'AUTO' : undefined,
@@ -6452,6 +6459,13 @@ export function LiveDirectorView({
           ready={isReady} playing={isPlaying} busy={isSectionSeekBusy || isCongregationFading}
           saved={savedClickPreference} onPreferenceChange={saveClickPreference} onDigitalChange={setClickDigital}
           loadSamples={selectedMultitrackEngine.loadGeneratedClickSamples} onConfigure={selectedMultitrackEngine.setGeneratedClick} />}
+      {virtualClickWanted && <LiveDirectorClickMixer key={`virtual-click:${trackSignature}:${reloadKey}`} open={showClickMixer} onClose={closeClickMixer}
+          onConfirmedMeter={setConfirmedClickMeter} trackId={VIRTUAL_CLICK_TRACK_ID} bpm={generatedClickGrid?.bpm ?? reaperTransport?.clickGrid?.bpm ?? bpm}
+          originSeconds={generatedClickGrid?.originSeconds ?? reaperTransport?.clickGrid?.originSeconds ?? sourceSections[0]?.startTime ?? 0}
+          meter={reaperTransport?.timeSignature ?? shownMeter} confirmedByReaper={Boolean(reaperTransport?.timeSignature && reaperTransport?.clickGrid)}
+          forceGenerated rememberForced ready={isReady} playing={isPlaying} busy={isSectionSeekBusy || isCongregationFading}
+          saved={savedClickPreference} onPreferenceChange={saveClickPreference}
+          loadSamples={loadVirtualClickSamples} onConfigure={configureVirtualClick} />}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(93,214,240,0.08),_transparent_24%),linear-gradient(180deg,#232526_0%,#222425_46%,#202224_100%)]" />
       <div className="relative flex h-[100dvh] flex-col overflow-hidden" style={shellContentStyle}>
         <div className={`hide-scrollbar -mx-1 shrink-0 overflow-x-auto ${isUltraCompactLandscape ? 'pb-0' : isToolbarCompactLandscape ? 'pb-0' : 'pb-1'}`}>
