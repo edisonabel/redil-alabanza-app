@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase';
 import {
     formatClockLabel,
     isSinFiltrosMinistry,
+    listSelectableMinistries,
     SIN_FILTROS_MINISTRY_NAME,
     SIN_FILTROS_REHEARSAL_END_TIME,
     SIN_FILTROS_REHEARSAL_TIME,
@@ -247,9 +248,9 @@ export default function ModalSerie({ sessionUser, initialMinistries = [] }) {
                 <form onSubmit={handleGenerate} className="p-6 flex flex-col gap-5 text-left">
                     <div>
                         <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2">MINISTERIO</label>
-                        <select name="ministerioId" value={formData.ministerioId} onChange={handleChange} className="w-full appearance-none rounded-xl border border-border bg-background px-4 py-3 text-sm text-content transition-colors focus:border-brand focus:outline-none">
+                        <select name="ministerioId" value={listSelectableMinistries(initialMinistries).some((ministry) => ministry.id === formData.ministerioId) ? formData.ministerioId : ''} onChange={handleChange} className="w-full appearance-none rounded-xl border border-border bg-background px-4 py-3 text-sm text-content transition-colors focus:border-brand focus:outline-none">
                             <option value="">Alabanza general</option>
-                            {(initialMinistries || []).map((ministry) => (
+                            {listSelectableMinistries(initialMinistries).map((ministry) => (
                                 <option key={ministry.id} value={ministry.id}>{ministry.nombre}</option>
                             ))}
                         </select>

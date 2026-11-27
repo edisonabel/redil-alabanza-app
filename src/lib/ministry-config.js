@@ -1,3 +1,4 @@
+export const GENERAL_MINISTRY_CODE = 'alabanza_general';
 export const SIN_FILTROS_MINISTRY_CODE = 'sin_filtros';
 export const SIN_FILTROS_MINISTRY_NAME = 'Sin Filtros';
 export const SIN_FILTROS_SERVICE_WEEKDAY = 6;
@@ -24,6 +25,16 @@ export const normalizeVocalRange = (value) => {
 
 export const isSinFiltrosMinistry = (ministry) => (
   String(ministry?.codigo || ministry || '').trim().toLowerCase() === SIN_FILTROS_MINISTRY_CODE
+);
+
+// An event with no ministry already counts as Alabanza general, so the
+// "Alabanza general" row from the database is the same choice as the empty one.
+export const isGeneralMinistry = (ministry) => (
+  String(ministry?.codigo || ministry || '').trim().toLowerCase() === GENERAL_MINISTRY_CODE
+);
+
+export const listSelectableMinistries = (ministries = []) => (
+  (Array.isArray(ministries) ? ministries : []).filter((ministry) => !isGeneralMinistry(ministry))
 );
 
 export const isSinFiltrosEvent = (event) => (
