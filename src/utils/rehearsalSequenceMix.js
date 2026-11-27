@@ -37,10 +37,13 @@ export const ROLE_PART_CATEGORIES = {
 export const REHEARSAL_GROUPS = [
   { id: 'click', label: 'Click', categories: ['click', 'cues'], control: true },
   { id: 'guia', label: 'Guía', categories: ['guide'], control: true },
-  { id: 'bateria', label: 'Batería y percusión', categories: ['drums', 'percussion', 'cymbals'] },
+  { id: 'bateria', label: 'Batería', categories: ['drums', 'cymbals'] },
+  { id: 'percusion', label: 'Percusión', categories: ['percussion'] },
   { id: 'bajo', label: 'Bajo', categories: ['bass', 'synthBass'] },
-  { id: 'keys', label: 'Keys', categories: ['keys', 'organ', 'synth', 'pads'] },
   { id: 'piano', label: 'Piano', categories: ['piano'] },
+  { id: 'keys', label: 'Keys', categories: ['keys', 'organ'] },
+  { id: 'synth', label: 'Synth', categories: ['synth'] },
+  { id: 'pads', label: 'Pads', categories: ['pads'] },
   { id: 'cuerdas', label: 'Cuerdas', categories: ['violin', 'strings'] },
   { id: 'vientos', label: 'Vientos', categories: ['brass', 'woodwinds'] },
   { id: 'electrica', label: 'Guitarra eléctrica', categories: ['electric'] },
@@ -135,6 +138,8 @@ export const computeRehearsalTrackGains = ({
   partTrackIds = [],
   groupLevels = {},
   mutedGroups = {},
+  trackLevels = {},
+  mutedTracks = {},
 } = {}) => {
   const partIds = new Set((Array.isArray(partTrackIds) ? partTrackIds : []).map(String));
   const hasPart = partIds.size > 0;
@@ -151,11 +156,13 @@ export const computeRehearsalTrackGains = ({
       gains[track.id] = isPart ? Math.round(clamp(track.partVolume ?? track.baseVolume, 0, MAX_TRACK_GAIN) * 1000) / 1000 : 0;
       return gains;
     }
-    if (mutedGroups?.[track.groupId]) {
+    if (mutedGroups?.[track.groupId] || mutedTracks?.[track.id]) {
       gains[track.id] = 0;
       return gains;
     }
-    const groupLevel = clamp(toFiniteNumber(groupLevels?.[track.groupId], 1), 0, MAX_GROUP_LEVEL);
+    // Each stem can be balanced inside its instrument (e.g. one of 4 electric guitars).
+    const groupLevel = clamp(toFiniteNumber(groupLevels?.[track.groupId], 1), 0, MAX_GROUP_LEVEL)
+      * clamp(toFiniteNumber(trackLevels?.[track.id], 1), 0, MAX_GROUP_LEVEL);
     let gain = track.baseVolume * groupLevel;
 
     if (hasPart && !track.isControl) {
@@ -311,8 +318,18 @@ export const sanitizeRehearsalMixPrefs = (value = {}, validTrackIds = null) => {
     }
     if (value?.mutedGroups?.[id]) mutedGroups[id] = true;
   });
+  const trackLevels = {};
+  const mutedTracks = {};
+  Object.entries(value?.trackLevels || {}).forEach(([id, level]) => {
+    if (!valid || valid.has(String(id))) trackLevels[String(id)] = clamp(toFiniteNumber(level, 1), 0, MAX_GROUP_LEVEL);
+  });
+  Object.entries(value?.mutedTracks || {}).forEach(([id, muted]) => {
+    if (muted && (!valid || valid.has(String(id)))) mutedTracks[String(id)] = true;
+  });
   return {
     source: REHEARSAL_SOURCES.includes(value?.source) ? value.source : 'secuencia',
+    trackLevels,
+    mutedTracks,
     partMode: REHEARSAL_PART_MODES.includes(value?.partMode) ? value.partMode : 'normal',
     hasChosenPart: Boolean(value?.hasChosenPart),
     // Sings and the sequence has no vocal stems: nothing to raise or isolate.

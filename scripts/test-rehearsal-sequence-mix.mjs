@@ -138,5 +138,10 @@ const band = classifyRehearsalTracks([
   { id: 'b', name: 'Bass', url: 'b' }, { id: 'perc', name: 'Percussion', url: 'pc' }, { id: 'dr', name: 'Drums', url: 'd' },
   { id: 'str', name: 'Strings', url: 'st' },
 ]);
-assert.deepEqual(listPresentGroups(band).map((g) => g.id), ['bateria', 'bajo', 'keys', 'piano', 'cuerdas', 'electrica', 'acustica']);
+assert.deepEqual(listPresentGroups(band).map((g) => g.id), ['bateria', 'percusion', 'bajo', 'piano', 'keys', 'cuerdas', 'electrica', 'acustica']);
+// One stem balanced or muted inside its instrument.
+const perTrack = computeRehearsalTrackGains({ tracks: band, trackLevels: { eg: 0.5 }, mutedTracks: { perc: true } });
+assert.equal(perTrack.perc, 0);
+assert.equal(perTrack.eg, Math.round(band.find((t) => t.id === 'eg').baseVolume * 0.5 * 1000) / 1000);
+assert.deepEqual(sanitizeRehearsalMixPrefs({ trackLevels: { eg: 9, ghost: 1 }, mutedTracks: { perc: true } }, ['eg', 'perc']).trackLevels, { eg: 1.5 });
 console.log('rehearsal sequence mix: ok');

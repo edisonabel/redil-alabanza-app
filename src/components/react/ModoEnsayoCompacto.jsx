@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ChevronLeft, ChevronRight, Disc3, Headphones, LoaderCircle, Mic, Mic2, MicOff, Pause, Play, Radio, RadioReceiver, Repeat, Repeat1, SlidersHorizontal, TrendingUp, User, Volume2, VolumeX, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, Disc3, MoreHorizontal, SkipBack, SkipForward, Headphones, LoaderCircle, Mic, Mic2, MicOff, Pause, Play, Radio, RadioReceiver, Repeat, Repeat1, SlidersHorizontal, TrendingUp, User, Volume2, VolumeX, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { audioSessionService } from '../../services/AudioSessionService';
 import { metronomeService } from '../../services/MetronomeEngine';
@@ -69,7 +70,8 @@ const FONT_PRESETS = {
 const FONT_SCALE_SEQUENCE = ['grande', 'enorme'];
 const SHARP_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const FLAT_TO_SHARP = { Db: 'C#', Eb: 'D#', Gb: 'F#', Ab: 'G#', Bb: 'A#' };
-const TRANSPOSE_OPTIONS = [-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6];
+// 12 keys once: -6 and +6 are the same key.
+const TRANSPOSE_OPTIONS = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6];
 const VOICE_READING_ANCHOR_RATIO = 0.28;
 const VOICE_NEXT_SECTION_PREVIEW_RATIO = 0.64;
 const VOICE_SECTION_LEAD_WORDS = 3;
@@ -1374,6 +1376,75 @@ function ChordPreviewPopover({
     </div>
   );
 }
+// ---- Apple-style sheets: when a panel opens it takes the screen, so only
+// what you are adjusting is shown (our colors, Apple Music's structure). ----
+function EnsayoSheet({ open, title, onClose, panelRef, children, trailing = null }) {
+  useEffect(() => {
+    if (!open || typeof document === 'undefined') return undefined;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (event) => { if (event.key === 'Escape') onClose?.(); };
+    window.addEventListener('keydown', onKey);
+    return () => { document.body.style.overflow = previous; window.removeEventListener('keydown', onKey); };
+  }, [onClose, open]);
+  if (!open || typeof document === 'undefined') return null;
+  return createPortal(
+    <div className="fixed inset-0 z-[80] flex flex-col justify-end">
+      <button type="button" aria-label="Cerrar" onClick={onClose} className="absolute inset-0 cursor-default bg-black/45 backdrop-blur-[2px]" />
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="ensayo-sheet relative mx-auto flex max-h-[94dvh] min-h-[62dvh] w-full max-w-2xl flex-col rounded-t-[1.75rem] bg-zinc-100 text-zinc-950 shadow-[0_-18px_50px_rgba(0,0,0,0.28)] dark:bg-zinc-900 dark:text-zinc-50"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        <div className="mx-auto mt-2 h-1.5 w-10 shrink-0 rounded-full bg-zinc-300 dark:bg-zinc-700" />
+        <div className="grid shrink-0 grid-cols-[2.75rem_1fr_2.75rem] items-center px-3 pb-2 pt-1.5">
+          <button type="button" onClick={onClose} aria-label="Cerrar" className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-200/90 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
+            <X className="h-4.5 w-4.5" />
+          </button>
+          <h2 className="truncate text-center text-[15px] font-bold">{title}</h2>
+          <div className="flex justify-end">{trailing}</div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-8">{children}</div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+function SheetSection({ title, note = '', children }) {
+  return (
+    <section className="mt-5 first:mt-2">
+      {title && <p className="mb-1.5 px-1 text-[12px] font-semibold uppercase tracking-[0.08em] text-zinc-500 dark:text-zinc-400">{title}</p>}
+      <div className="rounded-2xl bg-white px-3 py-2.5 dark:bg-zinc-800/80">{children}</div>
+      {note && <p className="mt-1.5 px-1 text-xs text-zinc-500 dark:text-zinc-400">{note}</p>}
+    </section>
+  );
+}
+function SheetSegmented({ options, value, onChange, label }) {
+  return (
+    <div role="radiogroup" aria-label={label} className="flex rounded-xl bg-zinc-200/80 p-0.5 dark:bg-zinc-950/60">
+      {options.map((option) => {
+        const active = option.value === value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange(option.value)}
+            className={`flex min-w-0 flex-1 items-center justify-center gap-1 rounded-[0.6rem] px-2 py-1.5 text-[13px] font-semibold transition-colors ${active ? 'bg-white text-zinc-950 shadow-sm dark:bg-zinc-700 dark:text-white' : 'text-zinc-500 dark:text-zinc-400'}`}
+          >
+            {option.icon}
+            <span className="truncate">{option.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function ModoEnsayoCompacto({
   song,
   contextTitle = '',
@@ -3892,6 +3963,7 @@ export default function ModoEnsayoCompacto({
   };
   // ---- Repeat with the full sequence (Live Director controller, gapless) ----
   const [pendingSectionRepeat, setPendingSectionRepeat] = useState(null); // null | 'once' | 'hold'
+  const [expandedMixGroups, setExpandedMixGroups] = useState([]);
   useEffect(() => {
     if (!pendingSectionRepeat || !isFullSequence) return;
     if (!rehearsalMixIsPlaying) return;
@@ -4088,32 +4160,23 @@ export default function ModoEnsayoCompacto({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setSyncRole(prev => prev === 'local' ? 'director' : prev === 'director' ? 'musico' : 'local')}
-              className={`ensayo-control-chip flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border transition-all ${syncRole === 'director'
-                ? 'border-brand bg-brand text-white shadow-[0_8px_18px_rgba(59,130,246,0.3)]'
-                : syncRole === 'musico'
-                  ? 'border-emerald-500 bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400'
-                  : 'border-zinc-200 bg-white text-zinc-400 hover:bg-zinc-50 dark:border-white/10 dark:bg-zinc-900 dark:hover:bg-zinc-800'
-                }`}
-              aria-label="Modo de Sincronización"
-              title={syncRole === 'local' ? 'Desconectado' : syncRole === 'director' ? 'Modo Director (Enviando)' : 'Modo Músico (Recibiendo)'}
-            >
-              {syncRole === 'director' ? <Radio className="h-4.5 w-4.5 animate-pulse" /> : <RadioReceiver className="h-4.5 w-4.5" />}
-            </button>
-          {(onPrevSong || onNextSong) && (
-            <div className="flex shrink-0 items-center">
-              <button type="button" onClick={() => onPrevSong?.()} disabled={!onPrevSong} aria-label="Canción anterior"
-                className="flex h-10 w-8 items-center justify-center rounded-xl text-zinc-700 disabled:opacity-30 dark:text-zinc-200">
-                <ChevronLeft className="h-5 w-5" />
+            {/* Sync mode moved to the Opciones sheet; previous/next song to the Ensayo sheet. */}
+            {syncRole !== 'local' && (
+              <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${syncRole === 'director' ? 'bg-brand text-white' : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'}`} title={syncRole === 'director' ? 'Modo Director (Enviando)' : 'Modo Músico (Recibiendo)'}>
+                {syncRole === 'director' ? <Radio className="h-4.5 w-4.5 animate-pulse" /> : <RadioReceiver className="h-4.5 w-4.5" />}
+              </span>
+            )}
+            {originalSongKey !== '-' && (
+              <button
+                type="button"
+                onClick={() => setShowOptionsMenu(true)}
+                className="ensayo-control-chip flex h-10 min-w-10 shrink-0 flex-col items-center justify-center rounded-2xl border border-zinc-200 bg-white px-2 text-zinc-900 shadow-sm dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50"
+                aria-label={`Tono ${showChord(currentSongDisplayKey)}${capoFret ? `, capo ${capoFret}` : ''}`}
+              >
+                <span className="text-sm font-black leading-none">{showChord(currentSongDisplayKey)}</span>
+                <span className="mt-0.5 text-[8px] font-bold uppercase leading-none tracking-wider text-zinc-500">{capoFret ? `Capo ${capoFret}` : 'Tono'}</span>
               </button>
-              <button type="button" onClick={() => onNextSong?.()} disabled={!onNextSong} aria-label="Canción siguiente"
-                className="flex h-10 w-8 items-center justify-center rounded-xl text-zinc-700 disabled:opacity-30 dark:text-zinc-200">
-                <ChevronRight className="h-5 w-5" />
-              </button>
-            </div>
-          )}
+            )}
             <button
               type="button"
               onClick={handleToggleMetronome}
@@ -4133,7 +4196,7 @@ export default function ModoEnsayoCompacto({
                 {currentSongBpm || '--'}
               </span>
             </button>
-            <div ref={optionsMenuRef} className="relative shrink-0">
+            <div className="relative shrink-0">
               <button
                 type="button"
                 onClick={() => setShowOptionsMenu((prev) => !prev)}
@@ -4143,10 +4206,10 @@ export default function ModoEnsayoCompacto({
                 aria-expanded={showOptionsMenu}
                 title="Opciones"
               >
-                <SlidersHorizontal className="h-4.5 w-4.5" />
+                <MoreHorizontal className="h-4.5 w-4.5" />
               </button>
-              {showOptionsMenu && (
-                <div className="absolute right-0 top-[calc(100%+0.55rem)] z-50 flex max-h-[min(30rem,calc(100vh-6rem))] w-[16.25rem] flex-col gap-3 overflow-y-auto rounded-[1.35rem] border border-zinc-200/85 bg-white/96 p-3 shadow-[0_18px_50px_rgba(15,23,42,0.22)] backdrop-blur-xl [scrollbar-width:none] dark:border-white/10 dark:bg-zinc-950/96 [&::-webkit-scrollbar]:hidden">
+              <EnsayoSheet open={showOptionsMenu} title="Opciones" onClose={() => setShowOptionsMenu(false)} panelRef={optionsMenuRef}>
+                <div className="ensayo-options-sheet mx-auto flex max-w-xl flex-col gap-4 rounded-2xl bg-white p-3 dark:bg-zinc-800/80">
                   {/* Tono */}
                   {originalSongKey !== '-' && (
                     <div>
@@ -4160,7 +4223,7 @@ export default function ModoEnsayoCompacto({
                       </div>
                       <div className="grid grid-cols-4 gap-1.5">
                         {transposeKeyOptions.map((option, optionIndex) => {
-                          const active = option.steps === transposeSteps;
+                          const active = option.steps === transposeSteps || (option.steps === 6 && transposeSteps === -6);
                           const original = option.steps === 0;
                           return (
                             <button
@@ -4318,6 +4381,8 @@ export default function ModoEnsayoCompacto({
                         {tapChordPreviewEnabled ? 'Activo' : 'Off'}
                       </span>
                     </button>
+                    {/* Only needed while "Mostrar al tocar" is on. */}
+                    {tapChordPreviewEnabled && (
                     <div className={`grid grid-cols-2 gap-1 rounded-[0.85rem] bg-zinc-100 p-1 dark:bg-zinc-900 ${currentChordLibrary.length === 0 ? 'opacity-50' : ''}`}>
                       {[
                         ['guitar', 'Guitarra'],
@@ -4341,6 +4406,7 @@ export default function ModoEnsayoCompacto({
                         );
                       })}
                     </div>
+                    )}
                   </div>
                   <div className={`rounded-[1rem] border p-1 transition-colors ${voiceFollowerEnabled
                     ? 'border-sky-200/70 bg-sky-50/35 dark:border-sky-300/20 dark:bg-sky-400/5'
@@ -4432,7 +4498,19 @@ export default function ModoEnsayoCompacto({
                     </div>
                   </div>
                 </div>
-              )}
+                <SheetSection title="Sincronización con el director" note={syncRole === 'local' ? 'Ensayas por tu cuenta.' : syncRole === 'director' ? 'Tu equipo envía la sección a los músicos.' : 'Sigues la sección que envía el director.'}>
+                  <SheetSegmented
+                    label="Sincronización"
+                    value={syncRole}
+                    onChange={(value) => setSyncRole(value)}
+                    options={[
+                      { value: 'local', label: 'Solo yo' },
+                      { value: 'director', label: 'Director', icon: <Radio className="h-3.5 w-3.5" /> },
+                      { value: 'musico', label: 'Músico', icon: <RadioReceiver className="h-3.5 w-3.5" /> },
+                    ]}
+                  />
+                </SheetSection>
+              </EnsayoSheet>
             </div>
           </div>
         </div>
@@ -4478,8 +4556,8 @@ export default function ModoEnsayoCompacto({
           paddingTop: `${currentHeaderOffset + (isLandscapeCompact ? 4 : 8)}px`,
           paddingLeft: 'calc(env(safe-area-inset-left) + 0.75rem)',
           paddingRight: 'calc(env(safe-area-inset-right) + 0.75rem)',
-          // The practice row of the full sequence makes the fixed footer taller.
-          ...(fullSequenceAvailable ? { paddingBottom: 'calc(env(safe-area-inset-bottom) + 9rem)' } : {}),
+          // Room for the floating bar.
+          paddingBottom: 'calc(env(safe-area-inset-bottom) + 7.5rem)',
         }}
       >
         <div className="ensayo-sections-layout mx-auto max-w-6xl columns-1 gap-4 xl:columns-2 xl:gap-5">
@@ -4630,333 +4708,116 @@ export default function ModoEnsayoCompacto({
           })}
         </div>
       </main>
+      {/* Floating bar: only what you use while playing; everything else lives in the "Ensayo" sheet. */}
       <div
-        className="ensayo-footer-shell fixed inset-x-0 bottom-0 z-40 border-t border-zinc-200 bg-white/96 pb-[calc(env(safe-area-inset-bottom)+0.7rem)] pt-2.5 backdrop-blur-xl dark:border-white/10 dark:bg-zinc-950/96"
+        className="ensayo-footer-shell fixed inset-x-0 bottom-0 z-40 px-3 pb-[calc(env(safe-area-inset-bottom)+0.6rem)]"
         style={{
-          paddingLeft: 'calc(env(safe-area-inset-left) + 0.3rem)',
-          paddingRight: 'calc(env(safe-area-inset-right) + 0.3rem)',
+          paddingLeft: 'calc(env(safe-area-inset-left) + 0.6rem)',
+          paddingRight: 'calc(env(safe-area-inset-right) + 0.6rem)',
         }}
       >
-        {showPlaybackOptions && (
-          <div ref={playbackOptionsRef} className="mx-auto mb-2 max-w-5xl px-4">
-            <div className="max-h-[min(62dvh,34rem)] overflow-y-auto overscroll-contain rounded-[1.1rem] border border-zinc-200/85 bg-white/96 px-3 py-3 shadow-[0_14px_34px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/96">
-              {fullSequenceAvailable && (
-                <div className={activePadUrl ? 'mb-1' : ''}>
-                  <p className="mb-2 text-[0.66rem] font-black uppercase tracking-[0.24em] text-zinc-500 dark:text-zinc-400">
-                    ¿Qué tocas o cantas?
-                  </p>
-                  {!sequence.prefs.hasChosenPart && (sequence.suggestedPartIds.length > 0 || sequence.singerWithoutStems) && (
-                    <p className="mb-2 text-xs text-zinc-500 dark:text-zinc-400">Tomado de tu asignación en este evento. Puedes cambiarlo.</p>
-                  )}
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={sequence.toggleVoice}
-                      aria-pressed={sequence.voiceSelected}
-                      className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-sm font-bold ${sequence.voiceSelected ? 'border-brand bg-brand text-white' : 'border-zinc-200 text-zinc-700 dark:border-white/10 dark:text-zinc-200'}`}
-                    >
-                      <Mic2 className="h-3.5 w-3.5" /> Voz
-                    </button>
-                    {sequence.partGroups.map((group) => (
-                      <button
-                        key={`part-${group.id}`}
-                        type="button"
-                        onClick={() => sequence.togglePartGroup(group.id)}
-                        aria-pressed={group.selected}
-                        className={`rounded-full border px-3 py-1.5 text-sm font-bold ${group.selected ? 'border-brand bg-brand text-white' : 'border-zinc-200 text-zinc-700 dark:border-white/10 dark:text-zinc-200'}`}
-                      >
-                        {group.label}
-                      </button>
-                    ))}
-                  </div>
-                  {sequence.singerWithoutStems && (
-                    <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-                      Esta secuencia no trae pistas de voz: ya suena sin voz para que cantes encima. Para escuchar la melodía, toca <b>Original</b>.
-                    </p>
-                  )}
-                  {!isFullSequence && (
-                    <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-                      Estás escuchando la grabación original. Toca <b>Original</b> otra vez para volver a la secuencia y su mezcla.
-                    </p>
-                  )}
-                  {isFullSequence && (
-                    <div className="mt-4 space-y-2">
-                      <p className="text-[0.66rem] font-black uppercase tracking-[0.24em] text-zinc-500 dark:text-zinc-400">Mezcla</p>
-                      {sequence.mixerGroups.map((group) => {
-                        const muted = Boolean(sequence.prefs.mutedGroups[group.id]);
-                        const level = sequence.prefs.groupLevels[group.id] ?? 1;
-                        return (
-                          <div key={`mix-${group.id}`} className="flex items-center gap-3 rounded-xl bg-zinc-50 px-2 py-1.5 dark:bg-zinc-950/50">
-                            <button
-                              type="button"
-                              onClick={() => sequence.updatePrefs({ mutedGroups: { ...sequence.prefs.mutedGroups, [group.id]: !muted } })}
-                              aria-label={muted ? `Activar ${group.label}` : `Silenciar ${group.label}`}
-                              aria-pressed={muted}
-                              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${muted ? 'bg-red-50 text-red-600 dark:bg-red-500/10' : 'text-zinc-500'}`}
-                            >
-                              {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-                            </button>
-                            <span className="w-24 shrink-0 truncate text-sm font-semibold">{group.label}</span>
-                            <input
-                              type="range"
-                              min="0"
-                              max={MAX_GROUP_LEVEL}
-                              step="0.05"
-                              value={level}
-                              onChange={(event) => sequence.updatePrefs({ groupLevels: { ...sequence.prefs.groupLevels, [group.id]: Number(event.target.value) } })}
-                              className="ensayo-seek h-4 flex-1 cursor-pointer appearance-none bg-transparent"
-                              aria-label={`Volumen ${group.label}`}
-                            />
-                            <span className="w-9 text-right text-xs font-black text-zinc-500 dark:text-zinc-400">{Math.round(level * 100)}</span>
-                          </div>
-                        );
-                      })}
-                      <div className="flex items-center gap-3 rounded-xl bg-zinc-50 px-2 py-1.5 dark:bg-zinc-950/50">
-                        <span className="w-[8.75rem] shrink-0 pl-1 text-sm font-black">Master</span>
-                        <input
-                          type="range"
-                          min="0"
-                          max="1"
-                          step="0.05"
-                          value={sequence.prefs.master}
-                          onChange={(event) => sequence.updatePrefs({ master: Number(event.target.value) })}
-                          className="ensayo-seek h-4 flex-1 cursor-pointer appearance-none bg-transparent"
-                          aria-label="Volumen master"
-                        />
-                        <span className="w-9 text-right text-xs font-black text-zinc-500 dark:text-zinc-400">{Math.round(sequence.prefs.master * 100)}</span>
-                      </div>
-                      <button type="button" onClick={() => sequence.updatePrefs({ groupLevels: {}, mutedGroups: {}, master: 1 })} className="text-xs font-semibold text-zinc-500 underline">
-                        Restablecer mezcla
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-              {!fullSequenceAvailable && (<>
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <p className="text-[0.66rem] font-black uppercase tracking-[0.24em] text-zinc-500 dark:text-zinc-400">
-                  Fuentes de reproduccion
-                </p>
-                <span className="truncate text-[0.72rem] font-semibold text-zinc-500 dark:text-zinc-400">
-                  {activePlaybackSource?.label || 'Sin audio'}
-                </span>
-              </div>
-              <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                {playbackSources.map((source) => {
-                  const active = source.id === selectedPlaybackSourceId;
-                  return (
-                    <button
-                      key={`playback-source-${source.id}`}
-                      type="button"
-                      onClick={() => handleSelectPlaybackSource(source.id)}
-                      className={`shrink-0 rounded-full border px-3.5 py-2 text-sm font-bold transition-colors ${active
-                        ? 'border-brand bg-brand text-white shadow-[0_8px_18px_rgba(59,130,246,0.24)]'
-                        : 'border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-white/10 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-800'
-                        }`}
-                      aria-pressed={active}
-                    >
-                      {source.label}
-                    </button>
-                  );
-                })}
-                {!hasSupplementalPlaybackSources && (
-                  <div className="shrink-0 rounded-full border border-dashed border-zinc-300 bg-zinc-50 px-3.5 py-2 text-sm font-semibold text-zinc-500 dark:border-white/10 dark:bg-zinc-950 dark:text-zinc-400">
-                    Secuencia no disponible
-                  </div>
-                )}
-              </div>
-              </>)}
-              {hasGuideCueSources && (
-                <div className="mt-4 border-t border-zinc-200/60 pt-3 dark:border-white/10">
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-[0.66rem] font-black uppercase tracking-[0.24em] text-zinc-500 dark:text-zinc-400">
-                        Apoyo de ensayo
-                      </p>
-                      <p className="truncate text-sm font-bold text-zinc-800 dark:text-zinc-100">
-                        {guideCueDisplayLabel}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setGuideCueEnabled((current) => !current)}
-                      className={`rounded-full px-3 py-1 text-xs font-bold transition-all ${guideCueEnabled
-                        ? 'bg-brand text-white shadow-sm'
-                        : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
-                        }`}
-                      aria-pressed={guideCueEnabled}
-                    >
-                      {guideCueEnabled ? 'ON' : 'OFF'}
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-3 rounded-xl bg-zinc-50 px-3 py-2 dark:bg-zinc-950/50">
-                    <span className="w-10 text-xs font-bold text-zinc-400">Vol</span>
-                    <input
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.05"
-                      value={guideCueVolume}
-                      onChange={(event) => setGuideCueVolume(parseFloat(event.target.value))}
-                      className="ensayo-seek h-4 flex-1 cursor-pointer appearance-none bg-transparent"
-                      aria-label={`Volumen ${guideCueDisplayLabel}`}
-                    />
-                    <span className="w-9 text-right text-xs font-black text-zinc-500 dark:text-zinc-400">
-                      {Math.round(guideCueVolume * 100)}
-                    </span>
-                  </div>
-                </div>
-              )}
-              {hasAudio && !fullSequenceAvailable && (
-                <div className="mt-4 border-t border-zinc-200/60 pt-3 dark:border-white/10">
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <p className="text-[0.66rem] font-black uppercase tracking-[0.24em] text-zinc-500 dark:text-zinc-400">
-                      Ruteo de Salida (Split Track)
-                    </p>
-                  </div>
-                  <div className="flex gap-2 rounded-xl bg-zinc-50 p-1 dark:bg-zinc-950/50">
-                    <button
-                      type="button"
-                      onClick={() => setPanValue(-1)}
-                      className={`flex-1 rounded-lg py-2 text-xs font-bold transition-all ${panValue === -1 ? 'bg-white text-brand shadow-sm dark:bg-zinc-800 dark:text-brand' : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'}`}
-                    >
-                      Izquierda (Click)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPanValue(0)}
-                      className={`flex-1 rounded-lg py-2 text-xs font-bold transition-all ${panValue === 0 ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50' : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'}`}
-                    >
-                      Estéreo
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPanValue(1)}
-                      className={`flex-1 rounded-lg py-2 text-xs font-bold transition-all ${panValue === 1 ? 'bg-white text-brand shadow-sm dark:bg-zinc-800 dark:text-brand' : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'}`}
-                    >
-                      Derecha (Pistas)
-                    </button>
-                  </div>
-                </div>
-              )}
-              {activePadUrl && (
-                <div className="mt-4 border-t border-zinc-200/60 pt-3 dark:border-white/10">
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <p className="text-[0.66rem] font-black uppercase tracking-[0.24em] text-zinc-500 dark:text-zinc-400">
-                      Pad Ambiental ({currentSongDisplayKey})
-                    </p>
-                    <button
-                      type="button"
-                      onClick={handleTogglePad}
-                      aria-pressed={isPadActive}
-                      aria-label={isPadActive ? 'Apagar pad ambiental' : 'Activar pad ambiental'}
-                      className={`rounded-full px-3 py-1 text-xs font-bold transition-all ${isPadActive
-                        ? 'bg-brand text-white shadow-sm'
-                        : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
-                        }`}
-                    >
-                      {isPadActive ? 'Pad ON' : 'Pad OFF'}
-                    </button>
-                  </div>
-                  {isPadActive && (
-                    <div className="flex items-center gap-3 rounded-xl bg-zinc-50 px-3 py-2 dark:bg-zinc-950/50">
-                      <span className="text-xs font-bold text-zinc-400">Vol</span>
-                      <input
-                        type="range"
-                        aria-label="Volumen del pad ambiental"
-                        min="0"
-                        max="1"
-                        step="0.05"
-                        value={padVolume}
-                        onChange={(e) => setPadVolume(parseFloat(e.target.value))}
-                        className="ensayo-seek h-4 flex-1 cursor-pointer appearance-none bg-transparent"
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-        {fullSequenceAvailable && (
-          <div className="mx-auto mb-2 flex max-w-5xl items-center gap-0.5 px-3" title={isFullSequence ? REHEARSAL_PART_MODE_HINTS[sequence.partMode] : 'La grabación original de la canción.'}>
+        <div className="mx-auto max-w-3xl rounded-[1.4rem] border border-zinc-200/80 bg-white/95 px-2.5 py-2 shadow-[0_12px_34px_rgba(15,23,42,0.16)] backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/95">
+          <div className="ensayo-footer-row flex items-center gap-2.5">
             <button
               type="button"
-              onClick={() => setShowPlaybackOptions((prev) => !prev)}
-              className={`flex min-w-[5.5rem] flex-1 items-center gap-1 rounded-xl px-1.5 py-1.5 text-left text-xs font-bold ${sequence.partTrackIds.length === 0 && !sequence.singerWithoutStems ? 'text-brand' : 'text-zinc-700 dark:text-zinc-200'}`}
-              aria-label="Elegir tu parte y la mezcla"
+              onClick={handleTogglePlayback}
+              disabled={!hasAudio || isPlaybackSeekPending || (shouldUseRehearsalMix && !audioReady)}
+              className={`ensayo-footer-play flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white transition-transform active:scale-95 ${hasAudio && !isPlaybackSeekPending && (!shouldUseRehearsalMix || audioReady) ? 'bg-action' : 'bg-zinc-500/50 cursor-not-allowed'}`}
+              aria-label={isPlaybackSeekPending
+                ? 'Preparando pistas'
+                : playbackSeekError
+                  ? 'Reintentar preparar pistas'
+                  : isPlaying
+                    ? 'Pausar ensayo'
+                    : 'Reproducir ensayo'}
             >
-              {sequence.singerWithoutStems ? <Mic2 className="h-3.5 w-3.5 shrink-0" /> : <User className="h-3.5 w-3.5 shrink-0" />}
-              <span className="truncate">{sequence.partLabel}</span>
-            </button>
-            {!sequence.singerWithoutStems && [
-              { id: 'aumentada', label: 'Subir', Icon: TrendingUp },
-              { id: 'aislada', label: 'Aislar', Icon: Headphones },
-              { id: 'muteada', label: 'Mutear', Icon: VolumeX },
-            ].map(({ id, label, Icon }) => {
-              const active = isFullSequence && sequence.partMode === id;
-              return (
-                <button
-                  key={`part-mode-${id}`}
-                  type="button"
-                  onClick={() => {
-                    if (sequence.partTrackIds.length === 0) { setShowPlaybackOptions(true); return; }
-                    if (!isFullSequence) void handleSelectPlaybackSource(FULL_SEQUENCE_SOURCE_ID);
-                    sequence.setPartMode(id);
-                  }}
-                  aria-pressed={active}
-                  aria-label={label}
-                  className={`flex shrink-0 items-center gap-0.5 rounded-xl px-1.5 py-1.5 text-[11px] font-bold ${active ? 'bg-brand text-white shadow-sm' : 'text-zinc-500 dark:text-zinc-400'}`}
-                >
-                  <Icon className="h-3.5 w-3.5" />
-                  <span className={active ? '' : 'max-[400px]:sr-only'}>{label}</span>
-                </button>
-              );
-            })}
-            {originalPlaybackSource && (
-              <button
-                type="button"
-                onClick={() => void handleSelectPlaybackSource(isFullSequence ? originalPlaybackSource.id : FULL_SEQUENCE_SOURCE_ID)}
-                disabled={sequence.aligningOriginal}
-                aria-busy={sequence.aligningOriginal || undefined}
-                aria-pressed={activePlaybackSource?.kind === 'original'}
-                aria-label="Original"
-                className={`flex shrink-0 items-center gap-0.5 rounded-xl px-1.5 py-1.5 text-[11px] font-bold ${activePlaybackSource?.kind === 'original' ? 'bg-brand text-white shadow-sm' : 'text-zinc-500 dark:text-zinc-400'}`}
-              >
-                <Disc3 className="h-3.5 w-3.5" />
-                <span>Original</span>
-              </button>
-            )}
-          </div>
-        )}
-        <div className="ensayo-footer-row mx-auto flex max-w-5xl items-center gap-3 px-4">
-          <button
-            type="button"
-            onClick={handleTogglePlayback}
-            disabled={!hasAudio || isPlaybackSeekPending || (shouldUseRehearsalMix && !audioReady)}
-            className={`ensayo-footer-play flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl text-white shadow-lg transition-transform active:scale-95 ${hasAudio && !isPlaybackSeekPending && (!shouldUseRehearsalMix || audioReady) ? 'bg-action' : 'bg-zinc-500/50 cursor-not-allowed shadow-none'}`}
-            aria-label={isPlaybackSeekPending
-              ? 'Preparando pistas'
-              : playbackSeekError
-                ? 'Reintentar preparar pistas'
+              {isPlaybackSeekPending
+                ? <LoaderCircle className="h-5 w-5 animate-spin" />
                 : isPlaying
-                  ? 'Pausar ensayo'
-                  : 'Reproducir ensayo'}
-          >
-            {isPlaybackSeekPending
-              ? <LoaderCircle className="h-4.5 w-4.5 animate-spin" />
-              : isPlaying
-                ? <Pause className="h-4.5 w-4.5" />
-                : <Play className="ml-0.5 h-4.5 w-4.5" />}
-          </button>
-          <div className="ensayo-footer-timeline min-w-0 flex-1">
-            <div className="ensayo-footer-meta mb-1.5 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
-              <span>{formatSeconds(displayAudioCurrentTime)}</span>
-              <span className={sequenceNavigationLabel ? 'truncate px-2 text-brand' : 'truncate px-2'}>
-                {sequenceNavigationLabel || currentSections[activeSectionIndex]?.name || 'Secci\u00F3n'}
-              </span>
-              <span>{durationLabel}</span>
+                  ? <Pause className="h-5 w-5" />
+                  : <Play className="ml-0.5 h-5 w-5" />}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowPlaybackOptions(true)}
+              className="ensayo-footer-timeline min-w-0 flex-1 text-left"
+              aria-label="Abrir ensayo: tu parte, mezcla y secciones"
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <span className={`truncate text-[13px] font-bold ${sequenceNavigationLabel ? 'text-brand' : ''}`}>
+                  {sequenceNavigationLabel || currentSections[activeSectionIndex]?.name || 'Sección'}
+                </span>
+                <span className="shrink-0 text-[11px] font-semibold tabular-nums text-zinc-500 dark:text-zinc-400">
+                  {formatSeconds(displayAudioCurrentTime)} / {durationLabel}
+                </span>
+              </div>
+              <div className="relative mt-1.5 h-[3px] rounded-full bg-zinc-200 dark:bg-white/10">
+                <div className="absolute inset-y-0 left-0 rounded-full bg-action" style={{ width: `${progressPercent}%` }} />
+              </div>
+              {(rehearsalMixLoadProgress && shouldUseRehearsalMix) || audioLoadError || playbackSeekError || playbackSeekNotice || (fullSequenceAvailable && (sequence.partMode !== 'normal' || !isFullSequence)) ? (
+                <div className="mt-1 truncate text-[11px] font-semibold">
+                  {shouldUseRehearsalMix && rehearsalMixLoadProgress
+                    ? <span className="text-zinc-500">Cargando secuencia {rehearsalMixLoadProgress.loaded}/{rehearsalMixLoadProgress.total}</span>
+                    : (audioLoadError || playbackSeekError)
+                      ? <span className="text-red-600 dark:text-red-400">{audioLoadError || playbackSeekError}</span>
+                      : playbackSeekNotice
+                        ? <span className="text-emerald-600 dark:text-emerald-400">{playbackSeekNotice}</span>
+                        : !isFullSequence
+                          ? <span className="text-brand">Original</span>
+                          : <span className="text-brand">{({ aumentada: 'Subir', aislada: 'Aislar', muteada: 'Mutear' })[sequence.partMode]} · {sequence.partLabel}</span>}
+                </div>
+              ) : null}
+            </button>
+            <button
+              type="button"
+              onClick={handleLoopButton}
+              disabled={isPlaybackSeekPending}
+              className={`ensayo-footer-icon relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-55 ${loopState || sectionRepeatMode ? 'bg-brand/10 text-brand' : 'text-zinc-500 dark:text-zinc-300'}`}
+              aria-label={loopButtonLabel}
+              title={loopButtonLabel}
+            >
+              {loopState === 1 ? <Repeat1 className="h-4.5 w-4.5" /> : <Repeat className="h-4.5 w-4.5" />}
+              {(loopState === 2 || sectionRepeatMode) && (
+                <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-0.5 text-[9px] font-black text-white">
+                  {sectionRepeatMode === 'once' ? '1' : sectionRepeatMode === 'hold' ? '∞' : 'S'}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowPlaybackOptions(true)}
+              className="ensayo-footer-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-zinc-500 dark:text-zinc-300"
+              aria-label={fullSequenceAvailable ? 'Tu parte y mezcla' : 'Abrir fuentes de reproduccion'}
+              title={fullSequenceAvailable ? 'Tu parte y mezcla' : 'Fuentes de reproduccion'}
+              aria-expanded={showPlaybackOptions}
+            >
+              <SlidersHorizontal className="h-4.5 w-4.5" />
+            </button>
+          </div>
+        </div>
+      </div>
+      <EnsayoSheet
+        open={showPlaybackOptions}
+        title="Ensayo"
+        onClose={() => setShowPlaybackOptions(false)}
+        panelRef={playbackOptionsRef}
+        trailing={setlistPosition ? <span className="text-xs font-semibold text-zinc-500">{setlistPosition.index + 1} de {setlistPosition.total}</span> : null}
+      >
+        {/* Song and transport */}
+        <SheetSection>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => onPrevSong?.()} disabled={!onPrevSong} aria-label="Canción anterior" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-zinc-600 disabled:opacity-30 dark:text-zinc-300">
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <div className="min-w-0 flex-1 text-center">
+              <p className="truncate text-[15px] font-bold">{titleLine}</p>
+              <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">{artistLine}{currentSongBpm ? ` · ${currentSongBpm} BPM` : ''}</p>
             </div>
+            <button type="button" onClick={() => onNextSong?.()} disabled={!onNextSong} aria-label="Canción siguiente" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-zinc-600 disabled:opacity-30 dark:text-zinc-300">
+              <ChevronRight className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="mt-3">
             <div className="relative pt-1">
               <div className="pointer-events-none absolute left-0 right-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-zinc-300/75 dark:bg-white/10" />
               <div className="pointer-events-none absolute left-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-action" style={{ width: `${progressPercent}%` }} />
@@ -4976,94 +4837,304 @@ export default function ModoEnsayoCompacto({
                 aria-label="Posición de reproducción"
               />
             </div>
+            <div className="flex justify-between text-[11px] font-semibold tabular-nums text-zinc-500 dark:text-zinc-400">
+              <span>{formatSeconds(displayAudioCurrentTime)}</span>
+              <span className="truncate px-2">{sequenceNavigationLabel || currentSections[activeSectionIndex]?.name || ''}</span>
+              <span>{durationLabel}</span>
+            </div>
             {playbackSectionStrip.length > 0 && (
-              <div className="ensayo-playback-strip relative mt-2 h-3">
+              <div className="relative mt-2 h-3">
                 {playbackSectionStrip.map((item) => (
                   <button
-                    key={`footer-section-${item.index}`}
+                    key={`sheet-section-${item.index}`}
                     type="button"
                     onClick={() => selectSection(item.index, { seekAudio: true, scrollBehavior: 'smooth' })}
                     disabled={isPlaybackSeekPending}
-                    className="absolute top-0 h-2 rounded-full border transition-all disabled:cursor-wait disabled:opacity-55"
+                    className="absolute top-0 h-2.5 rounded-full border transition-all disabled:cursor-wait disabled:opacity-55"
                     style={{
                       left: `${item.startPercent}%`,
                       width: `${item.widthPercent}%`,
                       borderColor: item.isActive ? toRgba(item.visual.rgb, 0.9) : toRgba(item.visual.rgb, 0.26),
                       backgroundColor: item.isActive ? toRgba(item.visual.rgb, 0.96) : 'rgba(228,228,231,0.95)',
-                      boxShadow: item.isActive ? `0 0 0 1px ${toRgba(item.visual.rgb, 0.2)}` : 'none',
                     }}
-                    title={`${item.section.name}${item.marker ? ` \u00B7 ${formatSeconds(item.marker.startSec)}` : ''}`}
+                    title={item.section.name}
                     aria-label={`Ir a ${item.section.name}`}
                   />
                 ))}
               </div>
             )}
-            {!hasAudio && (
-              <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-500 dark:text-zinc-400">
-                Esta canci\u00F3n todav\u00EDa no tiene MP3 cargado.
-              </p>
-            )}
-            {shouldUseRehearsalMix && rehearsalMixLoadProgress && (
-              <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-500 dark:text-zinc-400" aria-live="polite">
-                Preparando mezcla {rehearsalMixLoadProgress.loaded}/{rehearsalMixLoadProgress.total}
-              </p>
-            )}
-            {shouldUseRehearsalMix && isPlaybackSeekPending && !rehearsalMixLoadProgress && (
-              <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-500 dark:text-zinc-400" role="status" aria-live="polite">
-                Alineando pistas…
-              </p>
-            )}
-            {playbackSeekError && (
-              <p className="mt-1 text-[10px] font-semibold text-red-600 dark:text-red-400" role="alert">
-                {playbackSeekError}
-              </p>
-            )}
-            {audioLoadError && (
-              <p className="mt-1 text-[10px] font-semibold text-red-600 dark:text-red-400" role="alert">
-                {audioLoadError}
-              </p>
-            )}
-            {playbackSeekNotice && !playbackSeekError && (
-              <p className="mt-1 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400" role="status" aria-live="polite">
-                {playbackSeekNotice}
-              </p>
-            )}
           </div>
-          <div className="ensayo-footer-actions flex shrink-0 items-center gap-2">
+          <div className="mt-3 flex items-center justify-center gap-6">
+            <button type="button" onClick={() => selectSection(Math.max(0, activeSectionIndex - 1), { seekAudio: true })} disabled={isPlaybackSeekPending} aria-label="Sección anterior" className="flex h-11 w-11 items-center justify-center rounded-full text-zinc-700 dark:text-zinc-200">
+              <SkipBack className="h-5 w-5" />
+            </button>
             <button
               type="button"
-              onClick={handleLoopButton}
-              disabled={isPlaybackSeekPending}
-              className={`ensayo-footer-icon relative flex h-10 w-10 items-center justify-center rounded-2xl border transition-colors disabled:cursor-wait disabled:opacity-55 ${loopState || sectionRepeatMode
-                ? 'border-brand/35 bg-brand/10 text-brand'
-                : 'border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
-                }`}
-              aria-label={loopButtonLabel}
-              title={loopButtonLabel}
+              onClick={handleTogglePlayback}
+              disabled={!hasAudio || isPlaybackSeekPending || (shouldUseRehearsalMix && !audioReady)}
+              aria-label={isPlaying ? 'Pausar ensayo' : 'Reproducir ensayo'}
+              className="flex h-14 w-14 items-center justify-center rounded-full bg-action text-white disabled:opacity-50"
             >
-              {loopState === 1 ? <Repeat1 className="h-4.5 w-4.5" /> : <Repeat className="h-4.5 w-4.5" />}
-              {(loopState === 2 || sectionRepeatMode) && (
-                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-0.5 text-[9px] font-black text-white">
-                  {sectionRepeatMode === 'once' ? '1' : sectionRepeatMode === 'hold' ? '∞' : 'S'}
-                </span>
+              {isPlaybackSeekPending ? <LoaderCircle className="h-6 w-6 animate-spin" /> : isPlaying ? <Pause className="h-6 w-6" /> : <Play className="ml-0.5 h-6 w-6" />}
+            </button>
+            <button type="button" onClick={() => selectSection(Math.min(currentSections.length - 1, activeSectionIndex + 1), { seekAudio: true })} disabled={isPlaybackSeekPending} aria-label="Sección siguiente" className="flex h-11 w-11 items-center justify-center rounded-full text-zinc-700 dark:text-zinc-200">
+              <SkipForward className="h-5 w-5" />
+            </button>
+          </div>
+        </SheetSection>
+
+        {fullSequenceAvailable && (
+          <>
+            <SheetSection
+              title="Tu parte"
+              note={sequence.singerWithoutStems
+                ? 'Esta secuencia no trae pistas de voz: ya suena sin voz para que cantes encima. La melodía está en Original.'
+                : (!sequence.prefs.hasChosenPart && sequence.suggestedPartIds.length > 0 ? 'Tomado de tu asignación en este evento.' : '')}
+            >
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={sequence.toggleVoice}
+                  aria-pressed={sequence.voiceSelected}
+                  className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[13px] font-semibold ${sequence.voiceSelected ? 'bg-brand text-white' : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-200'}`}
+                >
+                  <Mic2 className="h-3.5 w-3.5" /> Voz
+                </button>
+                {sequence.partGroups.map((group) => (
+                  <button
+                    key={`part-${group.id}`}
+                    type="button"
+                    onClick={() => sequence.togglePartGroup(group.id)}
+                    aria-pressed={group.selected}
+                    className={`rounded-full px-3 py-1.5 text-[13px] font-semibold ${group.selected ? 'bg-brand text-white' : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-200'}`}
+                  >
+                    {group.label}
+                  </button>
+                ))}
+              </div>
+              {!sequence.singerWithoutStems && sequence.partTrackIds.length > 0 && (
+                <div className="mt-3">
+                  <SheetSegmented
+                    label="Qué hacer con tu parte"
+                    value={isFullSequence ? sequence.partMode : 'normal'}
+                    onChange={(mode) => {
+                      if (!isFullSequence) void handleSelectPlaybackSource(FULL_SEQUENCE_SOURCE_ID);
+                      if (mode === 'normal') sequence.updatePrefs({ partMode: 'normal' });
+                      else if (sequence.partMode !== mode) sequence.setPartMode(mode);
+                    }}
+                    options={[
+                      { value: 'normal', label: 'Normal' },
+                      { value: 'aumentada', label: 'Subir', icon: <TrendingUp className="h-3.5 w-3.5" /> },
+                      { value: 'aislada', label: 'Aislar', icon: <Headphones className="h-3.5 w-3.5" /> },
+                      { value: 'muteada', label: 'Mutear', icon: <VolumeX className="h-3.5 w-3.5" /> },
+                    ]}
+                  />
+                  <p className="mt-1.5 px-1 text-xs text-zinc-500 dark:text-zinc-400">{REHEARSAL_PART_MODE_HINTS[isFullSequence ? sequence.partMode : 'normal']}</p>
+                </div>
               )}
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowPlaybackOptions((prev) => !prev)}
-              className={`ensayo-footer-icon flex h-10 w-10 items-center justify-center rounded-2xl border transition-colors ${showPlaybackOptions
-                ? 'border-brand/35 bg-brand/10 text-brand'
-                : 'border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
-                }`}
-              aria-label={fullSequenceAvailable ? 'Tu parte y mezcla' : 'Abrir fuentes de reproduccion'}
-              title={fullSequenceAvailable ? 'Tu parte y mezcla' : 'Fuentes de reproduccion'}
-              aria-expanded={showPlaybackOptions}
-            >
-              <SlidersHorizontal className="h-4.5 w-4.5" />
-            </button>
-          </div>
-        </div>
-      </div>
+            </SheetSection>
+
+            {originalPlaybackSource && (
+              <SheetSection title="Audio" note={sequence.aligningOriginal ? 'Ajustando el Original a la secuencia…' : ''}>
+                <SheetSegmented
+                  label="Audio"
+                  value={isFullSequence ? 'secuencia' : 'original'}
+                  onChange={(value) => void handleSelectPlaybackSource(value === 'original' ? originalPlaybackSource.id : FULL_SEQUENCE_SOURCE_ID)}
+                  options={[
+                    { value: 'secuencia', label: 'Secuencia' },
+                    { value: 'original', label: 'Original', icon: <Disc3 className="h-3.5 w-3.5" /> },
+                  ]}
+                />
+              </SheetSection>
+            )}
+
+            {isFullSequence ? (
+              <SheetSection title="Mezcla">
+                {sequence.mixerGroups.map((group) => {
+                  const muted = Boolean(sequence.prefs.mutedGroups[group.id]);
+                  const level = sequence.prefs.groupLevels[group.id] ?? 1;
+                  const expandable = group.tracks.length > 1;
+                  const expanded = expandedMixGroups.includes(group.id);
+                  return (
+                    <div key={`mix-${group.id}`} className="border-b border-zinc-200/70 py-1.5 last:border-b-0 dark:border-white/10">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => sequence.updatePrefs({ mutedGroups: { ...sequence.prefs.mutedGroups, [group.id]: !muted } })}
+                          aria-label={muted ? `Activar ${group.label}` : `Silenciar ${group.label}`}
+                          aria-pressed={muted}
+                          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${muted ? 'bg-red-500/10 text-red-600 dark:text-red-400' : 'text-zinc-500'}`}
+                        >
+                          {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => expandable && setExpandedMixGroups((current) => (current.includes(group.id) ? current.filter((id) => id !== group.id) : [...current, group.id]))}
+                          className="flex w-28 shrink-0 items-center gap-1 text-left text-[13px] font-semibold"
+                          aria-expanded={expandable ? expanded : undefined}
+                        >
+                          <span className="truncate">{group.label}</span>
+                          {expandable && <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-zinc-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />}
+                        </button>
+                        <input
+                          type="range"
+                          min="0"
+                          max={MAX_GROUP_LEVEL}
+                          step="0.05"
+                          value={level}
+                          onChange={(event) => sequence.updatePrefs({ groupLevels: { ...sequence.prefs.groupLevels, [group.id]: Number(event.target.value) } })}
+                          className="h-6 min-w-0 flex-1 cursor-pointer accent-brand"
+                          aria-label={`Volumen ${group.label}`}
+                        />
+                        <span className="w-8 text-right text-[11px] font-semibold tabular-nums text-zinc-500">{Math.round(level * 100)}</span>
+                      </div>
+                      {expandable && expanded && group.tracks.map((track) => {
+                        const trackMuted = Boolean(sequence.prefs.mutedTracks?.[track.id]);
+                        const trackLevel = sequence.prefs.trackLevels?.[track.id] ?? 1;
+                        return (
+                          <div key={`mix-track-${track.id}`} className="mt-1 flex items-center gap-2 pl-6">
+                            <button
+                              type="button"
+                              onClick={() => sequence.updatePrefs({ mutedTracks: { ...sequence.prefs.mutedTracks, [track.id]: !trackMuted } })}
+                              aria-label={trackMuted ? `Activar ${track.label}` : `Silenciar ${track.label}`}
+                              aria-pressed={trackMuted}
+                              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${trackMuted ? 'bg-red-500/10 text-red-600 dark:text-red-400' : 'text-zinc-400'}`}
+                            >
+                              {trackMuted ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
+                            </button>
+                            <span className="w-[5.6rem] shrink-0 truncate text-xs text-zinc-600 dark:text-zinc-300">{track.label}</span>
+                            <input
+                              type="range"
+                              min="0"
+                              max={MAX_GROUP_LEVEL}
+                              step="0.05"
+                              value={trackLevel}
+                              onChange={(event) => sequence.updatePrefs({ trackLevels: { ...sequence.prefs.trackLevels, [track.id]: Number(event.target.value) } })}
+                              className="h-5 min-w-0 flex-1 cursor-pointer accent-brand"
+                              aria-label={`Volumen ${track.label}`}
+                            />
+                            <span className="w-8 text-right text-[11px] tabular-nums text-zinc-500">{Math.round(trackLevel * 100)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+                <div className="flex items-center gap-2 pt-2">
+                  <span className="w-[9.5rem] shrink-0 pl-1 text-[13px] font-bold">Master</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={sequence.prefs.master}
+                    onChange={(event) => sequence.updatePrefs({ master: Number(event.target.value) })}
+                    className="h-6 min-w-0 flex-1 cursor-pointer accent-brand"
+                    aria-label="Volumen master"
+                  />
+                  <span className="w-8 text-right text-[11px] font-semibold tabular-nums text-zinc-500">{Math.round(sequence.prefs.master * 100)}</span>
+                </div>
+                <button type="button" onClick={() => sequence.updatePrefs({ groupLevels: {}, mutedGroups: {}, trackLevels: {}, mutedTracks: {}, master: 1 })} className="mt-2 text-xs font-semibold text-brand">
+                  Restablecer mezcla
+                </button>
+              </SheetSection>
+            ) : (
+              <p className="mt-3 px-1 text-xs text-zinc-500 dark:text-zinc-400">Estás escuchando la grabación original: la mezcla aplica a la secuencia.</p>
+            )}
+          </>
+        )}
+
+        {!fullSequenceAvailable && (
+          <>
+            <SheetSection title="Audio">
+              <div className="flex flex-wrap gap-1.5">
+                {playbackSources.map((source) => {
+                  const active = source.id === selectedPlaybackSourceId;
+                  return (
+                    <button
+                      key={`playback-source-${source.id}`}
+                      type="button"
+                      onClick={() => handleSelectPlaybackSource(source.id)}
+                      aria-pressed={active}
+                      className={`rounded-full px-3 py-1.5 text-[13px] font-semibold ${active ? 'bg-brand text-white' : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-200'}`}
+                    >
+                      {source.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </SheetSection>
+            {hasGuideCueSources && (
+              <SheetSection title="Guía">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setGuideCueEnabled((current) => !current)}
+                    aria-pressed={guideCueEnabled}
+                    aria-label={guideCueEnabled ? `Silenciar ${guideCueDisplayLabel}` : `Activar ${guideCueDisplayLabel}`}
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${guideCueEnabled ? 'text-zinc-500' : 'bg-red-500/10 text-red-600'}`}
+                  >
+                    {guideCueEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+                  </button>
+                  <span className="w-28 shrink-0 truncate text-[13px] font-semibold">{guideCueDisplayLabel}</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={guideCueVolume}
+                    onChange={(event) => setGuideCueVolume(parseFloat(event.target.value))}
+                    className="h-6 min-w-0 flex-1 cursor-pointer accent-brand"
+                    aria-label={`Volumen ${guideCueDisplayLabel}`}
+                  />
+                </div>
+              </SheetSection>
+            )}
+            {hasAudio && (
+              <SheetSection title="Salida (split track)">
+                <SheetSegmented
+                  label="Salida"
+                  value={String(panValue)}
+                  onChange={(value) => setPanValue(Number(value))}
+                  options={[
+                    { value: '-1', label: 'Click izq.' },
+                    { value: '0', label: 'Estéreo' },
+                    { value: '1', label: 'Pistas der.' },
+                  ]}
+                />
+              </SheetSection>
+            )}
+          </>
+        )}
+
+        {activePadUrl && (
+          <SheetSection title={`Pad ambiental (${currentSongDisplayKey})`}>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleTogglePad}
+                aria-pressed={isPadActive}
+                aria-label={isPadActive ? 'Apagar pad ambiental' : 'Activar pad ambiental'}
+                className={`rounded-full px-3 py-1.5 text-[13px] font-semibold ${isPadActive ? 'bg-brand text-white' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300'}`}
+              >
+                {isPadActive ? 'Encendido' : 'Apagado'}
+              </button>
+              {isPadActive && (
+                <input
+                  type="range"
+                  aria-label="Volumen del pad ambiental"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={padVolume}
+                  onChange={(e) => setPadVolume(parseFloat(e.target.value))}
+                  className="h-6 min-w-0 flex-1 cursor-pointer accent-brand"
+                />
+              )}
+            </div>
+          </SheetSection>
+        )}
+      </EnsayoSheet>
       {showChordLibrary && (
         <ChordLibraryModal
           chords={currentChordLibrary}

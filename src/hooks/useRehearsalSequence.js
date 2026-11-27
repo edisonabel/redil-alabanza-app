@@ -150,7 +150,9 @@ export function useRehearsalSequence({
     partTrackIds,
     groupLevels: prefs.groupLevels,
     mutedGroups: prefs.mutedGroups,
-  }), [isOriginal, partMode, partTrackIds, prefs.groupLevels, prefs.mutedGroups, tracks]);
+    trackLevels: prefs.trackLevels,
+    mutedTracks: prefs.mutedTracks,
+  }), [isOriginal, partMode, partTrackIds, prefs.groupLevels, prefs.mutedGroups, prefs.trackLevels, prefs.mutedTracks, tracks]);
 
   /** Tracks for the engine (initial gains already applied). */
   const engineTracks = useMemo(() => {
@@ -409,8 +411,14 @@ export function useRehearsalSequence({
     const extra = [];
     if (digitalClickWanted && !stemGroups.some((group) => group.id === 'click')) extra.push({ id: 'click', label: 'Click (digital)' });
     if (digitalGuideWanted && !stemGroups.some((group) => group.id === 'guia')) extra.push({ id: 'guia', label: 'Guía (digital)' });
-    return [...extra, ...stemGroups];
-  }, [digitalClickWanted, digitalGuideWanted, stemGroups]);
+    // Each instrument carries its stems, so a group with several can be opened
+    // to balance them one by one.
+    return [...extra, ...stemGroups].map((group) => ({
+      ...group,
+      tracks: tracks.filter((track) => track.groupId === group.id)
+        .map((track) => ({ id: track.id, label: rehearsalTrackLabel(track) })),
+    }));
+  }, [digitalClickWanted, digitalGuideWanted, stemGroups, tracks]);
   /** Click on/off from the BPM chip: the Click group (stem or digital). */
   const clickAvailable = hasClickStem || digitalClickWanted;
   const clickMuted = Boolean(prefs.mutedGroups?.click);
