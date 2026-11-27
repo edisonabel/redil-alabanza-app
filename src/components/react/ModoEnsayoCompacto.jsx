@@ -1378,7 +1378,7 @@ function ChordPreviewPopover({
 }
 // ---- Apple-style sheets: when a panel opens it takes the screen, so only
 // what you are adjusting is shown (our colors, Apple Music's structure). ----
-function EnsayoSheet({ open, title, onClose, panelRef, children, trailing = null }) {
+function EnsayoSheet({ open, title, onClose, panelRef, children, trailing = null, desktopWidth = 'md:max-w-5xl' }) {
   useEffect(() => {
     if (!open || typeof document === 'undefined') return undefined;
     const previous = document.body.style.overflow;
@@ -1389,25 +1389,25 @@ function EnsayoSheet({ open, title, onClose, panelRef, children, trailing = null
   }, [onClose, open]);
   if (!open || typeof document === 'undefined') return null;
   return createPortal(
-    <div className="fixed inset-0 z-[80] flex flex-col justify-end">
+    <div className="fixed inset-0 z-[80] flex flex-col justify-end md:items-center md:justify-center md:p-8">
       <button type="button" aria-label="Cerrar" onClick={onClose} className="absolute inset-0 cursor-default bg-black/45 backdrop-blur-[2px]" />
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="ensayo-sheet relative mx-auto flex max-h-[94dvh] min-h-[62dvh] w-full max-w-2xl flex-col rounded-t-[1.75rem] bg-zinc-100 text-zinc-950 shadow-[0_-18px_50px_rgba(0,0,0,0.28)] dark:bg-zinc-900 dark:text-zinc-50"
+        className={`ensayo-sheet relative mx-auto flex max-h-[94dvh] min-h-[62dvh] w-full max-w-2xl flex-col rounded-t-[1.75rem] bg-zinc-100 text-zinc-950 shadow-[0_-18px_50px_rgba(0,0,0,0.28)] dark:bg-zinc-900 dark:text-zinc-50 md:max-h-[88vh] md:min-h-0 md:rounded-[2rem] md:shadow-[0_30px_80px_rgba(0,0,0,0.35)] ${desktopWidth}`}
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
-        <div className="mx-auto mt-2 h-1.5 w-10 shrink-0 rounded-full bg-zinc-300 dark:bg-zinc-700" />
-        <div className="grid shrink-0 grid-cols-[2.75rem_1fr_2.75rem] items-center px-3 pb-2 pt-1.5">
+        <div className="mx-auto mt-2 h-1.5 w-10 shrink-0 rounded-full bg-zinc-300 dark:bg-zinc-700 md:hidden" />
+        <div className="grid shrink-0 grid-cols-[2.75rem_1fr_2.75rem] items-center px-3 pb-2 pt-1.5 md:grid-cols-[3rem_1fr_6rem] md:px-6 md:pb-3 md:pt-5">
           <button type="button" onClick={onClose} aria-label="Cerrar" className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-200/90 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
             <X className="h-4.5 w-4.5" />
           </button>
-          <h2 className="truncate text-center text-[15px] font-bold">{title}</h2>
+          <h2 className="truncate text-center text-[15px] font-bold md:text-xl">{title}</h2>
           <div className="flex justify-end">{trailing}</div>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-8">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-8 md:px-8 md:pb-10">{children}</div>
       </div>
     </div>,
     document.body,
@@ -1415,16 +1415,16 @@ function EnsayoSheet({ open, title, onClose, panelRef, children, trailing = null
 }
 function SheetSection({ title, note = '', children }) {
   return (
-    <section className="mt-5 first:mt-2">
-      {title && <p className="mb-1.5 px-1 text-[12px] font-semibold uppercase tracking-[0.08em] text-zinc-500 dark:text-zinc-400">{title}</p>}
-      <div className="rounded-2xl bg-white px-3 py-2.5 dark:bg-zinc-800/80">{children}</div>
-      {note && <p className="mt-1.5 px-1 text-xs text-zinc-500 dark:text-zinc-400">{note}</p>}
+    <section className="mt-5 first:mt-2 md:mt-8 md:first:mt-3">
+      {title && <p className="mb-1.5 px-1 text-[12px] font-semibold uppercase tracking-[0.08em] text-zinc-500 dark:text-zinc-400 md:mb-2.5 md:text-[13px]">{title}</p>}
+      <div className="rounded-2xl bg-white px-3 py-2.5 dark:bg-zinc-800/80 md:rounded-[1.35rem] md:px-6 md:py-5">{children}</div>
+      {note && <p className="mt-1.5 px-1 text-xs text-zinc-500 dark:text-zinc-400 md:mt-2 md:text-sm">{note}</p>}
     </section>
   );
 }
 function SheetSegmented({ options, value, onChange, label }) {
   return (
-    <div role="radiogroup" aria-label={label} className="flex rounded-xl bg-zinc-200/80 p-0.5 dark:bg-zinc-950/60">
+    <div role="radiogroup" aria-label={label} className="flex rounded-xl bg-zinc-200/80 p-0.5 dark:bg-zinc-950/60 md:rounded-[0.9rem] md:p-1">
       {options.map((option) => {
         const active = option.value === value;
         return (
@@ -1434,7 +1434,7 @@ function SheetSegmented({ options, value, onChange, label }) {
             role="radio"
             aria-checked={active}
             onClick={() => onChange(option.value)}
-            className={`flex min-w-0 flex-1 items-center justify-center gap-1 rounded-[0.6rem] px-2 py-1.5 text-[13px] font-semibold transition-colors ${active ? 'bg-white text-zinc-950 shadow-sm dark:bg-zinc-700 dark:text-white' : 'text-zinc-500 dark:text-zinc-400'}`}
+            className={`flex min-w-0 flex-1 items-center justify-center gap-1 rounded-[0.6rem] px-2 py-1.5 text-[13px] font-semibold transition-colors md:gap-1.5 md:rounded-[0.75rem] md:py-2.5 md:text-[15px] ${active ? 'bg-white text-zinc-950 shadow-sm dark:bg-zinc-700 dark:text-white' : 'text-zinc-500 dark:text-zinc-400'}`}
           >
             {option.icon}
             <span className="truncate">{option.label}</span>
@@ -4208,8 +4208,8 @@ export default function ModoEnsayoCompacto({
               >
                 <MoreHorizontal className="h-4.5 w-4.5" />
               </button>
-              <EnsayoSheet open={showOptionsMenu} title="Opciones" onClose={() => setShowOptionsMenu(false)} panelRef={optionsMenuRef}>
-                <div className="ensayo-options-sheet mx-auto flex max-w-xl flex-col gap-4 rounded-2xl bg-white p-3 dark:bg-zinc-800/80">
+              <EnsayoSheet open={showOptionsMenu} title="Opciones" onClose={() => setShowOptionsMenu(false)} panelRef={optionsMenuRef} desktopWidth="md:max-w-4xl">
+                <div className="ensayo-options-sheet mx-auto flex max-w-xl flex-col gap-4 rounded-2xl bg-white p-3 dark:bg-zinc-800/80 md:block md:max-w-none md:columns-2 md:gap-10 md:rounded-[1.35rem] md:p-6 md:[&>*]:mb-6 md:[&>*]:break-inside-avoid">
                   {/* Tono */}
                   {originalSongKey !== '-' && (
                     <div>
@@ -4716,13 +4716,13 @@ export default function ModoEnsayoCompacto({
           paddingRight: 'calc(env(safe-area-inset-right) + 0.6rem)',
         }}
       >
-        <div className="mx-auto max-w-3xl rounded-[1.4rem] border border-zinc-200/80 bg-white/95 px-2.5 py-2 shadow-[0_12px_34px_rgba(15,23,42,0.16)] backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/95">
-          <div className="ensayo-footer-row flex items-center gap-2.5">
+        <div className="mx-auto max-w-3xl rounded-[1.4rem] border border-zinc-200/80 bg-white/95 px-2.5 py-2 shadow-[0_12px_34px_rgba(15,23,42,0.16)] backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/95 md:max-w-4xl md:rounded-[1.75rem] md:px-4 md:py-3">
+          <div className="ensayo-footer-row flex items-center gap-2.5 md:gap-4">
             <button
               type="button"
               onClick={handleTogglePlayback}
               disabled={!hasAudio || isPlaybackSeekPending || (shouldUseRehearsalMix && !audioReady)}
-              className={`ensayo-footer-play flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white transition-transform active:scale-95 ${hasAudio && !isPlaybackSeekPending && (!shouldUseRehearsalMix || audioReady) ? 'bg-action' : 'bg-zinc-500/50 cursor-not-allowed'}`}
+              className={`ensayo-footer-play flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white transition-transform active:scale-95 md:h-12 md:w-12 ${hasAudio && !isPlaybackSeekPending && (!shouldUseRehearsalMix || audioReady) ? 'bg-action' : 'bg-zinc-500/50 cursor-not-allowed'}`}
               aria-label={isPlaybackSeekPending
                 ? 'Preparando pistas'
                 : playbackSeekError
@@ -4744,10 +4744,10 @@ export default function ModoEnsayoCompacto({
               aria-label="Abrir ensayo: tu parte, mezcla y secciones"
             >
               <div className="flex items-baseline justify-between gap-2">
-                <span className={`truncate text-[13px] font-bold ${sequenceNavigationLabel ? 'text-brand' : ''}`}>
+                <span className={`truncate text-[13px] font-bold md:text-[15px] ${sequenceNavigationLabel ? 'text-brand' : ''}`}>
                   {sequenceNavigationLabel || currentSections[activeSectionIndex]?.name || 'Sección'}
                 </span>
-                <span className="shrink-0 text-[11px] font-semibold tabular-nums text-zinc-500 dark:text-zinc-400">
+                <span className="shrink-0 text-[11px] font-semibold tabular-nums text-zinc-500 dark:text-zinc-400 md:text-[13px]">
                   {formatSeconds(displayAudioCurrentTime)} / {durationLabel}
                 </span>
               </div>
@@ -4803,6 +4803,8 @@ export default function ModoEnsayoCompacto({
         panelRef={playbackOptionsRef}
         trailing={setlistPosition ? <span className="text-xs font-semibold text-zinc-500">{setlistPosition.index + 1} de {setlistPosition.total}</span> : null}
       >
+        <div className="md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:items-start md:gap-x-10">
+        <div className="min-w-0">
         {/* Song and transport */}
         <SheetSection>
           <div className="flex items-center gap-2">
@@ -4810,8 +4812,8 @@ export default function ModoEnsayoCompacto({
               <ChevronLeft className="h-5 w-5" />
             </button>
             <div className="min-w-0 flex-1 text-center">
-              <p className="truncate text-[15px] font-bold">{titleLine}</p>
-              <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">{artistLine}{currentSongBpm ? ` · ${currentSongBpm} BPM` : ''}</p>
+              <p className="truncate text-[15px] font-bold md:text-xl">{titleLine}</p>
+              <p className="truncate text-xs text-zinc-500 dark:text-zinc-400 md:mt-0.5 md:text-sm">{artistLine}{currentSongBpm ? ` · ${currentSongBpm} BPM` : ''}</p>
             </div>
             <button type="button" onClick={() => onNextSong?.()} disabled={!onNextSong} aria-label="Canción siguiente" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-zinc-600 disabled:opacity-30 dark:text-zinc-300">
               <ChevronRight className="h-5 w-5" />
@@ -4837,7 +4839,7 @@ export default function ModoEnsayoCompacto({
                 aria-label="Posición de reproducción"
               />
             </div>
-            <div className="flex justify-between text-[11px] font-semibold tabular-nums text-zinc-500 dark:text-zinc-400">
+            <div className="flex justify-between text-[11px] font-semibold tabular-nums text-zinc-500 dark:text-zinc-400 md:text-[13px]">
               <span>{formatSeconds(displayAudioCurrentTime)}</span>
               <span className="truncate px-2">{sequenceNavigationLabel || currentSections[activeSectionIndex]?.name || ''}</span>
               <span>{durationLabel}</span>
@@ -4864,7 +4866,7 @@ export default function ModoEnsayoCompacto({
               </div>
             )}
           </div>
-          <div className="mt-3 flex items-center justify-center gap-6">
+          <div className="mt-3 flex items-center justify-center gap-6 md:mt-5 md:gap-10">
             <button type="button" onClick={() => selectSection(Math.max(0, activeSectionIndex - 1), { seekAudio: true })} disabled={isPlaybackSeekPending} aria-label="Sección anterior" className="flex h-11 w-11 items-center justify-center rounded-full text-zinc-700 dark:text-zinc-200">
               <SkipBack className="h-5 w-5" />
             </button>
@@ -4873,7 +4875,7 @@ export default function ModoEnsayoCompacto({
               onClick={handleTogglePlayback}
               disabled={!hasAudio || isPlaybackSeekPending || (shouldUseRehearsalMix && !audioReady)}
               aria-label={isPlaying ? 'Pausar ensayo' : 'Reproducir ensayo'}
-              className="flex h-14 w-14 items-center justify-center rounded-full bg-action text-white disabled:opacity-50"
+              className="flex h-14 w-14 items-center justify-center rounded-full bg-action text-white disabled:opacity-50 md:h-16 md:w-16"
             >
               {isPlaybackSeekPending ? <LoaderCircle className="h-6 w-6 animate-spin" /> : isPlaying ? <Pause className="h-6 w-6" /> : <Play className="ml-0.5 h-6 w-6" />}
             </button>
@@ -4891,12 +4893,12 @@ export default function ModoEnsayoCompacto({
                 ? 'Esta secuencia no trae pistas de voz: ya suena sin voz para que cantes encima. La melodía está en Original.'
                 : (!sequence.prefs.hasChosenPart && sequence.suggestedPartIds.length > 0 ? 'Tomado de tu asignación en este evento.' : '')}
             >
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-1.5 md:gap-2">
                 <button
                   type="button"
                   onClick={sequence.toggleVoice}
                   aria-pressed={sequence.voiceSelected}
-                  className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[13px] font-semibold ${sequence.voiceSelected ? 'bg-brand text-white' : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-200'}`}
+                  className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[13px] font-semibold md:px-4 md:py-2 md:text-[15px] ${sequence.voiceSelected ? 'bg-brand text-white' : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-200'}`}
                 >
                   <Mic2 className="h-3.5 w-3.5" /> Voz
                 </button>
@@ -4906,7 +4908,7 @@ export default function ModoEnsayoCompacto({
                     type="button"
                     onClick={() => sequence.togglePartGroup(group.id)}
                     aria-pressed={group.selected}
-                    className={`rounded-full px-3 py-1.5 text-[13px] font-semibold ${group.selected ? 'bg-brand text-white' : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-200'}`}
+                    className={`rounded-full px-3 py-1.5 text-[13px] font-semibold md:px-4 md:py-2 md:text-[15px] ${group.selected ? 'bg-brand text-white' : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-200'}`}
                   >
                     {group.label}
                   </button>
@@ -4929,7 +4931,7 @@ export default function ModoEnsayoCompacto({
                       { value: 'muteada', label: 'Mutear', icon: <VolumeX className="h-3.5 w-3.5" /> },
                     ]}
                   />
-                  <p className="mt-1.5 px-1 text-xs text-zinc-500 dark:text-zinc-400">{REHEARSAL_PART_MODE_HINTS[isFullSequence ? sequence.partMode : 'normal']}</p>
+                  <p className="mt-1.5 px-1 text-xs text-zinc-500 dark:text-zinc-400 md:mt-2.5 md:text-sm">{REHEARSAL_PART_MODE_HINTS[isFullSequence ? sequence.partMode : 'normal']}</p>
                 </div>
               )}
             </SheetSection>
@@ -4948,6 +4950,36 @@ export default function ModoEnsayoCompacto({
               </SheetSection>
             )}
 
+          </>
+        )}
+
+        {!fullSequenceAvailable && (
+          <>
+            <SheetSection title="Audio">
+              <div className="flex flex-wrap gap-1.5 md:gap-2">
+                {playbackSources.map((source) => {
+                  const active = source.id === selectedPlaybackSourceId;
+                  return (
+                    <button
+                      key={`playback-source-${source.id}`}
+                      type="button"
+                      onClick={() => handleSelectPlaybackSource(source.id)}
+                      aria-pressed={active}
+                      className={`rounded-full px-3 py-1.5 text-[13px] font-semibold md:px-4 md:py-2 md:text-[15px] ${active ? 'bg-brand text-white' : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-200'}`}
+                    >
+                      {source.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </SheetSection>
+          </>
+        )}
+
+        </div>
+        <div className="min-w-0">
+        {fullSequenceAvailable && (
+          <>
             {isFullSequence ? (
               <SheetSection title="Mezcla">
                 {sequence.mixerGroups.map((group) => {
@@ -4956,7 +4988,7 @@ export default function ModoEnsayoCompacto({
                   const expandable = group.tracks.length > 1;
                   const expanded = expandedMixGroups.includes(group.id);
                   return (
-                    <div key={`mix-${group.id}`} className="border-b border-zinc-200/70 py-1.5 last:border-b-0 dark:border-white/10">
+                    <div key={`mix-${group.id}`} className="border-b border-zinc-200/70 py-1.5 last:border-b-0 dark:border-white/10 md:py-2.5">
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
@@ -4970,7 +5002,7 @@ export default function ModoEnsayoCompacto({
                         <button
                           type="button"
                           onClick={() => expandable && setExpandedMixGroups((current) => (current.includes(group.id) ? current.filter((id) => id !== group.id) : [...current, group.id]))}
-                          className="flex w-28 shrink-0 items-center gap-1 text-left text-[13px] font-semibold"
+                          className="flex w-28 shrink-0 items-center gap-1 text-left text-[13px] font-semibold md:w-44 md:text-[15px]"
                           aria-expanded={expandable ? expanded : undefined}
                         >
                           <span className="truncate">{group.label}</span>
@@ -5002,7 +5034,7 @@ export default function ModoEnsayoCompacto({
                             >
                               {trackMuted ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
                             </button>
-                            <span className="w-[5.6rem] shrink-0 truncate text-xs text-zinc-600 dark:text-zinc-300">{track.label}</span>
+                            <span className="w-[5.6rem] shrink-0 truncate text-xs text-zinc-600 dark:text-zinc-300 md:w-[9.5rem] md:text-sm">{track.label}</span>
                             <input
                               type="range"
                               min="0"
@@ -5021,7 +5053,7 @@ export default function ModoEnsayoCompacto({
                   );
                 })}
                 <div className="flex items-center gap-2 pt-2">
-                  <span className="w-[9.5rem] shrink-0 pl-1 text-[13px] font-bold">Master</span>
+                  <span className="w-[9.5rem] shrink-0 pl-1 text-[13px] font-bold md:w-[13.25rem] md:text-[15px]">Master</span>
                   <input
                     type="range"
                     min="0"
@@ -5043,27 +5075,8 @@ export default function ModoEnsayoCompacto({
             )}
           </>
         )}
-
         {!fullSequenceAvailable && (
           <>
-            <SheetSection title="Audio">
-              <div className="flex flex-wrap gap-1.5">
-                {playbackSources.map((source) => {
-                  const active = source.id === selectedPlaybackSourceId;
-                  return (
-                    <button
-                      key={`playback-source-${source.id}`}
-                      type="button"
-                      onClick={() => handleSelectPlaybackSource(source.id)}
-                      aria-pressed={active}
-                      className={`rounded-full px-3 py-1.5 text-[13px] font-semibold ${active ? 'bg-brand text-white' : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-200'}`}
-                    >
-                      {source.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </SheetSection>
             {hasGuideCueSources && (
               <SheetSection title="Guía">
                 <div className="flex items-center gap-2">
@@ -5106,7 +5119,6 @@ export default function ModoEnsayoCompacto({
             )}
           </>
         )}
-
         {activePadUrl && (
           <SheetSection title={`Pad ambiental (${currentSongDisplayKey})`}>
             <div className="flex items-center gap-2">
@@ -5115,7 +5127,7 @@ export default function ModoEnsayoCompacto({
                 onClick={handleTogglePad}
                 aria-pressed={isPadActive}
                 aria-label={isPadActive ? 'Apagar pad ambiental' : 'Activar pad ambiental'}
-                className={`rounded-full px-3 py-1.5 text-[13px] font-semibold ${isPadActive ? 'bg-brand text-white' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300'}`}
+                className={`rounded-full px-3 py-1.5 text-[13px] font-semibold md:px-4 md:py-2 md:text-[15px] ${isPadActive ? 'bg-brand text-white' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300'}`}
               >
                 {isPadActive ? 'Encendido' : 'Apagado'}
               </button>
@@ -5134,6 +5146,8 @@ export default function ModoEnsayoCompacto({
             </div>
           </SheetSection>
         )}
+        </div>
+        </div>
       </EnsayoSheet>
       {showChordLibrary && (
         <ChordLibraryModal
