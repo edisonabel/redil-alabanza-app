@@ -1407,7 +1407,8 @@ function EnsayoSheet({ open, title, onClose, panelRef, children, trailing = null
   }, [onClose, open]);
   if (!open || typeof document === 'undefined') return null;
   return createPortal(
-    <div className="fixed inset-0 z-[80] flex flex-col justify-end md:items-center md:justify-center md:p-8">
+    // Above the z-[100] shell Repertorio wraps the rehearsal in; sheets live on <body>.
+    <div className="fixed inset-0 z-[200] flex flex-col justify-end md:items-center md:justify-center md:p-8">
       <button type="button" aria-label="Cerrar" onClick={onClose} className="absolute inset-0 cursor-default bg-black/45 backdrop-blur-[2px]" />
       <div
         ref={panelRef}
