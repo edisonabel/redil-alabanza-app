@@ -4873,13 +4873,13 @@ export default function ModoEnsayoCompacto({
       {setlistSidebarActive && (
         <nav
           aria-label="Canciones del ensayo"
-          className="fixed left-3 z-20 flex w-[18rem] flex-col overflow-hidden rounded-[1.35rem] border border-zinc-200 bg-white/95 shadow-sm transition-[top] duration-300 dark:border-white/10 dark:bg-zinc-900/95"
+          className="fixed left-3 z-20 flex w-[18rem] flex-col transition-[top] duration-300"
           style={{ top: currentHeaderOffset + 12, maxHeight: `calc(100dvh - ${currentHeaderOffset + 12}px - env(safe-area-inset-bottom) - 7rem)` }}
         >
-          <p className="px-4 pb-2 pt-4 text-[11px] font-black uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
+          <p className="px-3 pb-2 pt-1 text-[13px] font-semibold text-zinc-500 dark:text-zinc-400">
             Canciones del ensayo
           </p>
-          <ol className="min-h-0 overflow-y-auto px-2 pb-2">
+          <ol className="min-h-0 overflow-y-auto">
             {setlistSongs.map((setlistSong, index) => {
               const isCurrent = setlistPosition?.index === index;
               return (
@@ -4888,17 +4888,17 @@ export default function ModoEnsayoCompacto({
                     type="button"
                     onClick={() => { if (!isCurrent) onOpenSetlistSong(index); }}
                     aria-current={isCurrent ? 'true' : undefined}
-                    className={`flex w-full items-center gap-3 rounded-2xl px-2.5 py-2.5 text-left transition-colors ${isCurrent ? 'bg-brand/10 dark:bg-brand/15' : 'hover:bg-zinc-100 dark:hover:bg-white/5'}`}
+                    className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${isCurrent ? 'bg-zinc-900/[0.06] dark:bg-white/[0.08]' : 'hover:bg-zinc-900/[0.04] dark:hover:bg-white/[0.04]'}`}
                   >
-                    <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-black ${isCurrent ? 'bg-brand text-white' : 'bg-zinc-100 text-zinc-500 dark:bg-white/10 dark:text-zinc-400'}`}>
-                      {isCurrent && isPlaying ? <Volume2 className="h-3.5 w-3.5" /> : index + 1}
+                    <span className={`flex w-5 shrink-0 justify-center text-[13px] tabular-nums ${isCurrent ? 'font-semibold text-brand' : 'text-zinc-400 dark:text-zinc-500'}`}>
+                      {isCurrent ? <Volume2 className="h-4 w-4" /> : index + 1}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className={`block truncate text-[15px] font-bold ${isCurrent ? 'text-brand' : 'text-zinc-800 dark:text-zinc-100'}`}>{setlistSong.title}</span>
+                      <span className={`block truncate text-[15px] ${isCurrent ? 'font-semibold text-brand' : 'font-medium text-zinc-800 dark:text-zinc-100'}`}>{setlistSong.title}</span>
                       {setlistSong.artist && <span className="block truncate text-xs text-zinc-500 dark:text-zinc-400">{setlistSong.artist}</span>}
                     </span>
                     {setlistSong.keyLabel && (
-                      <span className="shrink-0 text-xs font-bold text-zinc-500 dark:text-zinc-400">{setlistSong.keyLabel}</span>
+                      <span className="shrink-0 text-xs text-zinc-400 dark:text-zinc-500">{setlistSong.keyLabel}</span>
                     )}
                   </button>
                 </li>
