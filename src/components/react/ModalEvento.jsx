@@ -29,6 +29,7 @@ import {
 import {
     formatClockLabel,
     isSinFiltrosMinistry,
+    listSelectableMinistries,
     SIN_FILTROS_MINISTRY_NAME,
     SIN_FILTROS_REHEARSAL_END_TIME,
     SIN_FILTROS_REHEARSAL_TIME,
@@ -942,7 +943,7 @@ export default function ModalEvento({ initialMinistries = [] }) {
                                         <span className="text-xs font-black uppercase tracking-[0.14em] text-content-muted">Ministerio</span>
                                         <select
                                             id="ev-ministerio"
-                                            value={ministryId}
+                                            value={listSelectableMinistries(initialMinistries).some((ministry) => ministry.id === ministryId) ? ministryId : ''}
                                             onChange={(event) => {
                                                 const nextMinistryId = event.target.value;
                                                 const nextMinistry = (initialMinistries || []).find((ministry) => ministry.id === nextMinistryId);
@@ -956,7 +957,7 @@ export default function ModalEvento({ initialMinistries = [] }) {
                                             className="mt-2 h-12 w-full appearance-none rounded-xl border border-border bg-surface px-4 text-base text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
                                         >
                                             <option value="">Alabanza general</option>
-                                            {(initialMinistries || []).map((ministry) => (
+                                            {listSelectableMinistries(initialMinistries).map((ministry) => (
                                                 <option key={ministry.id} value={ministry.id}>{ministry.nombre}</option>
                                             ))}
                                         </select>
