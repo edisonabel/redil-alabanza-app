@@ -4975,26 +4975,22 @@ export default function ModoEnsayoCompacto({
           </button>
         </>
       )}
-      {/* Floating bar: only what you use while playing; everything else lives in the "Ensayo" sheet. */}
-      <div
-        className={`ensayo-footer-shell fixed inset-x-0 bottom-0 z-40 px-3 pb-[calc(env(safe-area-inset-bottom)+0.6rem)] ${setlistSidebarActive ? 'pl-[19.5rem] 2xl:pl-[22.5rem]' : ''}`}
-        style={{
-          paddingLeft: setlistSidebarActive ? undefined : 'calc(env(safe-area-inset-left) + 0.6rem)',
-          paddingRight: setlistSidebarActive ? 'calc(env(safe-area-inset-right) + 0.75rem)' : 'calc(env(safe-area-inset-right) + 0.6rem)',
-        }}
-      >
-        <div className={`mx-auto ${wideColumnActive ? 'max-w-[66rem] 2xl:max-w-[78rem]' : 'max-w-3xl md:max-w-4xl'} rounded-[1.4rem] border border-zinc-200/80 bg-white/95 px-2.5 py-2 shadow-[0_12px_34px_rgba(15,23,42,0.16)] backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/95 md:rounded-[1.75rem] md:px-4 md:py-3`}>
-          <div className="ensayo-footer-row flex items-center gap-2.5 md:gap-4">
+      {/* Bottom bar. Phones: a floating pill. Computers with the songs list:
+          a full-width bar, transport under the list and the timeline under the lyrics. */}
+      {(() => {
+        const prevSectionButton = (
             <button
               type="button"
               onClick={() => selectSection(Math.max(0, activeSectionIndex - 1), { seekAudio: true })}
               disabled={isPlaybackSeekPending || activeSectionIndex <= 0}
               aria-label="Sección anterior"
               title="Sección anterior"
-              className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full text-zinc-600 transition-colors hover:bg-zinc-900/5 disabled:opacity-35 dark:text-zinc-300 dark:hover:bg-white/5 lg:flex"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-zinc-600 transition-colors hover:bg-zinc-900/5 disabled:opacity-35 dark:text-zinc-300 dark:hover:bg-white/5"
             >
               <SkipBack className="h-5 w-5" />
             </button>
+        );
+        const playButton = (
             <button
               type="button"
               onClick={handleTogglePlayback}
@@ -5014,16 +5010,20 @@ export default function ModoEnsayoCompacto({
                   ? <Pause className="h-5 w-5" />
                   : <Play className="ml-0.5 h-5 w-5" />}
             </button>
+        );
+        const nextSectionButton = (
             <button
               type="button"
               onClick={() => selectSection(Math.min(currentSections.length - 1, activeSectionIndex + 1), { seekAudio: true })}
               disabled={isPlaybackSeekPending || activeSectionIndex >= currentSections.length - 1}
               aria-label="Sección siguiente"
               title="Sección siguiente"
-              className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full text-zinc-600 transition-colors hover:bg-zinc-900/5 disabled:opacity-35 dark:text-zinc-300 dark:hover:bg-white/5 lg:flex"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-zinc-600 transition-colors hover:bg-zinc-900/5 disabled:opacity-35 dark:text-zinc-300 dark:hover:bg-white/5 lg:flex"
             >
               <SkipForward className="h-5 w-5" />
             </button>
+        );
+        const timelineButton = (
             <button
               type="button"
               onClick={() => setShowPlaybackOptions(true)}
@@ -5055,6 +5055,8 @@ export default function ModoEnsayoCompacto({
                 </div>
               ) : null}
             </button>
+        );
+        const loopButton = (
             <button
               type="button"
               onClick={handleLoopButton}
@@ -5070,6 +5072,8 @@ export default function ModoEnsayoCompacto({
                 </span>
               )}
             </button>
+        );
+        const mixButton = (
             <button
               type="button"
               onClick={() => setShowPlaybackOptions(true)}
@@ -5080,9 +5084,48 @@ export default function ModoEnsayoCompacto({
             >
               <SlidersHorizontal className="h-4.5 w-4.5" />
             </button>
+        );
+        if (setlistSidebarActive) {
+          return (
+            <div className="ensayo-footer-shell fixed inset-x-0 bottom-0 z-40 border-t border-zinc-200/80 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl dark:border-white/10 dark:bg-zinc-950/95">
+              <div className="flex h-[5.25rem] items-center">
+                <div className="flex w-[19.5rem] shrink-0 items-center justify-center gap-5 2xl:w-[22.5rem]">
+                  {prevSectionButton}
+                  {playButton}
+                  {nextSectionButton}
+                </div>
+                <div className="min-w-0 flex-1 pr-3">
+                  <div className="mx-auto flex w-full max-w-[66rem] items-center gap-4 2xl:max-w-[78rem]">
+                    {timelineButton}
+                    {loopButton}
+                    {mixButton}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        }
+        return (
+          <div
+            className="ensayo-footer-shell fixed inset-x-0 bottom-0 z-40 px-3 pb-[calc(env(safe-area-inset-bottom)+0.6rem)]"
+            style={{
+              paddingLeft: 'calc(env(safe-area-inset-left) + 0.6rem)',
+              paddingRight: 'calc(env(safe-area-inset-right) + 0.6rem)',
+            }}
+          >
+            <div className={`mx-auto ${wideColumnActive ? 'max-w-[66rem] 2xl:max-w-[78rem]' : 'max-w-3xl md:max-w-4xl'} rounded-[1.4rem] border border-zinc-200/80 bg-white/95 px-2.5 py-2 shadow-[0_12px_34px_rgba(15,23,42,0.16)] backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/95 md:rounded-[1.75rem] md:px-4 md:py-3`}>
+              <div className="ensayo-footer-row flex items-center gap-2.5 md:gap-4">
+                {wideColumnActive || atrilActive ? prevSectionButton : null}
+                {playButton}
+                {wideColumnActive || atrilActive ? nextSectionButton : null}
+                {timelineButton}
+                {loopButton}
+                {mixButton}
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+        );
+      })()}
       <EnsayoSheet
         open={showPlaybackOptions}
         title="Ensayo"
