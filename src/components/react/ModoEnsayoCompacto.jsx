@@ -69,17 +69,19 @@ const FONT_PRESETS = {
 };
 const FONT_SCALE_SEQUENCE = ['grande', 'enorme'];
 // Computers: one column, bigger, to read from the music stand.
+// Sizes grow with the screen so the lines fill the column instead of
+// leaving half of every box empty.
 const WIDE_FONT_PRESETS = {
   grande: {
-    section: 'text-[0.9rem] tracking-[0.3em]',
-    chord: 'text-[1.3rem]',
-    lyric: 'text-[1.45rem]',
+    section: 'text-[clamp(0.9rem,0.85vw,1.1rem)] tracking-[0.3em]',
+    chord: 'text-[clamp(1.25rem,1.6vw,1.85rem)]',
+    lyric: 'text-[clamp(1.4rem,1.9vw,2.15rem)]',
     lineGap: 'gap-y-2',
   },
   enorme: {
-    section: 'text-[1rem] tracking-[0.32em]',
-    chord: 'text-[1.55rem]',
-    lyric: 'text-[1.75rem]',
+    section: 'text-[clamp(1rem,0.95vw,1.2rem)] tracking-[0.32em]',
+    chord: 'text-[clamp(1.4rem,1.95vw,2.2rem)]',
+    lyric: 'text-[clamp(1.6rem,2.35vw,2.6rem)]',
     lineGap: 'gap-y-2.5',
   },
 };
@@ -3123,7 +3125,17 @@ export default function ModoEnsayoCompacto({
       isMetronomeOn ? TRACK_DUCK_IN_DURATION_MS : TRACK_DUCK_OUT_DURATION_MS,
     );
   }, [fadeTrackGainTo, isMetronomeOn]);
+  const songResetKeyRef = useRef(null);
   useEffect(() => {
+    // Reset only when the song really changes. Rotating the phone or a new
+    // callback identity used to land here too, which stopped playback and
+    // saved capo 0 / tone 0 over the musician's personal settings.
+    const songResetKey = `${currentSongKey}|${currentSong?.mp3 || ''}`;
+    if (songResetKeyRef.current === songResetKey) {
+      setHeaderHidden(isLandscapeCompact);
+      return;
+    }
+    songResetKeyRef.current = songResetKey;
     clearTimelineSeekCommit();
     timelineSeekPreviewRef.current = null;
     setTimelineSeekPreview(null);
@@ -4709,7 +4721,7 @@ export default function ModoEnsayoCompacto({
       >
         <div
           ref={atrilRef}
-          className={atrilActive ? 'ensayo-sections-layout ensayo-atril relative mx-auto max-w-[110rem] overflow-hidden' : `ensayo-sections-layout mx-auto ${wideColumnActive ? 'max-w-[54rem]' : 'max-w-3xl'}`}
+          className={atrilActive ? 'ensayo-sections-layout ensayo-atril relative mx-auto max-w-[110rem] overflow-hidden' : `ensayo-sections-layout mx-auto ${wideColumnActive ? 'max-w-[66rem]' : 'max-w-3xl'}`}
           style={atrilActive ? { height: atrilHeight || undefined, columnCount: 2, columnGap: '3rem', columnFill: 'auto', paddingTop: '1rem' } : undefined}
         >
           {currentSections.map((section, sectionIndex) => {
