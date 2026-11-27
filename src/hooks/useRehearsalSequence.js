@@ -199,15 +199,30 @@ export function useRehearsalSequence({
   const setPartMode = useCallback((nextPartMode) => {
     updatePrefs({ partMode: partMode === nextPartMode ? 'normal' : nextPartMode });
   }, [partMode, updatePrefs]);
+  // You rehearse an instrument, not a file: the part is chosen by instrument
+  // group (all its stems), with the same groups as the mix.
+  const partGroups = useMemo(() => stemGroups
+    // Voz has its own chip; nobody plays "Otros" (FX, full mixes).
+    .filter((group) => group.id !== 'voces' && group.id !== 'otros' && !group.control)
+    .map((group) => {
+      const trackIds = partCandidates.filter((track) => track.groupId === group.id).map((track) => track.id);
+      return { id: group.id, label: group.label, trackIds, selected: trackIds.length > 0 && trackIds.every((id) => partTrackIds.includes(id)) };
+    })
+    .filter((group) => group.trackIds.length > 0), [partCandidates, partTrackIds, stemGroups]);
+  const togglePartGroup = useCallback((groupId) => {
+    const group = partGroups.find((item) => item.id === groupId);
+    if (!group) return;
+    const current = new Set(partTrackIds);
+    group.trackIds.forEach((id) => (group.selected ? current.delete(id) : current.add(id)));
+    updatePrefs({ partTrackIds: Array.from(current), hasChosenPart: true, singer: false });
+  }, [partGroups, partTrackIds, updatePrefs]);
   const partLabel = singerWithoutStems
     ? 'Voz'
     : partTrackIds.length
       ? [
         ...(voiceSelected ? ['Voz'] : []),
-        ...partCandidates
-          .filter((track) => partTrackIds.includes(track.id) && !(voiceSelected && track.groupId === 'voces'))
-          .map(rehearsalTrackLabel),
-      ].join(', ')
+        ...partGroups.filter((group) => group.selected).map((group) => group.label),
+      ].join(', ') || 'Elige tu parte'
       : 'Elige tu parte';
 
   // ---- Original mp3 ↔ sequence (REAPER count-in) ----
@@ -428,6 +443,8 @@ export function useRehearsalSequence({
     voiceSelected,
     togglePart,
     toggleVoice,
+    partGroups,
+    togglePartGroup,
     setPartMode,
     mixerGroups,
     mp3Offset,

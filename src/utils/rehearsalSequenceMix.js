@@ -31,14 +31,20 @@ export const ROLE_PART_CATEGORIES = {
   coro: ['vocals', 'choir'],
 };
 
+// Mix groups for rehearsing one instrument: each instrument its own fader
+// (acoustic and electric guitar apart, piano apart from keys), in the order a
+// band reads them. Only groups the song actually has are shown.
 export const REHEARSAL_GROUPS = [
   { id: 'click', label: 'Click', categories: ['click', 'cues'], control: true },
   { id: 'guia', label: 'Guía', categories: ['guide'], control: true },
-  { id: 'bateria', label: 'Batería', categories: ['drums', 'percussion', 'cymbals'] },
+  { id: 'bateria', label: 'Batería y percusión', categories: ['drums', 'percussion', 'cymbals'] },
   { id: 'bajo', label: 'Bajo', categories: ['bass', 'synthBass'] },
-  { id: 'teclas', label: 'Teclas', categories: ['piano', 'keys', 'organ', 'synth', 'pads'] },
-  { id: 'guitarras', label: 'Guitarras', categories: ['acoustic', 'electric', 'banjo', 'mandolin', 'ukulele'] },
-  { id: 'orquesta', label: 'Orquesta', categories: ['violin', 'strings', 'brass', 'woodwinds'] },
+  { id: 'keys', label: 'Keys', categories: ['keys', 'organ', 'synth', 'pads'] },
+  { id: 'piano', label: 'Piano', categories: ['piano'] },
+  { id: 'cuerdas', label: 'Cuerdas', categories: ['violin', 'strings'] },
+  { id: 'vientos', label: 'Vientos', categories: ['brass', 'woodwinds'] },
+  { id: 'electrica', label: 'Guitarra eléctrica', categories: ['electric'] },
+  { id: 'acustica', label: 'Guitarra acústica', categories: ['acoustic', 'banjo', 'mandolin', 'ukulele'] },
   { id: 'voces', label: 'Voces', categories: ['vocals', 'choir'] },
   { id: 'otros', label: 'Otros', categories: ['sequence', 'misc', 'unknown'] },
 ];

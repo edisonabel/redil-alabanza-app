@@ -27,9 +27,9 @@ const session = [
 
 const tracks = classifyRehearsalTracks(session);
 assert.deepEqual(tracks.map((t) => t.id), ['click', 'guide', 'bass', 'keys', 'ag']);
-assert.deepEqual(tracks.map((t) => t.groupId), ['click', 'guia', 'bajo', 'teclas', 'guitarras']);
+assert.deepEqual(tracks.map((t) => t.groupId), ['click', 'guia', 'bajo', 'keys', 'acustica']);
 assert.equal(tracks[3].url, 'https://x/04-keys-opt.m4a', 'prefers optimizedUrl');
-assert.deepEqual(listPresentGroups(tracks).map((g) => g.id), ['click', 'guia', 'bajo', 'teclas', 'guitarras']);
+assert.deepEqual(listPresentGroups(tracks).map((g) => g.id), ['click', 'guia', 'bajo', 'keys', 'acustica']);
 assert.deepEqual(listPartCandidates(tracks).map((t) => t.id), ['bass', 'keys', 'ag']);
 
 // Normal: base volumes untouched.
@@ -72,7 +72,7 @@ assert.deepEqual(suggestPartTrackIds(tracks, ['voz_principal']), []);
 assert.deepEqual(suggestPartTrackIds(tracks, []), []);
 
 // Group level and mute apply on top.
-const grouped = computeRehearsalTrackGains({ tracks, groupLevels: { teclas: 0.5 }, mutedGroups: { click: true } });
+const grouped = computeRehearsalTrackGains({ tracks, groupLevels: { keys: 0.5 }, mutedGroups: { click: true } });
 assert.equal(grouped.keys, 0.37);
 assert.equal(grouped.click, 0);
 
@@ -100,11 +100,11 @@ assert.deepEqual(buildCombinedWaveform(withEnv, 4, 4), [0, 0.5, 1, 0.25]);
 assert.deepEqual(buildCombinedWaveform([], 4, 4), []);
 
 // Prefs sanitizer drops unknown tracks and bad values.
-const prefs = sanitizeRehearsalMixPrefs({ source: 'nope', partMode: 'x', partTrackIds: ['bass', 'ghost'], groupLevels: { teclas: 9 }, master: 3 }, ['bass']);
+const prefs = sanitizeRehearsalMixPrefs({ source: 'nope', partMode: 'x', partTrackIds: ['bass', 'ghost'], groupLevels: { keys: 9 }, master: 3 }, ['bass']);
 assert.equal(prefs.source, 'secuencia');
 assert.equal(prefs.partMode, 'normal');
 assert.deepEqual(prefs.partTrackIds, ['bass']);
-assert.equal(prefs.groupLevels.teclas, 1.5);
+assert.equal(prefs.groupLevels.keys, 1.5);
 assert.equal(prefs.master, 1);
 
 assert.equal(estimateEnvelopeDuration(withEnv), 4);
@@ -131,4 +131,12 @@ const liveMuted = classifyRehearsalTracks([
 assert.equal(computeRehearsalTrackGains({ tracks: liveMuted })['acoustic-gtr'], 0);
 assert.equal(computeRehearsalTrackGains({ tracks: liveMuted, partMode: 'aislada', partTrackIds: ['acoustic-gtr'] })['acoustic-gtr'], 0.69);
 assert.ok(computeRehearsalTrackGains({ tracks: liveMuted, partMode: 'aumentada', partTrackIds: ['acoustic-gtr'] })['acoustic-gtr'] > 1);
+// One fader per instrument: acoustic and electric guitar apart, piano apart from keys, synth bass with the bass.
+const band = classifyRehearsalTracks([
+  { id: 'ag', name: 'Acoustic Gtr', url: 'a' }, { id: 'eg', name: 'Electric Gtr', url: 'e' },
+  { id: 'pno', name: 'Piano', url: 'p' }, { id: 'k', name: 'Keys', url: 'k' }, { id: 'sb', name: 'Synth Bass', url: 's' },
+  { id: 'b', name: 'Bass', url: 'b' }, { id: 'perc', name: 'Percussion', url: 'pc' }, { id: 'dr', name: 'Drums', url: 'd' },
+  { id: 'str', name: 'Strings', url: 'st' },
+]);
+assert.deepEqual(listPresentGroups(band).map((g) => g.id), ['bateria', 'bajo', 'keys', 'piano', 'cuerdas', 'electrica', 'acustica']);
 console.log('rehearsal sequence mix: ok');

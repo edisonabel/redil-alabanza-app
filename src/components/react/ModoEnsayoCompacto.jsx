@@ -9,7 +9,6 @@ import { canUseAdvancedStreamingEngine, useMultitrackEngine } from '../../hooks/
 import {
   FULL_SEQUENCE_SOURCE_ID,
   readStoredRehearsalSource,
-  rehearsalTrackLabel,
   songHasRehearsalSequence,
   useRehearsalSequence,
 } from '../../hooks/useRehearsalSequence';
@@ -4642,7 +4641,7 @@ export default function ModoEnsayoCompacto({
           <div ref={playbackOptionsRef} className="mx-auto mb-2 max-w-5xl px-4">
             <div className="max-h-[min(62dvh,34rem)] overflow-y-auto overscroll-contain rounded-[1.1rem] border border-zinc-200/85 bg-white/96 px-3 py-3 shadow-[0_14px_34px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/96">
               {fullSequenceAvailable && (
-                <div className="mb-4 border-b border-zinc-200/60 pb-3 dark:border-white/10">
+                <div className={activePadUrl ? 'mb-1' : ''}>
                   <p className="mb-2 text-[0.66rem] font-black uppercase tracking-[0.24em] text-zinc-500 dark:text-zinc-400">
                     ¿Qué tocas o cantas?
                   </p>
@@ -4658,24 +4657,26 @@ export default function ModoEnsayoCompacto({
                     >
                       <Mic2 className="h-3.5 w-3.5" /> Voz
                     </button>
-                    {sequence.instrumentCandidates.map((track) => {
-                      const selected = sequence.partTrackIds.includes(track.id);
-                      return (
-                        <button
-                          key={`part-${track.id}`}
-                          type="button"
-                          onClick={() => sequence.togglePart(track.id)}
-                          aria-pressed={selected}
-                          className={`rounded-full border px-3 py-1.5 text-sm font-bold ${selected ? 'border-brand bg-brand text-white' : 'border-zinc-200 text-zinc-700 dark:border-white/10 dark:text-zinc-200'}`}
-                        >
-                          {rehearsalTrackLabel(track)}
-                        </button>
-                      );
-                    })}
+                    {sequence.partGroups.map((group) => (
+                      <button
+                        key={`part-${group.id}`}
+                        type="button"
+                        onClick={() => sequence.togglePartGroup(group.id)}
+                        aria-pressed={group.selected}
+                        className={`rounded-full border px-3 py-1.5 text-sm font-bold ${group.selected ? 'border-brand bg-brand text-white' : 'border-zinc-200 text-zinc-700 dark:border-white/10 dark:text-zinc-200'}`}
+                      >
+                        {group.label}
+                      </button>
+                    ))}
                   </div>
                   {sequence.singerWithoutStems && (
                     <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
                       Esta secuencia no trae pistas de voz: ya suena sin voz para que cantes encima. Para escuchar la melodía, toca <b>Original</b>.
+                    </p>
+                  )}
+                  {!isFullSequence && (
+                    <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+                      Estás escuchando la grabación original. Toca <b>Original</b> otra vez para volver a la secuencia y su mezcla.
                     </p>
                   )}
                   {isFullSequence && (
@@ -4731,6 +4732,7 @@ export default function ModoEnsayoCompacto({
                   )}
                 </div>
               )}
+              {!fullSequenceAvailable && (<>
               <div className="mb-2 flex items-center justify-between gap-3">
                 <p className="text-[0.66rem] font-black uppercase tracking-[0.24em] text-zinc-500 dark:text-zinc-400">
                   Fuentes de reproduccion
@@ -4763,6 +4765,7 @@ export default function ModoEnsayoCompacto({
                   </div>
                 )}
               </div>
+              </>)}
               {hasGuideCueSources && (
                 <div className="mt-4 border-t border-zinc-200/60 pt-3 dark:border-white/10">
                   <div className="mb-2 flex items-center justify-between gap-3">
@@ -4804,7 +4807,7 @@ export default function ModoEnsayoCompacto({
                   </div>
                 </div>
               )}
-              {hasAudio && (
+              {hasAudio && !fullSequenceAvailable && (
                 <div className="mt-4 border-t border-zinc-200/60 pt-3 dark:border-white/10">
                   <div className="mb-2 flex items-center justify-between gap-3">
                     <p className="text-[0.66rem] font-black uppercase tracking-[0.24em] text-zinc-500 dark:text-zinc-400">
@@ -5052,8 +5055,8 @@ export default function ModoEnsayoCompacto({
                 ? 'border-brand/35 bg-brand/10 text-brand'
                 : 'border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
                 }`}
-              aria-label="Abrir fuentes de reproduccion"
-              title="Fuentes de reproduccion"
+              aria-label={fullSequenceAvailable ? 'Tu parte y mezcla' : 'Abrir fuentes de reproduccion'}
+              title={fullSequenceAvailable ? 'Tu parte y mezcla' : 'Fuentes de reproduccion'}
               aria-expanded={showPlaybackOptions}
             >
               <SlidersHorizontal className="h-4.5 w-4.5" />
