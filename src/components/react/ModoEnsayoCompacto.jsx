@@ -4853,7 +4853,7 @@ export default function ModoEnsayoCompacto({
           paddingLeft: setlistSidebarActive ? undefined : 'calc(env(safe-area-inset-left) + 0.75rem)',
           paddingRight: 'calc(env(safe-area-inset-right) + 0.75rem)',
           // Room for the floating bar.
-          paddingBottom: 'calc(env(safe-area-inset-bottom) + 7.5rem)',
+          paddingBottom: `calc(env(safe-area-inset-bottom) + ${fullSequenceAvailable && !setlistSidebarActive ? '10rem' : '7.5rem'})`,
         }}
       >
         <div
@@ -5054,24 +5054,6 @@ export default function ModoEnsayoCompacto({
               );
             })}
           </ol>
-          {showPartModeControls && (
-            <div className="mt-6 px-1">
-              <p className="px-2 pb-2 text-[13px] font-semibold text-zinc-500 dark:text-zinc-400">
-                Tu parte <span className="font-normal">· {sequence.partLabel}</span>
-              </p>
-              <SheetSegmented
-                label="Qué hacer con tu parte"
-                value={isFullSequence ? sequence.partMode : 'normal'}
-                onChange={handlePartModeChange}
-                options={[
-                  { value: 'normal', label: 'Normal' },
-                  { value: 'aumentada', label: 'Subir' },
-                  { value: 'aislada', label: 'Aislar' },
-                  { value: 'muteada', label: 'Mutear' },
-                ]}
-              />
-            </div>
-          )}
           {fullSequenceAvailable && originalPlaybackSource && (
             <div className="mt-5 px-1">
               <p className="px-2 pb-2 text-[13px] font-semibold text-zinc-500 dark:text-zinc-400">
@@ -5168,7 +5150,7 @@ export default function ModoEnsayoCompacto({
               <div className="mt-1.5">
                 <SectionStrip segments={sectionStripSegments} currentTime={displayAudioCurrentTime} barClass={setlistSidebarActive ? 'h-1.5' : 'h-[4px]'} />
               </div>
-              {(rehearsalMixLoadProgress && shouldUseRehearsalMix) || audioLoadError || playbackSeekError || playbackSeekNotice || (fullSequenceAvailable && (sequence.partMode !== 'normal' || !isFullSequence)) ? (
+              {(rehearsalMixLoadProgress && shouldUseRehearsalMix) || audioLoadError || playbackSeekError || playbackSeekNotice || (fullSequenceAvailable && (!isFullSequence || (sequence.partMode !== 'normal' && !showPartModeControls))) ? (
                 <div className="mt-1 truncate text-[11px] font-semibold">
                   {shouldUseRehearsalMix && rehearsalMixLoadProgress
                     ? <span className="text-zinc-500">Cargando secuencia {rehearsalMixLoadProgress.loaded}/{rehearsalMixLoadProgress.total}</span>
@@ -5183,6 +5165,46 @@ export default function ModoEnsayoCompacto({
               ) : null}
             </button>
         );
+        // Normal / Subir / Aislar / Mutear: always at hand while rehearsing.
+        const currentPartMode = isFullSequence ? sequence.partMode : 'normal';
+        const partModeSwitch = showPartModeControls ? (
+          <div role="radiogroup" aria-label={`Tu parte: ${sequence.partLabel}`} className="flex shrink-0 rounded-full bg-zinc-100 p-0.5 dark:bg-white/[0.07]">
+            {[['normal', 'Normal'], ['aumentada', 'Subir'], ['aislada', 'Aislar'], ['muteada', 'Mutear']].map(([value, label]) => {
+              const active = currentPartMode === value;
+              return (
+                <button
+                  key={`part-mode-${value}`}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => handlePartModeChange(value)}
+                  className={`rounded-full px-2.5 py-1 text-[12px] font-semibold transition-colors md:px-3 md:text-[13px] ${active ? 'bg-brand text-white shadow-sm' : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-white'}`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        ) : null;
+        const choosePartButton = !showPartModeControls && fullSequenceAvailable && !sequence.singerWithoutStems ? (
+          <button
+            type="button"
+            onClick={() => setShowPlaybackOptions(true)}
+            className="shrink-0 rounded-full bg-zinc-100 px-3 py-1 text-[12px] font-semibold text-zinc-600 dark:bg-white/[0.07] dark:text-zinc-300 md:text-[13px]"
+          >
+            Elegir tu parte
+          </button>
+        ) : null;
+        const partLabelButton = showPartModeControls ? (
+          <button
+            type="button"
+            onClick={() => setShowPlaybackOptions(true)}
+            className="min-w-0 truncate text-left text-[12px] font-semibold text-brand"
+            title="Cambiar tu parte"
+          >
+            {sequence.partLabel}
+          </button>
+        ) : null;
         const loopButton = (
             <button
               type="button"
@@ -5224,6 +5246,12 @@ export default function ModoEnsayoCompacto({
                 <div className="min-w-0 flex-1 pr-3">
                   <div className="mx-auto flex w-full max-w-[66rem] items-center gap-4 2xl:max-w-[78rem]">
                     {timelineButton}
+                    {partModeSwitch ? (
+                      <div className="flex shrink-0 items-center gap-2.5">
+                        <span className="max-w-[10rem] truncate">{partLabelButton}</span>
+                        {partModeSwitch}
+                      </div>
+                    ) : choosePartButton}
                     {loopButton}
                     {mixButton}
                   </div>
@@ -5246,9 +5274,21 @@ export default function ModoEnsayoCompacto({
                 {playButton}
                 {wideColumnActive || atrilActive ? nextSectionButton : null}
                 {timelineButton}
+                {partModeSwitch || choosePartButton ? (
+                  <div className="hidden shrink-0 items-center gap-2.5 md:flex">
+                    {partModeSwitch ? <span className="max-w-[9rem] truncate">{partLabelButton}</span> : null}
+                    {partModeSwitch || choosePartButton}
+                  </div>
+                ) : null}
                 {loopButton}
                 {mixButton}
               </div>
+              {partModeSwitch || choosePartButton ? (
+                <div className="mt-2 flex items-center justify-between gap-2 border-t border-zinc-200/70 pt-2 dark:border-white/10 md:hidden">
+                  {partLabelButton || <span className="text-[12px] font-semibold text-zinc-500">Tu parte</span>}
+                  {partModeSwitch || choosePartButton}
+                </div>
+              ) : null}
             </div>
           </div>
         );
