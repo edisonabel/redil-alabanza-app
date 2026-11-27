@@ -281,7 +281,7 @@ const resolveRehearsalPlaybackSession = async (song = {}) => {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function EnsayoGlobalIsland({ initialSong = null }) {
+export default function EnsayoGlobalIsland({ initialSong = null, exitHref = '' }) {
   const [activeSong, setActiveSong] = useState(null);
   const [openingSong, setOpeningSong] = useState(null);
   const [openError, setOpenError] = useState('');
@@ -342,10 +342,18 @@ export default function EnsayoGlobalIsland({ initialSong = null }) {
   }, [openSong]);
 
   const handleGoBack = useCallback(() => {
+    // Own page (/ensayo/cancion/…): go back to where the musician came from.
+    if (exitHref) {
+      let cameFromApp = false;
+      try { cameFromApp = Boolean(document.referrer) && new URL(document.referrer).origin === window.location.origin; } catch { /* external */ }
+      if (cameFromApp && window.history.length > 1) window.history.back();
+      else window.location.assign(exitHref);
+      return;
+    }
     setActiveSong(null);
     setOpenError('');
     setOpeningSong(null);
-  }, []);
+  }, [exitHref]);
 
   if (!activeSong && (openingSong || openError)) {
     return (
