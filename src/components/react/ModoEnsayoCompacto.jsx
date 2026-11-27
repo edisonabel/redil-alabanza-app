@@ -74,14 +74,14 @@ const FONT_SCALE_SEQUENCE = ['grande', 'enorme'];
 const WIDE_FONT_PRESETS = {
   grande: {
     section: 'text-[clamp(0.9rem,0.85vw,1.1rem)] tracking-[0.3em]',
-    chord: 'text-[clamp(1.25rem,1.6vw,1.85rem)]',
-    lyric: 'text-[clamp(1.4rem,1.9vw,2.15rem)]',
+    chord: 'text-[clamp(1.25rem,1.6vw,2.1rem)]',
+    lyric: 'text-[clamp(1.4rem,1.9vw,2.45rem)]',
     lineGap: 'gap-y-2',
   },
   enorme: {
     section: 'text-[clamp(1rem,0.95vw,1.2rem)] tracking-[0.32em]',
-    chord: 'text-[clamp(1.4rem,1.95vw,2.2rem)]',
-    lyric: 'text-[clamp(1.6rem,2.35vw,2.6rem)]',
+    chord: 'text-[clamp(1.4rem,1.95vw,2.5rem)]',
+    lyric: 'text-[clamp(1.6rem,2.35vw,3rem)]',
     lineGap: 'gap-y-2.5',
   },
 };
@@ -4057,6 +4057,16 @@ export default function ModoEnsayoCompacto({
     setTimelineSeekPreview(nextTime);
     scheduleTimelineSeekCommit(nextTime);
   };
+  const handlePartModeChange = (mode) => {
+    if (!isFullSequence) void handleSelectPlaybackSource(FULL_SEQUENCE_SOURCE_ID);
+    if (mode === 'normal') sequence.updatePrefs({ partMode: 'normal' });
+    else if (sequence.partMode !== mode) sequence.setPartMode(mode);
+  };
+  const handleAudioSourceChange = (value) => {
+    if (!originalPlaybackSource) return;
+    void handleSelectPlaybackSource(value === 'original' ? originalPlaybackSource.id : FULL_SEQUENCE_SOURCE_ID);
+  };
+  const showPartModeControls = fullSequenceAvailable && !sequence.singerWithoutStems && sequence.partTrackIds.length > 0;
   const handleSelectPlaybackSource = async (sourceId) => {
     setAudioLoadError('');
     if (sourceId === selectedPlaybackSourceId) {
@@ -4710,10 +4720,10 @@ export default function ModoEnsayoCompacto({
       </header>
       <main
         ref={scrollRef}
-        className="ensayo-main-scroll min-h-0 flex-1 overflow-y-auto pb-24 transition-[padding-top] duration-300"
+        className={`ensayo-main-scroll min-h-0 flex-1 overflow-y-auto pb-24 transition-[padding-top] duration-300 ${setlistSidebarActive ? 'pl-[19.5rem] 2xl:pl-[22.5rem]' : ''}`}
         style={{
           paddingTop: `${currentHeaderOffset + (isLandscapeCompact ? 4 : 8)}px`,
-          paddingLeft: setlistSidebarActive ? 'calc(env(safe-area-inset-left) + 19.5rem)' : 'calc(env(safe-area-inset-left) + 0.75rem)',
+          paddingLeft: setlistSidebarActive ? undefined : 'calc(env(safe-area-inset-left) + 0.75rem)',
           paddingRight: 'calc(env(safe-area-inset-right) + 0.75rem)',
           // Room for the floating bar.
           paddingBottom: 'calc(env(safe-area-inset-bottom) + 7.5rem)',
@@ -4721,7 +4731,7 @@ export default function ModoEnsayoCompacto({
       >
         <div
           ref={atrilRef}
-          className={atrilActive ? 'ensayo-sections-layout ensayo-atril relative mx-auto max-w-[110rem] overflow-hidden' : `ensayo-sections-layout mx-auto ${wideColumnActive ? 'max-w-[66rem]' : 'max-w-3xl'}`}
+          className={atrilActive ? 'ensayo-sections-layout ensayo-atril relative mx-auto max-w-[110rem] overflow-hidden' : `ensayo-sections-layout mx-auto ${wideColumnActive ? 'max-w-[66rem] 2xl:max-w-[78rem]' : 'max-w-3xl'}`}
           style={atrilActive ? { height: atrilHeight || undefined, columnCount: 2, columnGap: '3rem', columnFill: 'auto', paddingTop: '1rem' } : undefined}
         >
           {currentSections.map((section, sectionIndex) => {
@@ -4885,13 +4895,13 @@ export default function ModoEnsayoCompacto({
       {setlistSidebarActive && (
         <nav
           aria-label="Canciones del ensayo"
-          className="fixed left-3 z-20 flex w-[18rem] flex-col transition-[top] duration-300"
+          className="fixed left-3 z-20 flex w-[18rem] flex-col overflow-y-auto transition-[top] duration-300 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden 2xl:w-[21rem]"
           style={{ top: currentHeaderOffset + 12, maxHeight: `calc(100dvh - ${currentHeaderOffset + 12}px - env(safe-area-inset-bottom) - 7rem)` }}
         >
           <p className="px-3 pb-2 pt-1 text-[13px] font-semibold text-zinc-500 dark:text-zinc-400">
             Canciones del ensayo
           </p>
-          <ol className="min-h-0 overflow-y-auto">
+          <ol>
             {setlistSongs.map((setlistSong, index) => {
               const isCurrent = setlistPosition?.index === index;
               return (
@@ -4917,6 +4927,40 @@ export default function ModoEnsayoCompacto({
               );
             })}
           </ol>
+          {showPartModeControls && (
+            <div className="mt-6 px-1">
+              <p className="px-2 pb-2 text-[13px] font-semibold text-zinc-500 dark:text-zinc-400">
+                Tu parte <span className="font-normal">· {sequence.partLabel}</span>
+              </p>
+              <SheetSegmented
+                label="Qué hacer con tu parte"
+                value={isFullSequence ? sequence.partMode : 'normal'}
+                onChange={handlePartModeChange}
+                options={[
+                  { value: 'normal', label: 'Normal' },
+                  { value: 'aumentada', label: 'Subir' },
+                  { value: 'aislada', label: 'Aislar' },
+                  { value: 'muteada', label: 'Mutear' },
+                ]}
+              />
+            </div>
+          )}
+          {fullSequenceAvailable && originalPlaybackSource && (
+            <div className="mt-5 px-1">
+              <p className="px-2 pb-2 text-[13px] font-semibold text-zinc-500 dark:text-zinc-400">
+                Audio{sequence.aligningOriginal ? <span className="font-normal"> · ajustando…</span> : null}
+              </p>
+              <SheetSegmented
+                label="Audio"
+                value={isFullSequence ? 'secuencia' : 'original'}
+                onChange={handleAudioSourceChange}
+                options={[
+                  { value: 'secuencia', label: 'Secuencia' },
+                  { value: 'original', label: 'Original', icon: <Disc3 className="h-3.5 w-3.5" /> },
+                ]}
+              />
+            </div>
+          )}
         </nav>
       )}
       {atrilActive && (
@@ -4933,14 +4977,24 @@ export default function ModoEnsayoCompacto({
       )}
       {/* Floating bar: only what you use while playing; everything else lives in the "Ensayo" sheet. */}
       <div
-        className="ensayo-footer-shell fixed inset-x-0 bottom-0 z-40 px-3 pb-[calc(env(safe-area-inset-bottom)+0.6rem)]"
+        className={`ensayo-footer-shell fixed inset-x-0 bottom-0 z-40 px-3 pb-[calc(env(safe-area-inset-bottom)+0.6rem)] ${setlistSidebarActive ? 'pl-[19.5rem] 2xl:pl-[22.5rem]' : ''}`}
         style={{
-          paddingLeft: 'calc(env(safe-area-inset-left) + 0.6rem)',
-          paddingRight: 'calc(env(safe-area-inset-right) + 0.6rem)',
+          paddingLeft: setlistSidebarActive ? undefined : 'calc(env(safe-area-inset-left) + 0.6rem)',
+          paddingRight: setlistSidebarActive ? 'calc(env(safe-area-inset-right) + 0.75rem)' : 'calc(env(safe-area-inset-right) + 0.6rem)',
         }}
       >
-        <div className="mx-auto max-w-3xl rounded-[1.4rem] border border-zinc-200/80 bg-white/95 px-2.5 py-2 shadow-[0_12px_34px_rgba(15,23,42,0.16)] backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/95 md:max-w-4xl md:rounded-[1.75rem] md:px-4 md:py-3">
+        <div className={`mx-auto ${wideColumnActive ? 'max-w-[66rem] 2xl:max-w-[78rem]' : 'max-w-3xl md:max-w-4xl'} rounded-[1.4rem] border border-zinc-200/80 bg-white/95 px-2.5 py-2 shadow-[0_12px_34px_rgba(15,23,42,0.16)] backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/95 md:rounded-[1.75rem] md:px-4 md:py-3`}>
           <div className="ensayo-footer-row flex items-center gap-2.5 md:gap-4">
+            <button
+              type="button"
+              onClick={() => selectSection(Math.max(0, activeSectionIndex - 1), { seekAudio: true })}
+              disabled={isPlaybackSeekPending || activeSectionIndex <= 0}
+              aria-label="Sección anterior"
+              title="Sección anterior"
+              className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full text-zinc-600 transition-colors hover:bg-zinc-900/5 disabled:opacity-35 dark:text-zinc-300 dark:hover:bg-white/5 lg:flex"
+            >
+              <SkipBack className="h-5 w-5" />
+            </button>
             <button
               type="button"
               onClick={handleTogglePlayback}
@@ -4959,6 +5013,16 @@ export default function ModoEnsayoCompacto({
                 : isPlaying
                   ? <Pause className="h-5 w-5" />
                   : <Play className="ml-0.5 h-5 w-5" />}
+            </button>
+            <button
+              type="button"
+              onClick={() => selectSection(Math.min(currentSections.length - 1, activeSectionIndex + 1), { seekAudio: true })}
+              disabled={isPlaybackSeekPending || activeSectionIndex >= currentSections.length - 1}
+              aria-label="Sección siguiente"
+              title="Sección siguiente"
+              className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full text-zinc-600 transition-colors hover:bg-zinc-900/5 disabled:opacity-35 dark:text-zinc-300 dark:hover:bg-white/5 lg:flex"
+            >
+              <SkipForward className="h-5 w-5" />
             </button>
             <button
               type="button"
@@ -5142,11 +5206,7 @@ export default function ModoEnsayoCompacto({
                   <SheetSegmented
                     label="Qué hacer con tu parte"
                     value={isFullSequence ? sequence.partMode : 'normal'}
-                    onChange={(mode) => {
-                      if (!isFullSequence) void handleSelectPlaybackSource(FULL_SEQUENCE_SOURCE_ID);
-                      if (mode === 'normal') sequence.updatePrefs({ partMode: 'normal' });
-                      else if (sequence.partMode !== mode) sequence.setPartMode(mode);
-                    }}
+                    onChange={handlePartModeChange}
                     options={[
                       { value: 'normal', label: 'Normal' },
                       { value: 'aumentada', label: 'Subir', icon: <TrendingUp className="h-3.5 w-3.5" /> },
@@ -5164,7 +5224,7 @@ export default function ModoEnsayoCompacto({
                 <SheetSegmented
                   label="Audio"
                   value={isFullSequence ? 'secuencia' : 'original'}
-                  onChange={(value) => void handleSelectPlaybackSource(value === 'original' ? originalPlaybackSource.id : FULL_SEQUENCE_SOURCE_ID)}
+                  onChange={handleAudioSourceChange}
                   options={[
                     { value: 'secuencia', label: 'Secuencia' },
                     { value: 'original', label: 'Original', icon: <Disc3 className="h-3.5 w-3.5" /> },
