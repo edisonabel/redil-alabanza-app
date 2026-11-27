@@ -10,6 +10,7 @@ import {
   sanitizeRehearsalMixPrefs,
   hasFullRehearsalSequence,
   suggestPartTrackIds,
+  defaultChordPreviewForRoles,
   estimateEnvelopeDuration,
   AUMENTADA_PART_BOOST,
   AUMENTADA_OTHERS_DUCK,
@@ -144,4 +145,13 @@ const perTrack = computeRehearsalTrackGains({ tracks: band, trackLevels: { eg: 0
 assert.equal(perTrack.perc, 0);
 assert.equal(perTrack.eg, Math.round(band.find((t) => t.id === 'eg').baseVolume * 0.5 * 1000) / 1000);
 assert.deepEqual(sanitizeRehearsalMixPrefs({ trackLevels: { eg: 9, ghost: 1 }, mutedTracks: { perc: true } }, ['eg', 'perc']).trackLevels, { eg: 1.5 });
+// "Mostrar al tocar" by role: computers always; phones only for who reads chords.
+assert.deepEqual(defaultChordPreviewForRoles(['piano']), { enabled: true, instrument: 'piano' });
+assert.deepEqual(defaultChordPreviewForRoles(['guitarra_acustica']), { enabled: true, instrument: 'guitar' });
+assert.deepEqual(defaultChordPreviewForRoles(['voz_principal']), { enabled: true, instrument: 'guitar' });
+assert.deepEqual(defaultChordPreviewForRoles(['bateria']), { enabled: false, instrument: 'guitar' });
+assert.deepEqual(defaultChordPreviewForRoles(['bajo']), { enabled: false, instrument: 'guitar' });
+assert.deepEqual(defaultChordPreviewForRoles(['bateria'], { isComputer: true }), { enabled: true, instrument: 'guitar' });
+assert.deepEqual(defaultChordPreviewForRoles(['voz_principal', 'teclado']), { enabled: true, instrument: 'piano' });
+assert.deepEqual(defaultChordPreviewForRoles([]), { enabled: false, instrument: 'guitar' });
 console.log('rehearsal sequence mix: ok');

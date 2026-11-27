@@ -13,7 +13,7 @@ import {
   songHasRehearsalSequence,
   useRehearsalSequence,
 } from '../../hooks/useRehearsalSequence';
-import { MAX_GROUP_LEVEL, REHEARSAL_PART_MODE_HINTS } from '../../utils/rehearsalSequenceMix.js';
+import { MAX_GROUP_LEVEL, REHEARSAL_PART_MODE_HINTS, defaultChordPreviewForRoles } from '../../utils/rehearsalSequenceMix.js';
 import { isLikelyAudioSourceUrl, resolvePreferredAudioUrl } from '../../lib/audio-playback.js';
 import { buildWordGroups, parseChordProLine } from '../../utils/chordProLineUtils';
 import { CHORD_SPELLINGS, spellChord, spellChordProLine } from '../../utils/chordSpelling';
@@ -1440,6 +1440,47 @@ function SheetSection({ title, note = '', children }) {
     </section>
   );
 }
+// The song as it is played: one straight block per marker, in order, with a
+// thin division between them. What already sounded is filled in its color.
+function SectionStrip({ segments, currentTime, barClass = 'h-1.5', onJump = null, disabled = false }) {
+  if (!segments.length) return null;
+  return (
+    <div className="flex w-full items-center gap-[2px]">
+      {segments.map((segment) => {
+        const span = Math.max(0.001, segment.end - segment.start);
+        const fill = currentTime >= segment.end ? 100 : currentTime <= segment.start ? 0 : ((currentTime - segment.start) / span) * 100;
+        const isCurrent = currentTime >= segment.start && currentTime < segment.end;
+        const bar = (
+          <span
+            className={`relative block w-full overflow-hidden ${barClass}`}
+            style={{ backgroundColor: toRgba(segment.rgb, isCurrent ? 0.55 : 0.32) }}
+          >
+            <span className="absolute inset-y-0 left-0" style={{ width: `${fill}%`, backgroundColor: toRgba(segment.rgb, 0.95) }} />
+          </span>
+        );
+        const style = { flexGrow: segment.duration, flexShrink: 1, flexBasis: 0, minWidth: '3px' };
+        if (!onJump || segment.sectionIndex < 0) {
+          return <span key={segment.key} className="flex items-center" style={style} title={segment.name || undefined}>{bar}</span>;
+        }
+        return (
+          <button
+            key={segment.key}
+            type="button"
+            onClick={() => onJump(segment)}
+            disabled={disabled}
+            className="flex items-center py-1.5 transition-opacity hover:opacity-80 disabled:cursor-wait"
+            style={style}
+            title={segment.name}
+            aria-label={`Ir a ${segment.name}`}
+          >
+            {bar}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function SheetSegmented({ options, value, onChange, label }) {
   return (
     <div role="radiogroup" aria-label={label} className="flex rounded-xl bg-zinc-200/80 p-0.5 dark:bg-zinc-950/60 md:rounded-[0.9rem] md:p-1">
@@ -1749,7 +1790,18 @@ export default function ModoEnsayoCompacto({
   const currentChordLibrary = useMemo(() => (
     buildChordLibrary(extractChordTokensFromSections(currentSections))
   ), [currentSections]);
+  const chordPreviewChosenRef = useRef(false);
+  const applyDefaultChordPreview = useCallback(() => {
+    if (chordPreviewChosenRef.current) return;
+    const isComputer = typeof window !== 'undefined' && window.matchMedia?.('(hover: hover) and (pointer: fine)').matches;
+    const preset = defaultChordPreviewForRoles(userRoleCodes, { isComputer });
+    setTapChordPreviewEnabled(preset.enabled);
+    setTapChordPreviewInstrument(preset.instrument);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(userRoleCodes || [])]);
+  useEffect(() => { applyDefaultChordPreview(); }, [applyDefaultChordPreview]);
   const toggleTapChordPreview = useCallback(() => {
+    chordPreviewChosenRef.current = true;
     setTapChordPreviewEnabled((enabled) => {
       const nextEnabled = !enabled;
       if (!nextEnabled) {
@@ -1759,6 +1811,7 @@ export default function ModoEnsayoCompacto({
     });
   }, []);
   const selectTapChordPreviewInstrument = useCallback((instrument) => {
+    chordPreviewChosenRef.current = true;
     setTapChordPreviewInstrument(instrument);
     setTapChordPreviewEnabled(true);
     setActiveChordPreview(null);
@@ -2384,6 +2437,43 @@ export default function ModoEnsayoCompacto({
     })
   ), [activeSectionIndex, currentSections, markerBySectionIndex, sectionMapItems, timelineDuration]);
   const activeLoopSection = playbackSectionStrip[activeSectionIndex] || null;
+  const sectionStripSegments = useMemo(() => {
+    const rgbOf = (index) => (sectionMapItems[index] || SECTION_VISUALS.default).rgb;
+    const markers = currentSongMarkers
+      .filter((marker) => Number.isFinite(marker?.startSec) && marker.startSec < timelineDuration)
+      .sort((a, b) => a.startSec - b.startSec);
+    if (markers.length >= 2 && timelineDuration > 1) {
+      const segments = [];
+      if (markers[0].startSec > 0.75) {
+        segments.push({ key: 'lead-in', sectionIndex: -1, start: 0, end: markers[0].startSec, rgb: SECTION_VISUALS.default.rgb, name: '' });
+      }
+      markers.forEach((marker, index) => {
+        const end = index < markers.length - 1 ? markers[index + 1].startSec : timelineDuration;
+        if (end - marker.startSec < 0.05) return;
+        const sectionIndex = Number.isInteger(marker.sectionIndex) ? marker.sectionIndex : -1;
+        segments.push({
+          key: marker.id || `marker-${index}`,
+          sectionIndex,
+          start: marker.startSec,
+          end,
+          rgb: rgbOf(sectionIndex),
+          name: currentSections[sectionIndex]?.name || marker.sectionName || '',
+        });
+      });
+      return segments.map((segment) => ({ ...segment, duration: segment.end - segment.start }));
+    }
+    if (!currentSections.length) return [];
+    const step = timelineDuration / currentSections.length;
+    return currentSections.map((section, index) => ({
+      key: `section-${index}`,
+      sectionIndex: index,
+      start: index * step,
+      end: (index + 1) * step,
+      duration: step,
+      rgb: rgbOf(index),
+      name: section?.name || '',
+    }));
+  }, [currentSections, currentSongMarkers, sectionMapItems, timelineDuration]);
   const currentHeaderOffset = headerHidden
     ? (isLandscapeCompact ? 8 : 18)
     : headerHeight + (isLandscapeCompact ? 8 : 18);
@@ -3166,7 +3256,7 @@ export default function ModoEnsayoCompacto({
     setShowOptionsMenu(false);
     setShowPlaybackOptions(false);
     setShowChordLibrary(false);
-    setTapChordPreviewEnabled(false);
+    applyDefaultChordPreview();
     setActiveChordPreview(null);
     setChordVariationByKey({});
     setSelectedPlaybackSourceId(defaultPlaybackSourceId);
@@ -3177,6 +3267,7 @@ export default function ModoEnsayoCompacto({
     stopMetronome();
     setTrackGainImmediate(TRACK_DEFAULT_GAIN);
   }, [
+    applyDefaultChordPreview,
     clearTimelineSeekCommit,
     currentSongKey,
     currentSong?.mp3,
@@ -5038,8 +5129,8 @@ export default function ModoEnsayoCompacto({
                   {formatSeconds(displayAudioCurrentTime)} / {durationLabel}
                 </span>
               </div>
-              <div className="relative mt-1.5 h-[3px] rounded-full bg-zinc-200 dark:bg-white/10">
-                <div className="absolute inset-y-0 left-0 rounded-full bg-action" style={{ width: `${progressPercent}%` }} />
+              <div className="mt-1.5">
+                <SectionStrip segments={sectionStripSegments} currentTime={displayAudioCurrentTime} barClass={setlistSidebarActive ? 'h-1.5' : 'h-[4px]'} />
               </div>
               {(rehearsalMixLoadProgress && shouldUseRehearsalMix) || audioLoadError || playbackSeekError || playbackSeekNotice || (fullSequenceAvailable && (sequence.partMode !== 'normal' || !isFullSequence)) ? (
                 <div className="mt-1 truncate text-[11px] font-semibold">
@@ -5174,27 +5265,15 @@ export default function ModoEnsayoCompacto({
               <span className="truncate px-2">{sequenceNavigationLabel || currentSections[activeSectionIndex]?.name || ''}</span>
               <span>{durationLabel}</span>
             </div>
-            {playbackSectionStrip.length > 0 && (
-              <div className="relative mt-2 h-3">
-                {playbackSectionStrip.map((item) => (
-                  <button
-                    key={`sheet-section-${item.index}`}
-                    type="button"
-                    onClick={() => selectSection(item.index, { seekAudio: true, scrollBehavior: 'smooth' })}
-                    disabled={isPlaybackSeekPending}
-                    className="absolute top-0 h-2.5 rounded-full border transition-all disabled:cursor-wait disabled:opacity-55"
-                    style={{
-                      left: `${item.startPercent}%`,
-                      width: `${item.widthPercent}%`,
-                      borderColor: item.isActive ? toRgba(item.visual.rgb, 0.9) : toRgba(item.visual.rgb, 0.26),
-                      backgroundColor: item.isActive ? toRgba(item.visual.rgb, 0.96) : 'rgba(228,228,231,0.95)',
-                    }}
-                    title={item.section.name}
-                    aria-label={`Ir a ${item.section.name}`}
-                  />
-                ))}
-              </div>
-            )}
+            <div className="mt-2">
+              <SectionStrip
+                segments={sectionStripSegments}
+                currentTime={displayAudioCurrentTime}
+                barClass="h-2"
+                onJump={(segment) => selectSection(segment.sectionIndex, { seekAudio: true, scrollBehavior: 'smooth' })}
+                disabled={isPlaybackSeekPending}
+              />
+            </div>
           </div>
           <div className="mt-3 flex items-center justify-center gap-6 md:mt-5 md:gap-10">
             <button type="button" onClick={() => selectSection(Math.max(0, activeSectionIndex - 1), { seekAudio: true })} disabled={isPlaybackSeekPending} aria-label="Sección anterior" className="flex h-11 w-11 items-center justify-center rounded-full text-zinc-700 dark:text-zinc-200">

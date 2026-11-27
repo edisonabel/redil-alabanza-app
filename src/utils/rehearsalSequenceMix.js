@@ -340,3 +340,21 @@ export const sanitizeRehearsalMixPrefs = (value = {}, validTrackIds = null) => {
     master: clamp(toFiniteNumber(value?.master, 1), 0, 1),
   };
 };
+
+/**
+ * Default for "Mostrar al tocar" (chord diagram when you tap a chord).
+ * Computers: always on. Phones: on for piano/keys (piano diagrams) and for
+ * guitar players and singers (guitar diagrams); drums and bass do not need it.
+ */
+export const defaultChordPreviewForRoles = (roleCodes = [], { isComputer = false } = {}) => {
+  const codes = (Array.isArray(roleCodes) ? roleCodes : [])
+    .map((code) => String(code || '').trim().toLowerCase())
+    .filter(Boolean);
+  const plays = (re) => codes.some((code) => re.test(code));
+  const keys = plays(/piano|tecla/);
+  const guitar = plays(/guitarr|guitar/);
+  const sings = plays(/^(voz|coro|cantante|vocal)/);
+  if (keys) return { enabled: true, instrument: 'piano' };
+  if (guitar || sings) return { enabled: true, instrument: 'guitar' };
+  return { enabled: Boolean(isComputer), instrument: 'guitar' };
+};
