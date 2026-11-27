@@ -6,6 +6,7 @@ import { useChordSpelling } from '../../hooks/useChordSpelling';
 import { spellChord } from '../../utils/chordSpelling';
 import { withEventMp3 } from '../../utils/liveDirectorEventKey';
 import EnsayoPersonalView from './EnsayoPersonalView.jsx';
+import ModoEnsayoSecuencia, { songHasRehearsalSequence } from './ModoEnsayoSecuencia.jsx';
 import { supabase } from '../../lib/supabase';
 import { metronomeService } from '../../services/MetronomeEngine';
 import {
@@ -662,6 +663,7 @@ export default function EnsayoHub({
   canAssignVoices = false,
   userId = '',
   rosterMembers = [],
+  currentUserRoleCodes = [],
   initialSongVoiceAssignments = {},
   isCustomSetlist = false,
   shareUrl = '',
@@ -691,6 +693,7 @@ export default function EnsayoHub({
   const cancionActivaEnTono = useMemo(() => (
     withEventMp3(cancionActiva, eventKeys[String(cancionActiva?.id || '')])
   ), [cancionActiva, eventKeys]);
+  const [classicViewSongId, setClassicViewSongId] = useState('');
   const [cancionPersonalActiva, setCancionPersonalActiva] = useState(null);
   const [lastViewedSongId, setLastViewedSongId] = useState(initialSong ? String(initialSong.id || '') : null);
   const [activeMetronomeSongId, setActiveMetronomeSongId] = useState(null);
@@ -1537,6 +1540,7 @@ export default function EnsayoHub({
     if (typeof window !== 'undefined') {
       window.__REDIL_PRO_PLAYER__?.close?.();
     }
+    setClassicViewSongId('');
     setCancionActiva(null);
   }, [stopMetronome, stopQueue]);
 
@@ -1658,6 +1662,40 @@ export default function EnsayoHub({
         onSaveAssignment={handleSaveVoiceAssignment}
         onClearAssignment={handleClearVoiceAssignment}
         onSaveTrackAnchor={handleSaveVoiceTrackAnchor}
+      />
+    );
+  }
+
+  const rehearsalSetlist = songs.filter((song) => song && !song.isPrayer);
+  const activeSetlistIndex = cancionActiva
+    ? rehearsalSetlist.findIndex((song) => String(song.id) === String(cancionActiva.id))
+    : -1;
+  const openSetlistSongAt = (index) => {
+    const nextSong = rehearsalSetlist[index];
+    if (nextSong) openCompactSong(nextSong);
+  };
+
+  if (
+    cancionActiva &&
+    !isSyncReceiver &&
+    classicViewSongId !== String(cancionActiva.id || '') &&
+    songHasRehearsalSequence(cancionActiva)
+  ) {
+    return (
+      <ModoEnsayoSecuencia
+        key={String(cancionActiva.id || '')}
+        song={cancionActivaEnTono}
+        contextTitle={contextTitle}
+        onGoBack={handleCompactBack}
+        onOpenClassic={() => setClassicViewSongId(String(cancionActiva.id || ''))}
+        eventId={rehearsalEventId}
+        playlistId={String(playlistId || '')}
+        userId={String(userId || '')}
+        userRoleCodes={currentUserRoleCodes}
+        eventKeySemitones={eventKeys[String(cancionActiva?.id || '')]?.semitones || 0}
+        setlistPosition={activeSetlistIndex >= 0 ? { index: activeSetlistIndex, total: rehearsalSetlist.length } : null}
+        onPrevSong={activeSetlistIndex > 0 ? () => openSetlistSongAt(activeSetlistIndex - 1) : null}
+        onNextSong={activeSetlistIndex >= 0 && activeSetlistIndex < rehearsalSetlist.length - 1 ? () => openSetlistSongAt(activeSetlistIndex + 1) : null}
       />
     );
   }

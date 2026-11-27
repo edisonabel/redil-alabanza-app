@@ -4850,3 +4850,15 @@ export default function ModoEnsayoCompacto({
     </div>
   );
 }
+
+// Shared with ModoEnsayoSecuencia so both rehearsal views render chords,
+// tap-to-see diagrams and the chord library the same way.
+export {
+  ChordDisplay,
+  ChordLibraryModal,
+  ChordPreviewPopover,
+  buildChordLibrary,
+  extractChordTokensFromSections,
+  normalizeChordSymbol,
+  parseChordSymbol,
+};
