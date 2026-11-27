@@ -81,12 +81,14 @@ export const rehearsalTrackLabel = (track) => {
   return generic ? category.label.split(' / ')[0] : track.name;
 };
 
+const NO_ROLE_CODES = Object.freeze([]);
+
 export function useRehearsalSequence({
   enabled,
   song,
   eventId = '',
   userId = '',
-  userRoleCodes = [],
+  userRoleCodes = NO_ROLE_CODES,
   eventKeySemitones = 0,
   sheetSections = [],
   engine,

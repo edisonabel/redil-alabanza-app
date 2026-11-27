@@ -41,6 +41,18 @@
           sectionMarkers,
         };
 
+        // The full sequence needs an isolated page (SharedArrayBuffer). Pages
+        // like Repertorio are not isolated, so those songs open on their own
+        // rehearsal page under /ensayo/*, which is.
+        if (song.hasRehearsalPlaybackSession && songId && !window.crossOriginIsolated) {
+          const feedback = document.getElementById('ensayo-global-mount');
+          if (feedback) {
+            feedback.innerHTML = '<div class="ensayo-lazy-feedback" role="status" aria-live="polite"><span></span><strong>Abriendo ensayo...</strong></div>';
+          }
+          window.location.assign(`/ensayo/cancion/${encodeURIComponent(songId)}`);
+          return;
+        }
+
         const ensayoWindow = window as any;
         if (ensayoWindow.__REDIL_ENSAYO_GLOBAL_ROOT__) {
           window.dispatchEvent(

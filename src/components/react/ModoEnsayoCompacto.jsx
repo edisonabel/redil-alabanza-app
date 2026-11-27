@@ -1504,6 +1504,11 @@ function SheetSegmented({ options, value, onChange, label }) {
   );
 }
 
+// Stable empty lists: a fresh `[]` default on every render re-ran the mix
+// effects in a loop when a page did not pass these props (Repertorio).
+const NO_ROLE_CODES = Object.freeze([]);
+const NO_SETLIST_SONGS = Object.freeze([]);
+
 export default function ModoEnsayoCompacto({
   song,
   contextTitle = '',
@@ -1515,11 +1520,11 @@ export default function ModoEnsayoCompacto({
   onPersonalSettingsChange,
   eventKeySemitones = 0,
   onEventKeyAnnounced,
-  userRoleCodes = [],
+  userRoleCodes = NO_ROLE_CODES,
   setlistPosition = null,
   onPrevSong = null,
   onNextSong = null,
-  setlistSongs = [],
+  setlistSongs = NO_SETLIST_SONGS,
   onOpenSetlistSong = null,
 }) {
   if (!song) return null;
