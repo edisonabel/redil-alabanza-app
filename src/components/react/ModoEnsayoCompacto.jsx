@@ -3408,6 +3408,36 @@ export default function ModoEnsayoCompacto({
       window.removeEventListener('touchstart', handlePointerDown);
     };
   }, [activeChordPreview]);
+  // Mouse: the diagram follows the hover. It stays while the pointer is on a
+  // chord or on the diagram itself (to change shape) and closes shortly after
+  // leaving both. Touch keeps tap to open / tap outside to close.
+  useEffect(() => {
+    if (!activeChordPreview || typeof window === 'undefined') return undefined;
+    let closeTimer = null;
+    const scheduleClose = () => {
+      if (closeTimer === null) closeTimer = window.setTimeout(() => setActiveChordPreview(null), 160);
+    };
+    const handlePointerMove = (event) => {
+      if (event.pointerType === 'touch') return;
+      const target = event.target;
+      const overPreview = chordPreviewRef.current?.contains(target)
+        || target?.closest?.('[data-chord-preview-trigger="true"]');
+      if (overPreview) {
+        if (closeTimer !== null) window.clearTimeout(closeTimer);
+        closeTimer = null;
+        return;
+      }
+      scheduleClose();
+    };
+    const handleLeaveWindow = () => scheduleClose();
+    window.addEventListener('pointermove', handlePointerMove);
+    document.documentElement.addEventListener('mouseleave', handleLeaveWindow);
+    return () => {
+      if (closeTimer !== null) window.clearTimeout(closeTimer);
+      window.removeEventListener('pointermove', handlePointerMove);
+      document.documentElement.removeEventListener('mouseleave', handleLeaveWindow);
+    };
+  }, [activeChordPreview]);
   useEffect(() => {
     if (!activeChordPreview || typeof window === 'undefined') return undefined;
     const closePreview = () => setActiveChordPreview(null);
