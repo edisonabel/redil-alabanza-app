@@ -68,6 +68,22 @@ const FONT_PRESETS = {
   },
 };
 const FONT_SCALE_SEQUENCE = ['grande', 'enorme'];
+// Computers: one column, bigger, to read from the music stand.
+const WIDE_FONT_PRESETS = {
+  grande: {
+    section: 'text-[0.9rem] tracking-[0.3em]',
+    chord: 'text-[1.3rem]',
+    lyric: 'text-[1.45rem]',
+    lineGap: 'gap-y-2',
+  },
+  enorme: {
+    section: 'text-[1rem] tracking-[0.32em]',
+    chord: 'text-[1.55rem]',
+    lyric: 'text-[1.75rem]',
+    lineGap: 'gap-y-2.5',
+  },
+};
+const STAGE_LAYOUT_KEY = 'redil:ensayo:layout';
 const SHARP_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const FLAT_TO_SHARP = { Db: 'C#', Eb: 'D#', Gb: 'F#', Ab: 'G#', Bb: 'A#' };
 // 12 keys once: -6 and +6 are the same key.
@@ -1460,10 +1476,36 @@ export default function ModoEnsayoCompacto({
   setlistPosition = null,
   onPrevSong = null,
   onNextSong = null,
+  setlistSongs = [],
+  onOpenSetlistSong = null,
 }) {
   if (!song) return null;
   const [headerHidden, setHeaderHidden] = useState(false);
   const [fontScale, setFontScale] = useState('enorme');
+  // Big screens: "columna" = one column in song order plus the "Sigue" rail;
+  // "atril" = two full-height pages side by side that turn ahead of the music.
+  const [stageLayout, setStageLayout] = useState(() => {
+    try { return window.localStorage.getItem(STAGE_LAYOUT_KEY) === 'atril' ? 'atril' : 'columna'; } catch { return 'columna'; }
+  });
+  useEffect(() => { try { window.localStorage.setItem(STAGE_LAYOUT_KEY, stageLayout); } catch { /* this session only */ } }, [stageLayout]);
+  const [screenSize, setScreenSize] = useState({ wide: false, atril: false });
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return undefined;
+    const wideQuery = window.matchMedia('(min-width: 1024px)');
+    const atrilQuery = window.matchMedia('(min-width: 900px) and (min-height: 560px)');
+    const update = () => setScreenSize({ wide: wideQuery.matches, atril: atrilQuery.matches });
+    update();
+    wideQuery.addEventListener?.('change', update);
+    atrilQuery.addEventListener?.('change', update);
+    return () => { wideQuery.removeEventListener?.('change', update); atrilQuery.removeEventListener?.('change', update); };
+  }, []);
+  const atrilActive = stageLayout === 'atril' && screenSize.atril;
+  const wideColumnActive = !atrilActive && screenSize.wide;
+  // Computers: the rest of the setlist stays on the left, one click away.
+  const setlistSidebarActive = wideColumnActive && Array.isArray(setlistSongs) && setlistSongs.length > 1 && typeof onOpenSetlistSong === 'function';
+  const atrilRef = useRef(null);
+  const [atrilHeight, setAtrilHeight] = useState(0);
+  const [atrilLeftColumn, setAtrilLeftColumn] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [activeSectionManualIndex, setActiveSectionManualIndex] = useState(0);
   const [, setCollapsedSections] = useState({});
@@ -1768,7 +1810,7 @@ export default function ModoEnsayoCompacto({
       };
     });
   }, [currentSections]);
-  const fontPreset = FONT_PRESETS[fontScale] || FONT_PRESETS.grande;
+  const fontPreset = (wideColumnActive ? WIDE_FONT_PRESETS[fontScale] : FONT_PRESETS[fontScale]) || FONT_PRESETS.grande;
   const currentSongKey = String(currentSong?.id || 'demo');
   useEffect(() => {
     voiceLyricWordsRef.current = voiceLyricWords;
@@ -2241,6 +2283,26 @@ export default function ModoEnsayoCompacto({
     : activeSectionByAudioIndex >= 0
       ? activeSectionByAudioIndex
       : activeSectionManualIndex;
+  // Musicians read ahead: in the last 2 bars of a section the next one lights
+  // up ("Sigue") and comes into view, so the change never arrives by surprise.
+  const meterBeats = useMemo(() => {
+    const meter = String(sequence.session?.reaperTiming?.meter || currentSong?.meter || currentSong?.compas || '');
+    const beats = Number(/^(\d{1,2})\//.exec(meter)?.[1]);
+    return Number.isFinite(beats) && beats > 0 ? beats : 4;
+  }, [currentSong?.compas, currentSong?.meter, sequence.session?.reaperTiming?.meter]);
+  const anticipationSeconds = currentSongBpm > 0
+    ? Math.max(2, Math.min(8, (2 * meterBeats * 60) / currentSongBpm))
+    : 4;
+  const nextMarker = activeMarkerIndex >= 0 ? currentSongMarkers[activeMarkerIndex + 1] : null;
+  const nextSectionIndex = Number.isInteger(nextMarker?.sectionIndex)
+    ? nextMarker.sectionIndex
+    : (activeSectionIndex >= 0 && activeSectionIndex < currentSections.length - 1 ? activeSectionIndex + 1 : -1);
+  const upcomingSectionIndex = isPlaying
+    && nextMarker
+    && nextSectionIndex !== activeSectionIndex
+    && audioCurrentTime >= nextMarker.startSec - anticipationSeconds
+    ? nextSectionIndex
+    : -1;
   useEffect(() => {
     syncSnapshotRef.current = {
       songId: String(currentSongKey || ''),
@@ -3431,6 +3493,76 @@ export default function ModoEnsayoCompacto({
       scrollToSectionIndex(sectionIndex, 'smooth');
     });
   }, [activeSectionByAudioIndex, activeSectionByVoiceIndex]);
+  // Read ahead: when the next section lights up, bring it into view while the
+  // end of the current one stays on screen.
+  useEffect(() => {
+    if (upcomingSectionIndex < 0 || atrilActive) return;
+    const scroller = scrollRef.current;
+    const node = sectionRefs.current[upcomingSectionIndex];
+    if (!scroller || !node) return;
+    const scrollerRect = scroller.getBoundingClientRect();
+    const nodeRect = node.getBoundingClientRect();
+    if (nodeRect.top < scrollerRect.bottom - scroller.clientHeight * 0.35) return;
+    const target = scroller.scrollTop + (nodeRect.top - scrollerRect.top) - scroller.clientHeight * 0.5;
+    scroller.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
+  }, [atrilActive, upcomingSectionIndex]);
+  // Atril: the pages are as tall as the screen; sections never split.
+  useEffect(() => {
+    if (!atrilActive) return undefined;
+    const measure = () => {
+      const scroller = scrollRef.current;
+      if (!scroller) return;
+      const styles = window.getComputedStyle(scroller);
+      const height = scroller.clientHeight - parseFloat(styles.paddingTop || '0') - parseFloat(styles.paddingBottom || '0');
+      setAtrilHeight(Math.max(240, Math.floor(height)));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [atrilActive, currentHeaderOffset]);
+  const getAtrilColumnStep = () => {
+    const container = atrilRef.current;
+    if (!container) return 0;
+    const gap = parseFloat(window.getComputedStyle(container).columnGap || '0') || 0;
+    return (container.clientWidth + gap) / 2;
+  };
+  const getAtrilColumnOf = (index) => {
+    const node = sectionRefs.current[index];
+    const step = getAtrilColumnStep();
+    const container = atrilRef.current;
+    if (!node || !step || !container) return 0;
+    // Rects follow column fragments; offsetLeft does not in every browser.
+    const left = node.getBoundingClientRect().left - container.getBoundingClientRect().left + container.scrollLeft;
+    return Math.max(0, Math.floor((left + 4) / step));
+  };
+  const atrilColumnCount = () => {
+    const container = atrilRef.current;
+    const step = getAtrilColumnStep();
+    return container && step ? Math.max(1, Math.round(container.scrollWidth / step)) : 1;
+  };
+  const showAtrilColumn = (leftColumn) => {
+    const container = atrilRef.current;
+    const step = getAtrilColumnStep();
+    if (!container || !step) return;
+    const safeLeft = Math.max(0, Math.min(leftColumn, Math.max(0, atrilColumnCount() - 2)));
+    setAtrilLeftColumn(safeLeft);
+    container.scrollTo({ left: safeLeft * step, behavior: 'smooth' });
+  };
+  // Turn the page ahead of the music: the current section on the left page
+  // and, as soon as it lights up, what follows on the right one.
+  useEffect(() => {
+    if (!atrilActive || activeSectionIndex < 0) return;
+    const activeColumn = getAtrilColumnOf(activeSectionIndex);
+    let left = atrilLeftColumn;
+    if (activeColumn < left || activeColumn > left + 1) left = activeColumn;
+    if (upcomingSectionIndex >= 0) {
+      const upcomingColumn = getAtrilColumnOf(upcomingSectionIndex);
+      if (upcomingColumn > left + 1) left = upcomingColumn - 1;
+    }
+    if (left !== atrilLeftColumn) showAtrilColumn(left);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSectionIndex, atrilActive, upcomingSectionIndex, atrilHeight]);
+  useEffect(() => { setAtrilLeftColumn(0); atrilRef.current?.scrollTo({ left: 0 }); }, [currentSongKey, atrilActive]);
   useEffect(() => {
     if (!voiceFollowerEnabled || !voiceMatch || !scrollRef.current) return;
     const scroller = scrollRef.current;
@@ -4498,6 +4630,19 @@ export default function ModoEnsayoCompacto({
                     </div>
                   </div>
                 </div>
+                {screenSize.atril && (
+                  <SheetSection title="Vista en pantalla grande" note={stageLayout === 'atril' ? 'Dos páginas del alto de la pantalla; la página pasa sola antes de que cambie la sección.' : 'Una sola columna en el orden de la canción, con letra grande para leer de lejos.'}>
+                    <SheetSegmented
+                      label="Vista en pantalla grande"
+                      value={stageLayout}
+                      onChange={(value) => setStageLayout(value)}
+                      options={[
+                        { value: 'columna', label: 'Columna grande' },
+                        { value: 'atril', label: 'Atril (2 páginas)' },
+                      ]}
+                    />
+                  </SheetSection>
+                )}
                 <SheetSection title="Sincronización con el director" note={syncRole === 'local' ? 'Ensayas por tu cuenta.' : syncRole === 'director' ? 'Tu equipo envía la sección a los músicos.' : 'Sigues la sección que envía el director.'}>
                   <SheetSegmented
                     label="Sincronización"
@@ -4524,6 +4669,7 @@ export default function ModoEnsayoCompacto({
           <div className="flex gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {currentSections.map((section, index) => {
               const active = index === activeSectionIndex;
+              const upcoming = index === upcomingSectionIndex;
               const visual = sectionMapItems[index] || SECTION_VISUALS.default;
               return (
                 <button
@@ -4535,7 +4681,8 @@ export default function ModoEnsayoCompacto({
                   style={{
                     minWidth: '2.45rem',
                     height: '2.45rem',
-                    borderColor: toRgba(visual.rgb, active ? 0.92 : 0.5),
+                    borderColor: toRgba(visual.rgb, active || upcoming ? 0.92 : 0.5),
+                    borderStyle: upcoming ? 'dashed' : 'solid',
                     color: toRgba(visual.rgb, active ? 1 : 0.94),
                     boxShadow: active ? `0 0 0 4px ${toRgba(visual.rgb, 0.16)}` : 'none',
                   }}
@@ -4554,16 +4701,22 @@ export default function ModoEnsayoCompacto({
         className="ensayo-main-scroll min-h-0 flex-1 overflow-y-auto pb-24 transition-[padding-top] duration-300"
         style={{
           paddingTop: `${currentHeaderOffset + (isLandscapeCompact ? 4 : 8)}px`,
-          paddingLeft: 'calc(env(safe-area-inset-left) + 0.75rem)',
+          paddingLeft: setlistSidebarActive ? 'calc(env(safe-area-inset-left) + 19.5rem)' : 'calc(env(safe-area-inset-left) + 0.75rem)',
           paddingRight: 'calc(env(safe-area-inset-right) + 0.75rem)',
           // Room for the floating bar.
           paddingBottom: 'calc(env(safe-area-inset-bottom) + 7.5rem)',
         }}
       >
-        <div className="ensayo-sections-layout mx-auto max-w-6xl columns-1 gap-4 xl:columns-2 xl:gap-5">
+        <div
+          ref={atrilRef}
+          className={atrilActive ? 'ensayo-sections-layout ensayo-atril relative mx-auto max-w-[110rem] overflow-hidden' : `ensayo-sections-layout mx-auto ${wideColumnActive ? 'max-w-[54rem]' : 'max-w-3xl'}`}
+          style={atrilActive ? { height: atrilHeight || undefined, columnCount: 2, columnGap: '3rem', columnFill: 'auto', paddingTop: '1rem' } : undefined}
+        >
           {currentSections.map((section, sectionIndex) => {
             const isCollapsed = false;
             const isActiveSection = sectionIndex === activeSectionIndex;
+            const isUpcomingSection = sectionIndex === upcomingSectionIndex;
+            const isDimmedSection = isPlaying && !isActiveSection && !isUpcomingSection;
             const visual = sectionMapItems[sectionIndex] || SECTION_VISUALS.default;
             const headerBgStyle = isActiveSection
               ? { backgroundColor: toRgba(visual.rgb, 0.045) }
@@ -4579,11 +4732,15 @@ export default function ModoEnsayoCompacto({
                   } dark:border-white/10 ${isActiveSection
                     ? 'bg-white/96 dark:bg-zinc-900'
                     : 'border-zinc-200 bg-white/92 dark:border-white/10 dark:bg-zinc-900/88'
-                  }`}
+                  } duration-500 ${isDimmedSection ? 'opacity-40' : 'opacity-100'}`}
                 style={isActiveSection ? {
                   borderColor: toRgba(visual.rgb, 0.58),
                   backgroundColor: toRgba(visual.rgb, 0.035),
                   boxShadow: `0 0 0 1.5px ${toRgba(visual.rgb, 0.18)}, 0 18px 34px rgba(24,24,27,0.12)`,
+                } : isUpcomingSection ? {
+                  borderColor: toRgba(visual.rgb, 0.75),
+                  borderStyle: 'dashed',
+                  borderWidth: '1.5px',
                 } : undefined}
                 onClick={(event) => {
                   if (event.target.closest('summary')) return;
@@ -4623,6 +4780,11 @@ export default function ModoEnsayoCompacto({
                       >
                         {section.name}
                       </h2>
+                      {isUpcomingSection && (
+                        <span className="ml-1 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-white" style={{ backgroundColor: toRgba(visual.rgb, 0.95) }}>
+                          Sigue
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="flex min-w-0 items-center gap-2 rounded-full pl-2" style={headerBgStyle}>
@@ -4668,7 +4830,7 @@ export default function ModoEnsayoCompacto({
                             />
                           )}
                           {renderedLine.mode === 'instrumental' && (
-                            <div className="flex flex-row flex-wrap gap-2">
+                            <div className="flex flex-row flex-wrap gap-x-6 gap-y-2">
                               {renderedLine.chords.map((chord, chordIndex) => (
                                 tapChordPreviewEnabled ? (
                                   <ClickableChordToken
@@ -4708,6 +4870,55 @@ export default function ModoEnsayoCompacto({
           })}
         </div>
       </main>
+      {setlistSidebarActive && (
+        <nav
+          aria-label="Canciones del ensayo"
+          className="fixed left-3 z-20 flex w-[18rem] flex-col overflow-hidden rounded-[1.35rem] border border-zinc-200 bg-white/95 shadow-sm transition-[top] duration-300 dark:border-white/10 dark:bg-zinc-900/95"
+          style={{ top: currentHeaderOffset + 12, maxHeight: `calc(100dvh - ${currentHeaderOffset + 12}px - env(safe-area-inset-bottom) - 7rem)` }}
+        >
+          <p className="px-4 pb-2 pt-4 text-[11px] font-black uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
+            Canciones del ensayo
+          </p>
+          <ol className="min-h-0 overflow-y-auto px-2 pb-2">
+            {setlistSongs.map((setlistSong, index) => {
+              const isCurrent = setlistPosition?.index === index;
+              return (
+                <li key={setlistSong.id || index}>
+                  <button
+                    type="button"
+                    onClick={() => { if (!isCurrent) onOpenSetlistSong(index); }}
+                    aria-current={isCurrent ? 'true' : undefined}
+                    className={`flex w-full items-center gap-3 rounded-2xl px-2.5 py-2.5 text-left transition-colors ${isCurrent ? 'bg-brand/10 dark:bg-brand/15' : 'hover:bg-zinc-100 dark:hover:bg-white/5'}`}
+                  >
+                    <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-black ${isCurrent ? 'bg-brand text-white' : 'bg-zinc-100 text-zinc-500 dark:bg-white/10 dark:text-zinc-400'}`}>
+                      {isCurrent && isPlaying ? <Volume2 className="h-3.5 w-3.5" /> : index + 1}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className={`block truncate text-[15px] font-bold ${isCurrent ? 'text-brand' : 'text-zinc-800 dark:text-zinc-100'}`}>{setlistSong.title}</span>
+                      {setlistSong.artist && <span className="block truncate text-xs text-zinc-500 dark:text-zinc-400">{setlistSong.artist}</span>}
+                    </span>
+                    {setlistSong.keyLabel && (
+                      <span className="shrink-0 text-xs font-bold text-zinc-500 dark:text-zinc-400">{setlistSong.keyLabel}</span>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </nav>
+      )}
+      {atrilActive && (
+        <>
+          <button type="button" onClick={() => showAtrilColumn(atrilLeftColumn - 2)} disabled={atrilLeftColumn <= 0} aria-label="Página anterior"
+            className="fixed left-2 top-1/2 z-30 flex h-12 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/80 text-zinc-700 shadow disabled:opacity-0 dark:bg-zinc-900/80 dark:text-zinc-200">
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <button type="button" onClick={() => showAtrilColumn(atrilLeftColumn + 2)} aria-label="Página siguiente"
+            className="fixed right-2 top-1/2 z-30 flex h-12 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/80 text-zinc-700 shadow dark:bg-zinc-900/80 dark:text-zinc-200">
+            <ChevronRight className="h-5 w-5" />
+          </button>
+        </>
+      )}
       {/* Floating bar: only what you use while playing; everything else lives in the "Ensayo" sheet. */}
       <div
         className="ensayo-footer-shell fixed inset-x-0 bottom-0 z-40 px-3 pb-[calc(env(safe-area-inset-bottom)+0.6rem)]"
@@ -4808,14 +5019,14 @@ export default function ModoEnsayoCompacto({
         {/* Song and transport */}
         <SheetSection>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={() => onPrevSong?.()} disabled={!onPrevSong} aria-label="Canción anterior" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-zinc-600 disabled:opacity-30 dark:text-zinc-300">
+            <button type="button" onClick={() => onPrevSong?.()} disabled={!onPrevSong} aria-label="Canción anterior" className={`${setlistSidebarActive ? 'invisible' : ''} flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-zinc-600 disabled:opacity-30 dark:text-zinc-300`}>
               <ChevronLeft className="h-5 w-5" />
             </button>
             <div className="min-w-0 flex-1 text-center">
               <p className="truncate text-[15px] font-bold md:text-xl">{titleLine}</p>
               <p className="truncate text-xs text-zinc-500 dark:text-zinc-400 md:mt-0.5 md:text-sm">{artistLine}{currentSongBpm ? ` · ${currentSongBpm} BPM` : ''}</p>
             </div>
-            <button type="button" onClick={() => onNextSong?.()} disabled={!onNextSong} aria-label="Canción siguiente" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-zinc-600 disabled:opacity-30 dark:text-zinc-300">
+            <button type="button" onClick={() => onNextSong?.()} disabled={!onNextSong} aria-label="Canción siguiente" className={`${setlistSidebarActive ? 'invisible' : ''} flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-zinc-600 disabled:opacity-30 dark:text-zinc-300`}>
               <ChevronRight className="h-5 w-5" />
             </button>
           </div>
@@ -5318,9 +5529,8 @@ export default function ModoEnsayoCompacto({
             height: 2rem !important;
             font-size: 0.64rem !important;
           }
-          .ensayo-sections-layout {
-            columns: 2;
-            column-gap: 0.85rem;
+          .ensayo-sections-layout:not(.ensayo-atril) {
+            max-width: 48rem;
           }
           .ensayo-main-scroll {
             padding-bottom: 5.15rem !important;
