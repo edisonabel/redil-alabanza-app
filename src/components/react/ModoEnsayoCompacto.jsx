@@ -1,11 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ChevronLeft, ChevronRight, LoaderCircle, Mic, MicOff, Pause, Play, Radio, RadioReceiver, Repeat, Repeat1, SlidersHorizontal, X } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Disc3, Headphones, LoaderCircle, Mic, Mic2, MicOff, Pause, Play, Radio, RadioReceiver, Repeat, Repeat1, SlidersHorizontal, TrendingUp, User, Volume2, VolumeX, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { audioSessionService } from '../../services/AudioSessionService';
 import { metronomeService } from '../../services/MetronomeEngine';
 import { IndependentPadPlayer } from '../../services/IndependentPadPlayer';
 import { screenWakeLockService } from '../../services/ScreenWakeLockService';
-import { useMultitrackEngine } from '../../hooks/useMultitrackEngine';
+import { canUseAdvancedStreamingEngine, useMultitrackEngine } from '../../hooks/useMultitrackEngine';
+import {
+  FULL_SEQUENCE_SOURCE_ID,
+  readStoredRehearsalSource,
+  rehearsalTrackLabel,
+  songHasRehearsalSequence,
+  useRehearsalSequence,
+} from '../../hooks/useRehearsalSequence';
+import { MAX_GROUP_LEVEL, REHEARSAL_PART_MODE_HINTS } from '../../utils/rehearsalSequenceMix.js';
 import { isLikelyAudioSourceUrl, resolvePreferredAudioUrl } from '../../lib/audio-playback.js';
 import { buildWordGroups, parseChordProLine } from '../../utils/chordProLineUtils';
 import { CHORD_SPELLINGS, spellChord, spellChordProLine } from '../../utils/chordSpelling';
@@ -1378,6 +1386,10 @@ export default function ModoEnsayoCompacto({
   onPersonalSettingsChange,
   eventKeySemitones = 0,
   onEventKeyAnnounced,
+  userRoleCodes = [],
+  setlistPosition = null,
+  onPrevSong = null,
+  onNextSong = null,
 }) {
   if (!song) return null;
   const [headerHidden, setHeaderHidden] = useState(false);
@@ -1410,7 +1422,15 @@ export default function ModoEnsayoCompacto({
   const [activeChordPreview, setActiveChordPreview] = useState(null);
   const [chordLibraryInstrument, setChordLibraryInstrument] = useState('guitar');
   const [chordVariationByKey, setChordVariationByKey] = useState({});
-  const [selectedPlaybackSourceId, setSelectedPlaybackSourceId] = useState('original');
+  // Songs with a full multitrack sequence play it by default (the Live
+  // Director engine with every stem); "Música original" stays one tap away.
+  const fullSequenceAvailable = useMemo(() => !globalSyncMode && songHasRehearsalSequence(song), [globalSyncMode, song]);
+  const defaultPlaybackSourceId = fullSequenceAvailable
+    && (typeof window === 'undefined' || readStoredRehearsalSource(userId, String(song?.id || '')) !== 'original')
+    ? FULL_SEQUENCE_SOURCE_ID
+    : 'original';
+  const [selectedPlaybackSourceId, setSelectedPlaybackSourceId] = useState(defaultPlaybackSourceId);
+  const isFullSequenceSelected = fullSequenceAvailable && selectedPlaybackSourceId === FULL_SEQUENCE_SOURCE_ID;
   const [syncRole, setSyncRole] = useState(globalSyncMode ? 'musico' : 'local');
   const [remotePayload, setRemotePayload] = useState(null);
   const [panValue, setPanValue] = useState(0);
@@ -1442,6 +1462,8 @@ export default function ModoEnsayoCompacto({
   const lastPersistedPersonalSettingsRef = useRef('');
   const personalSettingsToastTimeoutRef = useRef(null);
   const pendingPlaybackResumeRef = useRef(false);
+  // Song position to restore after switching between the full sequence and the original.
+  const pendingSourceSeekRef = useRef(null);
   const playbackSeekOperationRef = useRef(0);
   const playbackSeekPendingRef = useRef(false);
   const playbackSeekResumeAfterRef = useRef(false);
@@ -1472,7 +1494,9 @@ export default function ModoEnsayoCompacto({
   const [isPadActive, setIsPadActive] = useState(false);
   const [headerHeight, setHeaderHeight] = useState(148);
   const useStreamingRehearsalMixEngine = useMemo(() => shouldUseStreamingRehearsalMixEngine(), []);
-  const rehearsalMixEngine = useMultitrackEngine({ useStreamingEngine: useStreamingRehearsalMixEngine });
+  const rehearsalMixEngine = useMultitrackEngine({
+    useStreamingEngine: isFullSequenceSelected ? canUseAdvancedStreamingEngine() : useStreamingRehearsalMixEngine,
+  });
   const {
     currentTime: rehearsalMixCurrentTime,
     duration: rehearsalMixDuration,
@@ -1486,6 +1510,9 @@ export default function ModoEnsayoCompacto({
     seekTo: seekRehearsalMixTo,
     setTrackOutputRoute: setRehearsalMixTrackOutputRoute,
     setVolume: setRehearsalMixVolume,
+    setMasterVolume: setRehearsalMixMasterVolume,
+    fadeMasterVolume: fadeRehearsalMixMasterVolume,
+    unlockAudioForUserGesture: unlockRehearsalMixAudio,
     stop: stopRehearsalMix,
   } = rehearsalMixEngine;
   const rehearsalMixSeekQueue = useMemo(() => createLatestWinsAsyncQueue(
@@ -1884,7 +1911,12 @@ export default function ModoEnsayoCompacto({
   const titleLine = currentSong.title || 'Titulo de Cancion';
   const artistLine = currentSong.artist || 'Artista';
   const shouldRotateHeaderMeta = Boolean(artistLine) && titleLine.trim() !== artistLine.trim();
-  const playbackSources = useMemo(() => buildPlaybackSources(currentSong), [currentSong]);
+  const playbackSources = useMemo(() => {
+    const base = buildPlaybackSources(currentSong);
+    return fullSequenceAvailable
+      ? [{ id: FULL_SEQUENCE_SOURCE_ID, label: 'Secuencia completa', url: '', kind: 'full-sequence' }, ...base]
+      : base;
+  }, [currentSong, fullSequenceAvailable]);
   const guideCueSources = useMemo(() => buildGuideCueSources(currentSong), [currentSong]);
   const processedGuideCueSources = useMemo(() => (
     guideCueSources.map((source) => {
@@ -1902,9 +1934,11 @@ export default function ModoEnsayoCompacto({
   const activePlaybackSource = useMemo(() => (
     playbackSources.find((source) => source.id === selectedPlaybackSourceId) || originalPlaybackSource || null
   ), [originalPlaybackSource, playbackSources, selectedPlaybackSourceId]);
+  const isFullSequence = activePlaybackSource?.kind === 'full-sequence';
   const hasGuideCueSources = Boolean(
     hasPersistedGuideCueSources &&
-    activePlaybackSource?.kind !== 'original'
+    activePlaybackSource?.kind !== 'original' &&
+    !isFullSequence
   );
   const activePlaybackUrl = activePlaybackSource?.url || '';
   const processedActivePlaybackUrl = useMemo(() => (
@@ -1937,6 +1971,7 @@ export default function ModoEnsayoCompacto({
     Array.isArray(activeSongSectionMarkers)
       ? (() => {
         let nextSectionSearchIndex = 0;
+        let lastMappedSectionIndex = -1;
         const mappedMarkers = activeSongSectionMarkers
           .filter((marker) => Number.isFinite(Number(marker?.startSec)))
           .map((marker, index) => ({
@@ -1950,6 +1985,10 @@ export default function ModoEnsayoCompacto({
           }))
           .map((marker, index) => {
             const normalizedMarkerName = normalizeSectionLabel(marker.sectionName);
+            // REAPER marks a second pass as "Repetir", "Repetir 2"…: it is the previous section again.
+            if (index > 0 && lastMappedSectionIndex >= 0 && /^repetir(\s+\d+)?$/i.test(marker.sectionName)) {
+              return { ...marker, sectionIndex: lastMappedSectionIndex, isRepeatPass: true };
+            }
             let sectionIndex = Number.isInteger(marker.rawSectionIndex) &&
               marker.rawSectionIndex >= 0 &&
               marker.rawSectionIndex < currentSections.length
@@ -1978,6 +2017,7 @@ export default function ModoEnsayoCompacto({
               sectionIndex = Math.min(index, Math.max(currentSections.length - 1, 0));
             }
             nextSectionSearchIndex = Math.max(nextSectionSearchIndex, sectionIndex + 1);
+            lastMappedSectionIndex = sectionIndex;
             return {
               ...marker,
               sectionIndex,
@@ -1987,12 +2027,40 @@ export default function ModoEnsayoCompacto({
       })()
       : []
   ), [activePlaybackSource?.kind, activeSongSectionMarkers, currentSections, currentSong?.duration, currentSongKey, playbackSectionOffsetSeconds]);
-  const hasAudio = typeof processedActivePlaybackUrl === 'string' && processedActivePlaybackUrl.trim() !== '';
-  const shouldUseRehearsalMixCandidate = Boolean(
-    hasAudio &&
-    hasGuideCueSources &&
-    activePlaybackSource?.kind !== 'original'
-  );
+  const hasAudio = isFullSequence || (typeof processedActivePlaybackUrl === 'string' && processedActivePlaybackUrl.trim() !== '');
+  // ---- Full sequence (all stems on the Live Director engine) ----
+  const sequenceSections = useMemo(() => currentSongMarkers.map((marker, index) => ({
+    id: String(marker.id || `marker-${index}`),
+    name: marker.sectionName || currentSections[marker.sectionIndex]?.name || `Sección ${index + 1}`,
+    startTime: marker.startSec,
+    // A marker's end is the next start (empty ends come through as 0).
+    endTime: Number.isFinite(marker.endSec) && marker.endSec > marker.startSec
+      ? marker.endSec
+      : (currentSongMarkers[index + 1]?.startSec ?? null),
+  })), [currentSections, currentSongMarkers]);
+  const sequenceJumpRef = useRef(null);
+  const sequence = useRehearsalSequence({
+    enabled: fullSequenceAvailable,
+    song,
+    eventId,
+    userId,
+    userRoleCodes,
+    eventKeySemitones,
+    sheetSections: currentSections,
+    engine: rehearsalMixEngine,
+    isOriginal: !isFullSequence,
+    sections: isFullSequence ? sequenceSections : [],
+    bpm: currentSongBpm,
+    isSeeking: isPlaybackSeekPending,
+    onJump: (time) => sequenceJumpRef.current?.(time),
+  });
+  const shouldUseRehearsalMixCandidate = isFullSequence
+    ? sequence.engineTracks.length > 0
+    : Boolean(
+      hasAudio &&
+      hasGuideCueSources &&
+      activePlaybackSource?.kind !== 'original'
+    );
   const shouldUseRehearsalMix = shouldUseRehearsalMixCandidate && !rehearsalMixUnavailable;
   const rehearsalMixMainOutputRoute = useMemo(() => (
     getRehearsalMixMainOutputRoute(panValue)
@@ -2001,6 +2069,7 @@ export default function ModoEnsayoCompacto({
     processedGuideCueSources.map((source, index) => `${REHEARSAL_MIX_GUIDE_TRACK_PREFIX}-${source.id || index}`)
   ), [processedGuideCueSources]);
   const rehearsalMixTracks = useMemo(() => {
+    if (isFullSequence) return shouldUseRehearsalMix ? sequence.engineTracks : [];
     const mainUrl = String(rehearsalMixActivePlaybackUrl || processedActivePlaybackUrl || activePlaybackUrl || '').trim();
     if (!shouldUseRehearsalMix || !mainUrl || processedGuideCueSources.length === 0) {
       return [];
@@ -2041,9 +2110,11 @@ export default function ModoEnsayoCompacto({
   }, [
     activePlaybackSource?.label,
     activePlaybackUrl,
+    isFullSequence,
     processedActivePlaybackUrl,
     processedGuideCueSources,
     rehearsalMixActivePlaybackUrl,
+    sequence.engineTracks,
     shouldUseRehearsalMix,
   ]);
   useEffect(() => {
@@ -2063,8 +2134,10 @@ export default function ModoEnsayoCompacto({
       const markerEdge = Number.isFinite(marker?.endSec) ? marker.endSec : marker?.startSec;
       return Math.max(maxValue, markerEdge || 0);
     }, 0);
+    // With the full sequence the song's duration is only a lyrics estimate: use the stems.
+    if (isFullSequence) return Math.max(0, highestMarkerPoint, sequence.envelopeDuration || 0);
     return Math.max(0, currentSong?.duration || 0, highestMarkerPoint);
-  }, [currentSong?.duration, currentSongMarkers]);
+  }, [currentSong?.duration, currentSongMarkers, isFullSequence, sequence.envelopeDuration]);
   const timelineDuration = Math.max(1, audioDuration > 0 ? audioDuration : fallbackTrackDuration || 1);
   const durationLabel = audioDuration > 0
     ? formatSeconds(audioDuration)
@@ -2365,7 +2438,7 @@ export default function ModoEnsayoCompacto({
     if (lastRehearsalMixSourceRef.current === mixSourceKey) return;
 
     lastRehearsalMixSourceRef.current = mixSourceKey;
-    setPanValue(1);
+    if (!isFullSequence) setPanValue(1);
   }, [currentSongKey, selectedPlaybackSourceId, shouldUseRehearsalMix]);
   useEffect(() => {
     let cancelled = false;
@@ -2389,10 +2462,14 @@ export default function ModoEnsayoCompacto({
 
     fallbackTimeoutId = window.setTimeout(() => {
       if (cancelled) return;
+      if (isFullSequence) {
+        setAudioLoadError('La secuencia está tardando en cargar. Revisa tu conexión o usa Música original.');
+        return;
+      }
       console.warn('[ModoEnsayoCompacto] La mezcla de ensayo tardo demasiado; usando reproductor simple.');
       setPanValue(0);
       setRehearsalMixUnavailable(true);
-    }, 5000);
+    }, isFullSequence ? 45000 : 5000);
 
     initializeRehearsalMix(rehearsalMixTracks).then(() => {
       if (fallbackTimeoutId !== null) {
@@ -2404,6 +2481,12 @@ export default function ModoEnsayoCompacto({
       }
       if (cancelled) return;
       console.warn('[ModoEnsayoCompacto] No se pudo preparar la mezcla de ensayo.', error);
+      if (isFullSequence) {
+        setAudioLoadError('No se pudo cargar la secuencia en este equipo. Puedes ensayar con Música original.');
+        setAudioReady(false);
+        setIsPlaying(false);
+        return;
+      }
       setPanValue(0);
       setRehearsalMixUnavailable(true);
       setAudioReady(false);
@@ -2419,13 +2502,14 @@ export default function ModoEnsayoCompacto({
     };
   }, [
     initializeRehearsalMix,
+    isFullSequence,
     pauseGuideCueTracks,
     rehearsalMixTracks,
     shouldUseRehearsalMix,
     stopRehearsalMix,
   ]);
   useEffect(() => {
-    if (!shouldUseRehearsalMix || !rehearsalMixIsReady) return;
+    if (!shouldUseRehearsalMix || !rehearsalMixIsReady || isFullSequence) return;
 
     const guideVolume = guideCueEnabled ? Math.max(0, Math.min(1, guideCueVolume)) : 0;
     rehearsalMixGuideTrackIds.forEach((trackId) => {
@@ -2435,6 +2519,7 @@ export default function ModoEnsayoCompacto({
   }, [
     guideCueEnabled,
     guideCueVolume,
+    isFullSequence,
     rehearsalMixGuideTrackIds,
     rehearsalMixIsReady,
     setRehearsalMixTrackOutputRoute,
@@ -2442,7 +2527,7 @@ export default function ModoEnsayoCompacto({
     shouldUseRehearsalMix,
   ]);
   useEffect(() => {
-    if (!shouldUseRehearsalMix || !rehearsalMixIsReady) return;
+    if (!shouldUseRehearsalMix || !rehearsalMixIsReady || isFullSequence) return;
 
     setRehearsalMixVolume(
       REHEARSAL_MIX_MAIN_TRACK_ID,
@@ -2450,6 +2535,7 @@ export default function ModoEnsayoCompacto({
     );
     setRehearsalMixTrackOutputRoute(REHEARSAL_MIX_MAIN_TRACK_ID, rehearsalMixMainOutputRoute);
   }, [
+    isFullSequence,
     isMetronomeOn,
     rehearsalMixIsReady,
     rehearsalMixMainOutputRoute,
@@ -2460,10 +2546,10 @@ export default function ModoEnsayoCompacto({
   useEffect(() => {
     if (!shouldUseRehearsalMix) return;
 
-    const resolvedMixDuration = Math.max(
-      Number.isFinite(Number(rehearsalMixDuration)) ? Number(rehearsalMixDuration) : 0,
-      fallbackTrackDuration || 0,
-    );
+    const engineMixDuration = Number.isFinite(Number(rehearsalMixDuration)) ? Number(rehearsalMixDuration) : 0;
+    const resolvedMixDuration = isFullSequence && engineMixDuration > 0
+      ? engineMixDuration
+      : Math.max(engineMixDuration, fallbackTrackDuration || 0);
     const resolvedMixTime = resolvedMixDuration > 0
       ? Math.min(rehearsalMixCurrentTime, resolvedMixDuration)
       : rehearsalMixCurrentTime;
@@ -2478,12 +2564,38 @@ export default function ModoEnsayoCompacto({
     ));
   }, [
     fallbackTrackDuration,
+    isFullSequence,
     rehearsalMixCurrentTime,
     rehearsalMixDuration,
     rehearsalMixIsPlaying,
     rehearsalMixIsReady,
     shouldUseRehearsalMix,
   ]);
+  // Own clock for the full sequence, read from the engine like the Live
+  // Director: the hook's React clock stops when the engine pauses for an
+  // instant during a seek and only restarts when isPlaying toggles.
+  useEffect(() => {
+    if (!isFullSequence || !rehearsalMixIsReady || !rehearsalMixIsPlaying) return undefined;
+    let frame = 0;
+    let last = 0;
+    const tick = (now) => {
+      if (now - last >= 80) {
+        last = now;
+        const value = Number(getRehearsalMixCurrentTimeSnapshot());
+        if (Number.isFinite(value) && !playbackSeekPendingRef.current) {
+          setAudioCurrentTime((previous) => (Math.abs(previous - value) < 0.04 ? previous : value));
+        }
+      }
+      frame = window.requestAnimationFrame(tick);
+    };
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
+  }, [getRehearsalMixCurrentTimeSnapshot, isFullSequence, rehearsalMixIsPlaying, rehearsalMixIsReady]);
+  const sequenceSeekFadeRef = useRef(false);
+  useEffect(() => {
+    if (!isFullSequence || !rehearsalMixIsReady || sequenceSeekFadeRef.current) return;
+    setRehearsalMixMasterVolume(sequence.prefs.master);
+  }, [isFullSequence, rehearsalMixIsReady, sequence.prefs.master, setRehearsalMixMasterVolume]);
   const stopMetronome = React.useCallback(() => {
     metronomeIntentGenerationRef.current += 1;
     metronomeService.stop();
@@ -2507,6 +2619,10 @@ export default function ModoEnsayoCompacto({
     await startMetronomeAtTransportTime(transportTime);
   }, [startMetronomeAtTransportTime]);
   const handleToggleMetronome = React.useCallback(async () => {
+    if (isFullSequence) {
+      if (sequence.clickAvailable) sequence.toggleClick();
+      return;
+    }
     if (!currentSongBpm || playbackSeekPendingRef.current) return;
     if (isMetronomeOnRef.current) {
       stopMetronome();
@@ -2531,15 +2647,57 @@ export default function ModoEnsayoCompacto({
     audioCurrentTime,
     currentSongBpm,
     getRehearsalMixCurrentTimeSnapshot,
+    isFullSequence,
+    sequence.clickAvailable,
+    sequence.toggleClick,
     shouldUseRehearsalMix,
     startMetronomeAtTransportTime,
     stopMetronome,
   ]);
   const commitPlaybackSeek = React.useCallback(async (
     targetTime,
-    { ensurePlayingAfterSeek = false } = {},
+    { ensurePlayingAfterSeek = false, fromNavigation = false } = {},
   ) => {
     const safeTargetTime = Math.max(0, Number(targetTime) || 0);
+
+    if (isFullSequence) {
+      const seekOperation = ++playbackSeekOperationRef.current;
+      if (!fromNavigation) sequence.cancelNavigation();
+      const wasPlaying = rehearsalMixIsPlaying;
+      playbackSeekPendingRef.current = true;
+      setIsPlaybackSeekPending(true);
+      setPlaybackSeekError('');
+      setPlaybackSeekNotice('');
+      try {
+        if (wasPlaying) {
+          sequenceSeekFadeRef.current = true;
+          fadeRehearsalMixMasterVolume(0, 170);
+          await new Promise((resolve) => window.setTimeout(resolve, 170));
+        }
+        if (playbackSeekOperationRef.current !== seekOperation) return;
+        await seekRehearsalMixTo(safeTargetTime, { wasPlayingBeforeUiSeek: wasPlaying });
+        if (playbackSeekOperationRef.current !== seekOperation) return;
+        if (!wasPlaying && ensurePlayingAfterSeek) {
+          await unlockRehearsalMixAudio();
+          await playRehearsalMix();
+        }
+        const snapshot = Number(getRehearsalMixCurrentTimeSnapshot());
+        setAudioCurrentTime(Math.max(0, Number.isFinite(snapshot) ? snapshot : safeTargetTime));
+      } catch (error) {
+        if (playbackSeekOperationRef.current === seekOperation) {
+          setPlaybackSeekError('No se pudieron alinear las pistas. Intenta nuevamente.');
+        }
+        throw error;
+      } finally {
+        if (wasPlaying) fadeRehearsalMixMasterVolume(sequence.prefs.master, 180);
+        sequenceSeekFadeRef.current = false;
+        if (playbackSeekOperationRef.current === seekOperation) {
+          playbackSeekPendingRef.current = false;
+          setIsPlaybackSeekPending(false);
+        }
+      }
+      return;
+    }
 
     if (shouldUseRehearsalMix) {
       const seekOperation = ++playbackSeekOperationRef.current;
@@ -2609,17 +2767,24 @@ export default function ModoEnsayoCompacto({
     }
     await rephaseMetronomeAtTransportTime(safeTargetTime);
   }, [
+    fadeRehearsalMixMasterVolume,
     getRehearsalMixCurrentTimeSnapshot,
+    isFullSequence,
     pauseRehearsalMix,
     playRehearsalMix,
     rehearsalMixIsPlaying,
     rephaseMetronomeAtTransportTime,
     requestRehearsalMixSeek,
     scheduleGuideCueResync,
+    seekRehearsalMixTo,
+    sequence,
     shouldUseRehearsalMix,
     stopMetronome,
     syncGuideCueTracks,
+    unlockRehearsalMixAudio,
   ]);
+  // The gapless repeat falls back to a normal seek on devices without prepared jumps.
+  sequenceJumpRef.current = (time) => commitPlaybackSeek(time, { fromNavigation: true });
   useEffect(() => {
     if (
       !shouldUseRehearsalMix
@@ -2860,7 +3025,7 @@ export default function ModoEnsayoCompacto({
     setTapChordPreviewEnabled(false);
     setActiveChordPreview(null);
     setChordVariationByKey({});
-    setSelectedPlaybackSourceId('original');
+    setSelectedPlaybackSourceId(defaultPlaybackSourceId);
     setGuideCueEnabled(true);
     setHeaderHidden(isLandscapeCompact);
     pauseGuideCueTracks();
@@ -2957,9 +3122,9 @@ export default function ModoEnsayoCompacto({
     if (playbackSources.length === 0) return;
     const hasSelectedSource = playbackSources.some((source) => source.id === selectedPlaybackSourceId);
     if (!hasSelectedSource) {
-      setSelectedPlaybackSourceId(originalPlaybackSource?.id || 'original');
+      setSelectedPlaybackSourceId(fullSequenceAvailable ? FULL_SEQUENCE_SOURCE_ID : (originalPlaybackSource?.id || 'original'));
     }
-  }, [originalPlaybackSource?.id, playbackSources, selectedPlaybackSourceId]);
+  }, [fullSequenceAvailable, originalPlaybackSource?.id, playbackSources, selectedPlaybackSourceId]);
   useEffect(() => {
     if (!showOptionsMenu || typeof window === 'undefined') return undefined;
     const handlePointerDown = (event) => {
@@ -3341,6 +3506,30 @@ export default function ModoEnsayoCompacto({
     });
   }, [hasAudio, processedActivePlaybackUrl, shouldUseRehearsalMix]);
   useEffect(() => {
+    const target = pendingSourceSeekRef.current;
+    if (target === null) return;
+    if (shouldUseRehearsalMix) {
+      if (!rehearsalMixIsReady) return;
+      pendingSourceSeekRef.current = null;
+      const resume = pendingPlaybackResumeRef.current;
+      pendingPlaybackResumeRef.current = false;
+      void seekRehearsalMixTo(target)
+        .then(async () => {
+          setAudioCurrentTime(target);
+          if (resume) {
+            await unlockRehearsalMixAudio();
+            await playRehearsalMix();
+          }
+        })
+        .catch(() => setIsPlaying(false));
+      return;
+    }
+    if (!audioReady || !audioRef.current) return;
+    pendingSourceSeekRef.current = null;
+    audioRef.current.currentTime = target;
+    setAudioCurrentTime(target);
+  }, [audioReady, playRehearsalMix, rehearsalMixIsReady, seekRehearsalMixTo, shouldUseRehearsalMix, unlockRehearsalMixAudio]);
+  useEffect(() => {
     if (shouldUseRehearsalMix) {
       if (!pendingPlaybackResumeRef.current || !rehearsalMixIsReady) return;
       pendingPlaybackResumeRef.current = false;
@@ -3597,6 +3786,7 @@ export default function ModoEnsayoCompacto({
     if (shouldUseRehearsalMix) {
       if (!rehearsalMixIsReady) return;
       try {
+        if (isFullSequence) await unlockRehearsalMixAudio();
         if (playbackSeekError) {
           await commitPlaybackSeek(audioCurrentTime);
           setPlaybackSeekNotice('Pistas listas. Presiona Play nuevamente.');
@@ -3653,13 +3843,31 @@ export default function ModoEnsayoCompacto({
     setTimelineSeekPreview(nextTime);
     scheduleTimelineSeekCommit(nextTime);
   };
-  const handleSelectPlaybackSource = (sourceId) => {
+  const handleSelectPlaybackSource = async (sourceId) => {
     setAudioLoadError('');
     if (sourceId === selectedPlaybackSourceId) {
       setShowPlaybackOptions(false);
       return;
     }
-    const wasPlaying = Boolean(audioRef.current && !audioRef.current.paused);
+    const fromKind = activePlaybackSource?.kind;
+    const toKind = playbackSources.find((source) => source.id === sourceId)?.kind;
+    const crossing = fullSequenceAvailable && (
+      (fromKind === 'full-sequence' && toKind === 'original') || (fromKind === 'original' && toKind === 'full-sequence')
+    );
+    let wasPlaying = Boolean(audioRef.current && !audioRef.current.paused);
+    pendingSourceSeekRef.current = null;
+    if (crossing) {
+      sequence.cancelNavigation();
+      sequence.updatePrefs({ source: toKind === 'original' ? 'original' : 'secuencia' });
+      // The first time, the shift is measured while the current audio keeps playing.
+      const offset = toKind === 'original' ? await sequence.resolveMp3Offset() : sequence.mp3Offset;
+      const fromSequence = fromKind === 'full-sequence';
+      const time = fromSequence
+        ? Number(getRehearsalMixCurrentTimeSnapshot()) || 0
+        : (audioRef.current?.currentTime || audioCurrentTime || 0);
+      wasPlaying = fromSequence ? rehearsalMixIsPlaying : Boolean(audioRef.current && !audioRef.current.paused);
+      pendingSourceSeekRef.current = Math.max(0, fromSequence ? time - offset : time + offset);
+    }
     pendingPlaybackResumeRef.current = wasPlaying;
     playbackSeekOperationRef.current += 1;
     playbackSeekPendingRef.current = false;
@@ -3683,6 +3891,61 @@ export default function ModoEnsayoCompacto({
     setSelectedPlaybackSourceId(sourceId);
     setShowPlaybackOptions(false);
   };
+  // ---- Repeat with the full sequence (Live Director controller, gapless) ----
+  const [pendingSectionRepeat, setPendingSectionRepeat] = useState(null); // null | 'once' | 'hold'
+  useEffect(() => {
+    if (!pendingSectionRepeat || !isFullSequence) return;
+    if (!rehearsalMixIsPlaying) return;
+    const mode = pendingSectionRepeat;
+    setPendingSectionRepeat(null);
+    sequence.startRepeat(mode);
+  }, [isFullSequence, pendingSectionRepeat, rehearsalMixIsPlaying, sequence]);
+  useEffect(() => { setPendingSectionRepeat(null); }, [currentSongKey, selectedPlaybackSourceId]);
+  const sectionRepeatMode = isFullSequence ? (sequence.repeatMode || pendingSectionRepeat) : null;
+  const handleLoopButton = () => {
+    if (!isFullSequence) {
+      setLoopState((prev) => ((prev + 1) % 3));
+      return;
+    }
+    if (loopState === 1) { setLoopState(0); return; }
+    if (!sectionRepeatMode) {
+      if (!sequence.startRepeat('once') && rehearsalMixIsReady) {
+        setPendingSectionRepeat('once');
+        if (!rehearsalMixIsPlaying) void handleTogglePlayback();
+      }
+      return;
+    }
+    if (sectionRepeatMode === 'once') {
+      if (pendingSectionRepeat) { setPendingSectionRepeat('hold'); return; }
+      sequence.cancelNavigation();
+      sequence.startRepeat('hold');
+      return;
+    }
+    sequence.cancelNavigation();
+    setPendingSectionRepeat(null);
+    setLoopState(1);
+  };
+  const loopButtonLabel = sectionRepeatMode === 'once'
+    ? 'Repetir esta sección una vez (toca para repetirla siempre)'
+    : sectionRepeatMode === 'hold'
+      ? 'Repitiendo esta sección (toca para repetir toda la canción)'
+      : loopState === 1
+        ? 'Repetir toda la canción (toca para apagar)'
+        : loopState === 2
+          ? 'Repetir seccion'
+          : isFullSequence ? 'Repetir esta sección' : 'Loop apagado';
+  const metronomeChipOn = isFullSequence ? (sequence.clickAvailable && !sequence.clickMuted) : isMetronomeOn;
+  const sequenceNavigationLabel = (() => {
+    if (!isFullSequence) return '';
+    if (sequence.aligningOriginal) return 'Ajustando el Original a la secuencia…';
+    const { repeat, preparation } = sequence.sectionJump;
+    if (pendingSectionRepeat) return 'Preparando repetición…';
+    if (!repeat) return '';
+    const marker = currentSongMarkers.find((item) => Math.abs(item.startSec - repeat.section.startTime) < 0.01);
+    const name = currentSections[marker?.sectionIndex]?.name || repeat.section.name;
+    if (preparation === 'preparing') return `Preparando ${name}…`;
+    return repeat.mode === 'once' ? `${name}: una vez más` : `Repitiendo ${name} · ∞`;
+  })();
   const voiceFollowerStatusLabel = voiceFollowerStatus === 'starting'
     ? 'Preparando micrófono…'
     : voiceFollowerStatus === 'listening'
@@ -3699,7 +3962,7 @@ export default function ModoEnsayoCompacto({
       <audio
         key={`${currentSongKey}-${selectedPlaybackSourceId}-${processedActivePlaybackUrl || activePlaybackUrl || 'no-audio'}`}
         ref={audioRef}
-        src={!shouldUseRehearsalMix && hasAudio ? (processedActivePlaybackUrl || activePlaybackUrl) : undefined}
+        src={!shouldUseRehearsalMix && !isFullSequence && hasAudio ? (processedActivePlaybackUrl || activePlaybackUrl) || undefined : undefined}
         crossOrigin="anonymous"
         preload="auto"
         playsInline
@@ -3840,17 +4103,31 @@ export default function ModoEnsayoCompacto({
             >
               {syncRole === 'director' ? <Radio className="h-4.5 w-4.5 animate-pulse" /> : <RadioReceiver className="h-4.5 w-4.5" />}
             </button>
+          {(onPrevSong || onNextSong) && (
+            <div className="flex shrink-0 items-center">
+              <button type="button" onClick={() => onPrevSong?.()} disabled={!onPrevSong} aria-label="Canción anterior"
+                className="flex h-10 w-8 items-center justify-center rounded-xl text-zinc-700 disabled:opacity-30 dark:text-zinc-200">
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+              <button type="button" onClick={() => onNextSong?.()} disabled={!onNextSong} aria-label="Canción siguiente"
+                className="flex h-10 w-8 items-center justify-center rounded-xl text-zinc-700 disabled:opacity-30 dark:text-zinc-200">
+                <ChevronRight className="h-5 w-5" />
+              </button>
+            </div>
+          )}
             <button
               type="button"
               onClick={handleToggleMetronome}
-              disabled={!currentSongBpm || isPlaybackSeekPending}
+              disabled={(isFullSequence ? !sequence.clickAvailable : !currentSongBpm) || isPlaybackSeekPending}
               className={`ensayo-control-chip ensayo-bpm-chip relative inline-flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-2xl border bg-white text-zinc-900 shadow-sm transition-colors dark:bg-zinc-900 dark:text-zinc-50 ${currentSongBpm
                 && !isPlaybackSeekPending
                 ? 'border-zinc-200 hover:bg-zinc-100 dark:border-white/10 dark:hover:bg-zinc-800'
                 : 'cursor-not-allowed border-zinc-200/70 text-zinc-400 dark:border-white/10 dark:text-zinc-500'
-                } ${isMetronomeOn && !isPlaybackSeekPending ? 'beat-active' : ''}`}
-              style={isMetronomeOn && currentSongBpm && !isPlaybackSeekPending ? { '--bpm-duration': `${60 / currentSongBpm}s` } : undefined}
-              aria-label={isMetronomeOn ? `Detener metr\u00F3nomo ${currentSongBpm} BPM` : `Activar metr\u00F3nomo ${currentSongBpm || 0} BPM`}
+                } ${metronomeChipOn && !isPlaybackSeekPending ? 'beat-active' : ''}`}
+              style={metronomeChipOn && currentSongBpm && !isPlaybackSeekPending ? { '--bpm-duration': `${60 / currentSongBpm}s` } : undefined}
+              aria-label={isFullSequence
+                ? (metronomeChipOn ? `Silenciar el click (${currentSongBpm} BPM)` : `Activar el click (${currentSongBpm || 0} BPM)`)
+                : (isMetronomeOn ? `Detener metr\u00F3nomo ${currentSongBpm} BPM` : `Activar metr\u00F3nomo ${currentSongBpm || 0} BPM`)}
               title={currentSongBpm ? `${currentSongBpm} BPM` : 'Sin BPM'}
             >
               <span className={`relative z-[1] font-black leading-none ${String(currentSongBpm || '--').length > 2 ? 'text-[11px]' : 'text-sm'}`}>
@@ -3913,6 +4190,11 @@ export default function ModoEnsayoCompacto({
                         })}
                       </div>
                     </div>
+                  )}
+                  {sequence.eventKeyNotApplied && (
+                    <p className="px-1 text-xs font-semibold text-amber-600 dark:text-amber-300">
+                      La secuencia todavía suena en el tono original: el tono del evento no está listo para estas pistas.
+                    </p>
                   )}
                   {/* Alteraciones */}
                   <div>
@@ -4197,6 +4479,8 @@ export default function ModoEnsayoCompacto({
           paddingTop: `${currentHeaderOffset + (isLandscapeCompact ? 4 : 8)}px`,
           paddingLeft: 'calc(env(safe-area-inset-left) + 0.75rem)',
           paddingRight: 'calc(env(safe-area-inset-right) + 0.75rem)',
+          // The practice row of the full sequence makes the fixed footer taller.
+          ...(fullSequenceAvailable ? { paddingBottom: 'calc(env(safe-area-inset-bottom) + 9rem)' } : {}),
         }}
       >
         <div className="ensayo-sections-layout mx-auto max-w-6xl columns-1 gap-4 xl:columns-2 xl:gap-5">
@@ -4356,7 +4640,97 @@ export default function ModoEnsayoCompacto({
       >
         {showPlaybackOptions && (
           <div ref={playbackOptionsRef} className="mx-auto mb-2 max-w-5xl px-4">
-            <div className="rounded-[1.1rem] border border-zinc-200/85 bg-white/96 px-3 py-3 shadow-[0_14px_34px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/96">
+            <div className="max-h-[min(62dvh,34rem)] overflow-y-auto overscroll-contain rounded-[1.1rem] border border-zinc-200/85 bg-white/96 px-3 py-3 shadow-[0_14px_34px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/96">
+              {fullSequenceAvailable && (
+                <div className="mb-4 border-b border-zinc-200/60 pb-3 dark:border-white/10">
+                  <p className="mb-2 text-[0.66rem] font-black uppercase tracking-[0.24em] text-zinc-500 dark:text-zinc-400">
+                    ¿Qué tocas o cantas?
+                  </p>
+                  {!sequence.prefs.hasChosenPart && (sequence.suggestedPartIds.length > 0 || sequence.singerWithoutStems) && (
+                    <p className="mb-2 text-xs text-zinc-500 dark:text-zinc-400">Tomado de tu asignación en este evento. Puedes cambiarlo.</p>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={sequence.toggleVoice}
+                      aria-pressed={sequence.voiceSelected}
+                      className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-sm font-bold ${sequence.voiceSelected ? 'border-brand bg-brand text-white' : 'border-zinc-200 text-zinc-700 dark:border-white/10 dark:text-zinc-200'}`}
+                    >
+                      <Mic2 className="h-3.5 w-3.5" /> Voz
+                    </button>
+                    {sequence.instrumentCandidates.map((track) => {
+                      const selected = sequence.partTrackIds.includes(track.id);
+                      return (
+                        <button
+                          key={`part-${track.id}`}
+                          type="button"
+                          onClick={() => sequence.togglePart(track.id)}
+                          aria-pressed={selected}
+                          className={`rounded-full border px-3 py-1.5 text-sm font-bold ${selected ? 'border-brand bg-brand text-white' : 'border-zinc-200 text-zinc-700 dark:border-white/10 dark:text-zinc-200'}`}
+                        >
+                          {rehearsalTrackLabel(track)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {sequence.singerWithoutStems && (
+                    <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                      Esta secuencia no trae pistas de voz: ya suena sin voz para que cantes encima. Para escuchar la melodía, toca <b>Original</b>.
+                    </p>
+                  )}
+                  {isFullSequence && (
+                    <div className="mt-4 space-y-2">
+                      <p className="text-[0.66rem] font-black uppercase tracking-[0.24em] text-zinc-500 dark:text-zinc-400">Mezcla</p>
+                      {sequence.mixerGroups.map((group) => {
+                        const muted = Boolean(sequence.prefs.mutedGroups[group.id]);
+                        const level = sequence.prefs.groupLevels[group.id] ?? 1;
+                        return (
+                          <div key={`mix-${group.id}`} className="flex items-center gap-3 rounded-xl bg-zinc-50 px-2 py-1.5 dark:bg-zinc-950/50">
+                            <button
+                              type="button"
+                              onClick={() => sequence.updatePrefs({ mutedGroups: { ...sequence.prefs.mutedGroups, [group.id]: !muted } })}
+                              aria-label={muted ? `Activar ${group.label}` : `Silenciar ${group.label}`}
+                              aria-pressed={muted}
+                              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${muted ? 'bg-red-50 text-red-600 dark:bg-red-500/10' : 'text-zinc-500'}`}
+                            >
+                              {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                            </button>
+                            <span className="w-24 shrink-0 truncate text-sm font-semibold">{group.label}</span>
+                            <input
+                              type="range"
+                              min="0"
+                              max={MAX_GROUP_LEVEL}
+                              step="0.05"
+                              value={level}
+                              onChange={(event) => sequence.updatePrefs({ groupLevels: { ...sequence.prefs.groupLevels, [group.id]: Number(event.target.value) } })}
+                              className="ensayo-seek h-4 flex-1 cursor-pointer appearance-none bg-transparent"
+                              aria-label={`Volumen ${group.label}`}
+                            />
+                            <span className="w-9 text-right text-xs font-black text-zinc-500 dark:text-zinc-400">{Math.round(level * 100)}</span>
+                          </div>
+                        );
+                      })}
+                      <div className="flex items-center gap-3 rounded-xl bg-zinc-50 px-2 py-1.5 dark:bg-zinc-950/50">
+                        <span className="w-[8.75rem] shrink-0 pl-1 text-sm font-black">Master</span>
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.05"
+                          value={sequence.prefs.master}
+                          onChange={(event) => sequence.updatePrefs({ master: Number(event.target.value) })}
+                          className="ensayo-seek h-4 flex-1 cursor-pointer appearance-none bg-transparent"
+                          aria-label="Volumen master"
+                        />
+                        <span className="w-9 text-right text-xs font-black text-zinc-500 dark:text-zinc-400">{Math.round(sequence.prefs.master * 100)}</span>
+                      </div>
+                      <button type="button" onClick={() => sequence.updatePrefs({ groupLevels: {}, mutedGroups: {}, master: 1 })} className="text-xs font-semibold text-zinc-500 underline">
+                        Restablecer mezcla
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="mb-2 flex items-center justify-between gap-3">
                 <p className="text-[0.66rem] font-black uppercase tracking-[0.24em] text-zinc-500 dark:text-zinc-400">
                   Fuentes de reproduccion
@@ -4501,6 +4875,57 @@ export default function ModoEnsayoCompacto({
             </div>
           </div>
         )}
+        {fullSequenceAvailable && (
+          <div className="mx-auto mb-2 flex max-w-5xl items-center gap-0.5 px-3" title={isFullSequence ? REHEARSAL_PART_MODE_HINTS[sequence.partMode] : 'La grabación original de la canción.'}>
+            <button
+              type="button"
+              onClick={() => setShowPlaybackOptions((prev) => !prev)}
+              className={`flex min-w-[5.5rem] flex-1 items-center gap-1 rounded-xl px-1.5 py-1.5 text-left text-xs font-bold ${sequence.partTrackIds.length === 0 && !sequence.singerWithoutStems ? 'text-brand' : 'text-zinc-700 dark:text-zinc-200'}`}
+              aria-label="Elegir tu parte y la mezcla"
+            >
+              {sequence.singerWithoutStems ? <Mic2 className="h-3.5 w-3.5 shrink-0" /> : <User className="h-3.5 w-3.5 shrink-0" />}
+              <span className="truncate">{sequence.partLabel}</span>
+            </button>
+            {!sequence.singerWithoutStems && [
+              { id: 'aumentada', label: 'Subir', Icon: TrendingUp },
+              { id: 'aislada', label: 'Aislar', Icon: Headphones },
+              { id: 'muteada', label: 'Mutear', Icon: VolumeX },
+            ].map(({ id, label, Icon }) => {
+              const active = isFullSequence && sequence.partMode === id;
+              return (
+                <button
+                  key={`part-mode-${id}`}
+                  type="button"
+                  onClick={() => {
+                    if (sequence.partTrackIds.length === 0) { setShowPlaybackOptions(true); return; }
+                    if (!isFullSequence) void handleSelectPlaybackSource(FULL_SEQUENCE_SOURCE_ID);
+                    sequence.setPartMode(id);
+                  }}
+                  aria-pressed={active}
+                  aria-label={label}
+                  className={`flex shrink-0 items-center gap-0.5 rounded-xl px-1.5 py-1.5 text-[11px] font-bold ${active ? 'bg-brand text-white shadow-sm' : 'text-zinc-500 dark:text-zinc-400'}`}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  <span className={active ? '' : 'max-[400px]:sr-only'}>{label}</span>
+                </button>
+              );
+            })}
+            {originalPlaybackSource && (
+              <button
+                type="button"
+                onClick={() => void handleSelectPlaybackSource(isFullSequence ? originalPlaybackSource.id : FULL_SEQUENCE_SOURCE_ID)}
+                disabled={sequence.aligningOriginal}
+                aria-busy={sequence.aligningOriginal || undefined}
+                aria-pressed={activePlaybackSource?.kind === 'original'}
+                aria-label="Original"
+                className={`flex shrink-0 items-center gap-0.5 rounded-xl px-1.5 py-1.5 text-[11px] font-bold ${activePlaybackSource?.kind === 'original' ? 'bg-brand text-white shadow-sm' : 'text-zinc-500 dark:text-zinc-400'}`}
+              >
+                <Disc3 className="h-3.5 w-3.5" />
+                <span>Original</span>
+              </button>
+            )}
+          </div>
+        )}
         <div className="ensayo-footer-row mx-auto flex max-w-5xl items-center gap-3 px-4">
           <button
             type="button"
@@ -4524,7 +4949,9 @@ export default function ModoEnsayoCompacto({
           <div className="ensayo-footer-timeline min-w-0 flex-1">
             <div className="ensayo-footer-meta mb-1.5 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
               <span>{formatSeconds(displayAudioCurrentTime)}</span>
-              <span>{currentSections[activeSectionIndex]?.name || 'Secci\u00F3n'}</span>
+              <span className={sequenceNavigationLabel ? 'truncate px-2 text-brand' : 'truncate px-2'}>
+                {sequenceNavigationLabel || currentSections[activeSectionIndex]?.name || 'Secci\u00F3n'}
+              </span>
               <span>{durationLabel}</span>
             </div>
             <div className="relative pt-1">
@@ -4602,19 +5029,19 @@ export default function ModoEnsayoCompacto({
           <div className="ensayo-footer-actions flex shrink-0 items-center gap-2">
             <button
               type="button"
-              onClick={() => setLoopState((prev) => ((prev + 1) % 3))}
+              onClick={handleLoopButton}
               disabled={isPlaybackSeekPending}
-              className={`ensayo-footer-icon relative flex h-10 w-10 items-center justify-center rounded-2xl border transition-colors disabled:cursor-wait disabled:opacity-55 ${loopState
+              className={`ensayo-footer-icon relative flex h-10 w-10 items-center justify-center rounded-2xl border transition-colors disabled:cursor-wait disabled:opacity-55 ${loopState || sectionRepeatMode
                 ? 'border-brand/35 bg-brand/10 text-brand'
                 : 'border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
                 }`}
-              aria-label={loopState === 0 ? 'Loop apagado' : loopState === 1 ? 'Repetir todo' : 'Repetir seccion'}
-              title={loopState === 0 ? 'Loop apagado' : loopState === 1 ? 'Repetir todo' : 'Repetir seccion'}
+              aria-label={loopButtonLabel}
+              title={loopButtonLabel}
             >
               {loopState === 1 ? <Repeat1 className="h-4.5 w-4.5" /> : <Repeat className="h-4.5 w-4.5" />}
-              {loopState === 2 && (
-                <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-brand text-[9px] font-black text-white">
-                  S
+              {(loopState === 2 || sectionRepeatMode) && (
+                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-0.5 text-[9px] font-black text-white">
+                  {sectionRepeatMode === 'once' ? '1' : sectionRepeatMode === 'hold' ? '∞' : 'S'}
                 </span>
               )}
             </button>
