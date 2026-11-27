@@ -662,6 +662,7 @@ export default function EnsayoHub({
   canAssignVoices = false,
   userId = '',
   rosterMembers = [],
+  currentUserRoleCodes = [],
   initialSongVoiceAssignments = {},
   isCustomSetlist = false,
   shareUrl = '',
@@ -1662,6 +1663,15 @@ export default function EnsayoHub({
     );
   }
 
+  const rehearsalSetlist = songs.filter((song) => song && !song.isPrayer);
+  const activeSetlistIndex = cancionActiva
+    ? rehearsalSetlist.findIndex((song) => String(song.id) === String(cancionActiva.id))
+    : -1;
+  const openSetlistSongAt = (index) => {
+    const nextSong = rehearsalSetlist[index];
+    if (nextSong) openCompactSong(nextSong);
+  };
+
   if (cancionActiva) {
     return (
       <ModoEnsayoCompacto
@@ -1675,6 +1685,21 @@ export default function EnsayoHub({
         onPersonalSettingsChange={handlePersonalSettingsChange}
         eventKeySemitones={eventKeys[String(cancionActiva?.id || '')]?.semitones || 0}
         onEventKeyAnnounced={announceEventKey}
+        userRoleCodes={currentUserRoleCodes}
+        setlistPosition={activeSetlistIndex >= 0 ? { index: activeSetlistIndex, total: rehearsalSetlist.length } : null}
+        onPrevSong={activeSetlistIndex > 0 ? () => openSetlistSongAt(activeSetlistIndex - 1) : null}
+        onNextSong={activeSetlistIndex >= 0 && activeSetlistIndex < rehearsalSetlist.length - 1 ? () => openSetlistSongAt(activeSetlistIndex + 1) : null}
+        setlistSongs={rehearsalSetlist.map((setlistSong) => {
+          const eventKey = eventKeys[String(setlistSong?.id || '')];
+          const rawKey = eventKey?.targetKey || setlistSong?.originalKey || setlistSong?.key || '';
+          return {
+            id: String(setlistSong?.id || ''),
+            title: setlistSong?.title || '',
+            artist: setlistSong?.artist || '',
+            keyLabel: rawKey ? spellChord(normalizeKeyToAmerican(rawKey), chordSpelling) : '',
+          };
+        })}
+        onOpenSetlistSong={openSetlistSongAt}
       />
     );
   }

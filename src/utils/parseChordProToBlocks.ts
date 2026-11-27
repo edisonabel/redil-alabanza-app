@@ -406,6 +406,15 @@ const parseBracketSection = (line = ''): { section: SectionDescriptor; inlineTex
   const header = String(match[1] || '').trim();
   if (!header) return null;
 
+  // "[C]voluntad…" or a lone "[C]" is a chord, not the chorus marker "C":
+  // short markers only count as a section when they are not a chord symbol.
+  const matchesAlias = Object.values(SECTION_CONFIG).some((config) => config.aliases.some((alias) => {
+    const normalizedHeader = normalizeFold(header);
+    const normalizedAlias = normalizeFold(alias);
+    return normalizedHeader === normalizedAlias || normalizedHeader.startsWith(`${normalizedAlias} `);
+  }));
+  if (!matchesAlias && isChordSymbol(header)) return null;
+
   const descriptor = parseSectionLabel(header);
   if (!descriptor) {
     if (isChordSymbol(header)) return null;

@@ -513,6 +513,7 @@ let eventData: any = null;
 let playlistSongs: any[] = [];
 let playlistDbId: string | null = null;
 let rosterMembers: any[] = [];
+let currentUserRoleCodes: string[] = [];
 let initialSongVoiceAssignments: Record<string, any> = {};
 let canAssignVoices = false;
 
@@ -640,6 +641,8 @@ if (!routeIsDemo && !isCustomSetlist) {
         if (roleName && !existing.roleNames.includes(roleName)) existing.roleNames.push(roleName);
         rosterMap.set(profileId, existing);
       });
+
+      currentUserRoleCodes = Array.from(new Set(currentUserEventRoleCodes));
 
       const allMembers = Array.from(rosterMap.values()).map((member) => ({
         id: member.id,
@@ -939,6 +942,7 @@ const resolvedColorTokens = {
       canAssignVoices={canAssignVoices}
       userId={user.id}
       rosterMembers={rosterMembers}
+      currentUserRoleCodes={currentUserRoleCodes}
       initialSongVoiceAssignments={initialSongVoiceAssignments}
       isCustomSetlist={isCustomSetlist}
       shareUrl={customShareUrl}
